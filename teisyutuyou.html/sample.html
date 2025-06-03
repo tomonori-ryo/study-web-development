@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>おみくじ</title>
+</head>
+<body>
+    <link rel="stylesheet" href="styles.css">
+    <h1>今日の運勢は</h1>
+    <h2>
+    <label for="name">名前を入力してください：</label>
+    <input type="text" id="name" />
+    <button id="draw-button">おみくじを引く</button>
+    <p id="result"></p>
+    </h2>
+
+    <script>
+        function drawOmikuji() {
+            const name = document.getElementById("name").value.trim();
+            if (name === "") {
+                document.getElementById("result").textContent = "名前を入力してください。";
+                return;
+            }
+
+            const fortunes = [
+                "大吉",
+                "中吉",
+                "小吉",
+                "吉",
+                "末吉",
+                "凶",
+                "大凶"
+            ];
+            const randomIndex = Math.floor(Math.random() * fortunes.length);
+            const result = fortunes[randomIndex];
+            document.getElementById("result").textContent = `${name}さんの今日の運勢は「${result}」です！`;
+        }
+
+        // ボタンクリック時に関数を実行
+        document.getElementById("draw-button").addEventListener("click", drawOmikuji);
+    </script>
+
+</body>
+</html>
