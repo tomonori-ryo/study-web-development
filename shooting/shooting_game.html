@@ -715,11 +715,18 @@
 
         // キー入力
         const keys = {};
+        let lastShootTime = 0; // 最後に発射した時間
+        const shootCooldown = 100; // 発射のクールダウン時間（ミリ秒）
+        
         document.addEventListener('keydown', (e) => {
             keys[e.key] = true;
             if (e.key === ' ') {
                 e.preventDefault();
-                shoot();
+                const now = Date.now();
+                if (now - lastShootTime > shootCooldown) {
+                    shoot();
+                    lastShootTime = now;
+                }
             }
             
             // 武器選択（数字キー1-4）
