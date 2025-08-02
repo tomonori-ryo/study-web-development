@@ -131,6 +131,69 @@
             color: #ffff00;
         }
         
+        .login-promotion {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .login-promotion h3 {
+            color: #00ff00;
+            margin: 0 0 10px 0;
+            font-size: clamp(14px, 3vw, 18px);
+        }
+        
+        .login-promotion p {
+            color: #ffffff;
+            margin: 5px 0;
+            font-size: clamp(12px, 2.5vw, 16px);
+        }
+        
+        .login-buttons {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .login-btn {
+            background: #00ff00;
+            color: #000000;
+            border: none;
+            padding: clamp(8px, 2vw, 12px) clamp(16px, 3vw, 24px);
+            font-size: clamp(12px, 2.5vw, 16px);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .login-btn:hover {
+            background: #00cc00;
+            transform: scale(1.05);
+        }
+        
+        .register-btn {
+            background: #0066ff;
+            color: #ffffff;
+            border: none;
+            padding: clamp(8px, 2vw, 12px) clamp(16px, 3vw, 24px);
+            font-size: clamp(12px, 2.5vw, 16px);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .register-btn:hover {
+            background: #0055cc;
+            transform: scale(1.05);
+        }
+        
         #controls {
             position: absolute;
             bottom: 10px;
@@ -271,6 +334,24 @@
                 font-size: clamp(12px, 2.5vw, 16px);
             }
             
+            .login-promotion {
+                padding: 10px;
+                margin-top: 15px;
+            }
+            
+            .login-promotion h3 {
+                font-size: clamp(12px, 2.5vw, 16px);
+            }
+            
+            .login-promotion p {
+                font-size: clamp(10px, 2vw, 14px);
+            }
+            
+            .login-btn, .register-btn {
+                padding: clamp(6px, 1.5vw, 10px) clamp(12px, 2.5vw, 20px);
+                font-size: clamp(10px, 2vw, 14px);
+            }
+            
             #controls {
                 font-size: clamp(8px, 1.5vw, 10px);
                 padding: 6px;
@@ -352,6 +433,15 @@
         <div class="high-score">最高スコア: 0</div>
         <button id="restartBtn">リスタート</button>
         <button id="homeBtn">ホームに戻る</button>
+        <div class="login-promotion" style="display: none;">
+            <h3>🎯 スコアを保存してランキングに参加！</h3>
+            <p>ログインすると、あなたのスコアが保存され、</p>
+            <p>他のプレイヤーと競い合えます！</p>
+            <div class="login-buttons">
+                <button class="login-btn" onclick="window.location.href='mypage.html'">ログイン</button>
+                <button class="register-btn" onclick="window.location.href='mypage.html'">新規登録</button>
+            </div>
+        </div>
     </div>
     
     <div id="controls">
@@ -1470,7 +1560,7 @@
             const gameOverTitle = document.querySelector('#gameOver div:first-child');
             if (gameOverTitle) {
                 if (reason === 'timeout') {
-                    gameOverTitle.textContent = '⏰ 時間切れ';
+                    gameOverTitle.textContent = '時間切れ';
                 } else {
                     gameOverTitle.textContent = 'ゲームオーバー';
                 }
@@ -1533,6 +1623,12 @@
             gameOverElement.style.display = 'none';
             bossWarningElement.style.display = 'none';
             highScoreElement.textContent = `最高スコア: ${highScore}`; // 最高スコア表示を更新
+            
+            // ログイン促進メッセージを非表示
+            const loginPromotion = document.querySelector('.login-promotion');
+            if (loginPromotion) {
+                loginPromotion.style.display = 'none';
+            }
             
             // 武器選択UIを更新
             updateWeaponSelector();
