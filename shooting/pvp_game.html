@@ -548,7 +548,21 @@
                 
             } catch (error) {
                 console.error('マッチングエラー:', error);
-                alert('マッチングに失敗しました: ' + error.message);
+                
+                // インデックスエラーの場合は一時的にデモモードで開始
+                if (error.message.includes('index') || error.message.includes('requires an index')) {
+                    console.log('Firebaseインデックスが作成中です。デモモードで開始します。');
+                    alert('Firebaseインデックスが作成中です。デモモードで開始します。');
+                    
+                    // デモモードで開始
+                    isPlayer1 = true;
+                    roomId = 'demo-room';
+                    setTimeout(() => {
+                        startGame();
+                    }, 2000);
+                } else {
+                    alert('マッチングに失敗しました: ' + error.message);
+                }
             }
         }
 
