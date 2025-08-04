@@ -433,7 +433,7 @@
             if (Math.random() < spawnRate) {
                 supplyUnits.push({
                     x: Math.random() * (canvas.width - 28),
-                    y: Math.random() * (canvas.height - 28),
+                    y: Math.random() * (canvas.height / 2 - 28) + canvas.height / 2, // 中央の線より下
                     width: 28,
                     height: 28,
                     color: '#00ff00',
@@ -449,7 +449,7 @@
             if (Math.random() < spawnRate) {
                 healthItems.push({
                     x: Math.random() * (canvas.width - 30),
-                    y: Math.random() * (canvas.height - 30),
+                    y: Math.random() * (canvas.height / 2 - 30) + canvas.height / 2, // 中央の線より下
                     width: 30,
                     height: 30,
                     color: '#ff69b4', // ピンク色
