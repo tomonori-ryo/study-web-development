@@ -536,17 +536,20 @@
                 if (availableRooms.length > 0) {
                     // 既存のルームに参加
                     const roomToJoin = availableRooms[0];
+                    console.log('既存のルームに参加します:', roomToJoin.id);
                     roomId = await firebaseDataManager.joinPvPRoom(roomToJoin.id);
                     isPlayer1 = false; // プレイヤー2として参加
                     console.log('既存のルームに参加しました:', roomId);
                 } else {
                     // 新しいルームを作成
+                    console.log('新しいルームを作成します');
                     roomId = await firebaseDataManager.createPvPRoom();
                     isPlayer1 = true; // プレイヤー1として作成
                     console.log('新しいルームを作成しました:', roomId);
                 }
                 
                 // ルーム状態を監視
+                console.log('ルーム状態監視を開始します');
                 startRoomListener();
                 
             } catch (error) {
@@ -561,6 +564,7 @@
                     isPlayer1 = true;
                     roomId = 'demo-room';
                     setTimeout(() => {
+                        console.log('デモモードでゲームを開始します');
                         startGame();
                     }, 2000);
                 } else {
@@ -575,17 +579,20 @@
                 roomListener(); // 既存のリスナーを解除
             }
             
+            console.log('ルーム状態監視を開始します。roomId:', roomId);
+            
             roomListener = firebaseDataManager.onRoomStateChange(roomId, (roomData) => {
                 console.log('ルーム状態更新:', roomData);
                 
                 if (roomData.status === 'ready' && roomData.player2 && !waitingForOpponent) {
                     // 対戦相手が参加した
-                    console.log('対戦相手が参加しました');
+                    console.log('対戦相手が参加しました。startGame()を呼び出します。');
                     waitingForOpponent = false;
                     opponentId = isPlayer1 ? roomData.player2.uid : roomData.player1.uid;
                     startGame();
                 } else if (roomData.status === 'waiting') {
                     // まだ相手を待っている
+                    console.log('まだ相手を待っています...');
                     waitingForOpponent = true;
                     statusMessageElement.textContent = '対戦相手を待っています...';
                 } else if (roomData.status === 'finished') {
@@ -1411,17 +1418,21 @@
 
         // ゲーム開始
         function startGame() {
+            console.log('startGame() が呼び出されました');
             gameRunning = true;
             gameStartTime = Date.now();
             waitingForOpponent = false;
             lastGameState = null; // 前回の状態をリセット
             waitingRoomElement.style.display = 'none';
+            console.log('waitingRoomElement.style.display = none を設定');
             generateObstacles();
+            console.log('障害物を生成しました');
             initWeaponSelector(); // ゲーム開始時に武器選択UIを初期化
             updateWeaponSelector(); // ゲーム開始時に武器選択UIを更新
             updatePlayerPositions(); // ゲーム開始時にプレイヤー位置を更新
             updateUILabels(); // ゲーム開始時にUIラベルを更新
             startBulletsListener(); // ゲーム開始時に弾丸監視を開始
+            console.log('ゲーム開始処理が完了しました');
         }
 
         // リスタート
