@@ -857,7 +857,7 @@
             player.ammo -= weapon.ammoCost; // 武器に応じた弾薬を消費
         }
 
-        // 障害物生成
+        // 障害物生成（固定位置）
         function generateObstacles() {
             obstacles = [];
             const obstacleCount = 5 + Math.floor(Math.random() * 5); // 5-10個
@@ -868,7 +868,9 @@
                     y: Math.random() * (canvas.height - 60) + 100,
                     width: 40 + Math.random() * 40,
                     height: 40 + Math.random() * 40,
-                    color: '#8B0000'
+                    color: '#8B0000',
+                    // 固定位置フラグを追加
+                    isFixed: true
                 });
             }
         }
@@ -1024,7 +1026,7 @@
             // プレイヤー移動
             updatePlayerMovement();
 
-            // 障害物との衝突チェック
+            // 障害物との衝突チェック（障害物は固定位置）
             obstacles.forEach(obstacle => {
                 if (checkCollision(player1, obstacle)) {
                     // 障害物に衝突した場合、元の位置に戻す
@@ -1105,16 +1107,18 @@
 
             // 定期的にゲーム状態をFirebaseに送信（5秒ごと）
             if (roomId && elapsed % 5 === 0) {
-                firebaseDataManager.updateGameState(roomId, {
+                // 障害物は固定位置なので、位置情報を送信しない
+                const gameState = {
                     player1Hp: player1.hp,
                     player2Hp: player2.hp,
                     player1Ammo: player1.ammo,
                     player2Ammo: player2.ammo,
                     remainingTime: remainingTime,
-                    obstacles: obstacles,
                     supplyUnits: supplyUnits,
                     healthItems: healthItems
-                }).catch(error => {
+                };
+                
+                firebaseDataManager.updateGameState(roomId, gameState).catch(error => {
                     console.error('ゲーム状態更新エラー:', error);
                 });
             }
