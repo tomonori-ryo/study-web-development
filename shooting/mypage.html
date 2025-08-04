@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マイページ - 戦闘機シューティングゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #001122, #003366, #001122);
+            font-family: 'Arial', sans-serif;
+            color: white;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+        
+        .stars {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(2px 2px at 20px 30px, #eee, transparent),
+                radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+                radial-gradient(1px 1px at 90px 40px, #fff, transparent),
+                radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
+                radial-gradient(2px 2px at 160px 30px, #ddd, transparent);
+            background-repeat: repeat;
+            background-size: 200px 100px;
+            animation: twinkle 3s ease-in-out infinite alternate;
+            z-index: -1;
+        }
+        
+        @keyframes twinkle {
+            0% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+        
+        .container {
+            position: relative;
+            z-index: 10;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .title {
+            font-size: clamp(2rem, 6vw, 3rem);
+            font-weight: bold;
+            margin-bottom: 1rem;
+            text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            0% { text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff; }
+            100% { text-shadow: 0 0 30px #00ffff, 0 0 60px #00ffff, 0 0 80px #00ffff; }
+        }
+        
+        .nav-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+        
+        .nav-button {
+            background: linear-gradient(45deg, #4444ff, #6666ff);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: clamp(0.9rem, 3vw, 1.2rem);
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(68, 68, 255, 0.5);
+        }
+        
+        .nav-button.game-start {
+            background: linear-gradient(45deg, #ff4444, #ff6666);
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+        }
+        
+        .nav-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(68, 68, 255, 0.7);
+        }
+        
+        .nav-button.game-start:hover {
+            box-shadow: 0 0 30px rgba(255, 68, 68, 0.8);
+        }
+        
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .card h2 {
+            color: #00ffff;
+            margin-bottom: 1.5rem;
+            font-size: clamp(1.3rem, 4vw, 1.8rem);
+            text-align: center;
+        }
+        
+        .score-display {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .score-value {
+            font-size: clamp(2rem, 6vw, 3rem);
+            font-weight: bold;
+            color: #ffff00;
+            text-shadow: 0 0 10px #ffff00;
+        }
+        
+        .score-label {
+            font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+            color: #cccccc;
+            margin-top: 0.5rem;
+        }
+        
+        .ranking-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .ranking-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .ranking-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(5px);
+        }
+        
+        .ranking-item.current {
+            background: rgba(0, 255, 255, 0.2);
+            border: 1px solid #00ffff;
+        }
+        
+        .rank {
+            font-weight: bold;
+            color: #ffff00;
+            min-width: 40px;
+        }
+        
+        .player-name {
+            flex: 1;
+            margin: 0 1rem;
+        }
+        
+        .player-score {
+            font-weight: bold;
+            color: #00ff00;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #00ffff;
+            font-weight: bold;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.8rem;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        
+        .form-group input[type="password"] {
+            font-family: monospace;
+            letter-spacing: 2px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+        
+        .save-button {
+            background: linear-gradient(45deg, #00aa00, #00cc00);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(0, 170, 0, 0.5);
+            width: 100%;
+        }
+        
+        .save-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(0, 170, 0, 0.7);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+        
+        .stat-value {
+            font-size: clamp(1.5rem, 4vw, 2rem);
+            font-weight: bold;
+            color: #00ff00;
+        }
+        
+        .stat-label {
+            font-size: clamp(0.8rem, 2vw, 1rem);
+            color: #cccccc;
+            margin-top: 0.3rem;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .content-grid {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+            
+            .nav-buttons {
+                gap: 0.5rem;
+            }
+            
+            .card {
+                padding: 1.5rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .nav-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .nav-button {
+                width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="stars"></div>
+    
+    <div class="container">
+        <div class="header">
+            <h1 class="title">マイページ</h1>
+        </div>
+        
+        <div class="nav-buttons">
+            <button class="nav-button" onclick="window.location.href='index.html'">ホーム</button>
+            <button class="nav-button game-start" onclick="window.location.href='shooting_game.html'">ゲーム開始</button>
+            <button class="nav-button pvp-button" onclick="window.location.href='pvp_game.html'" style="background: linear-gradient(45deg, #ff8800, #ffaa00); box-shadow: 0 0 20px rgba(255, 136, 0, 0.5);">PvP対戦</button>
+            <button class="nav-button" onclick="logout()" style="background: linear-gradient(45deg, #ff4444, #ff6666); box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);">ログアウト</button>
+        </div>
+        
+        <div class="content-grid">
+            <!-- 現在の設定カード -->
+            <div class="card">
+                <h2>⚙️ 現在の設定</h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="currentDifficulty">通常</div>
+                        <div class="stat-label">現在の難易度</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="speedMultiplier">100%</div>
+                        <div class="stat-label">スピード倍率</div>
+                    </div>
+                </div>
+                
+                <form id="settingsForm">
+                    <div class="form-group">
+                        <label for="difficulty">🎮 難易度設定（ゲーム中は変更不可）</label>
+                        <select id="difficulty" style="width: 100%; padding: 0.8rem; border: none; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: white; font-size: 1rem;">
+                            <option value="easy">簡単（スピード30%遅く）</option>
+                            <option value="normal">通常（基準スピード）</option>
+                            <option value="hard">難しい（スピード40%早く）</option>
+                        </select>
+                        <small style="color: #cccccc; font-size: 0.8rem; margin-top: 0.5rem; display: block;">
+                            ※ 難易度はゲーム開始時に固定され、ゲーム中は変更できません
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="save-button">💾 設定を保存</button>
+                </form>
+            </div>
+            
+            <!-- スコア・ランキングカード -->
+            <div class="card">
+                <h2>🏆 スコア・ランキング</h2>
+                
+                <div class="score-display">
+                    <div class="score-value" id="highScore">0</div>
+                    <div class="score-label">最高スコア</div>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalGames">0</div>
+                        <div class="stat-label">総プレイ回数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgScore">0</div>
+                        <div class="stat-label">平均スコア</div>
+                    </div>
+                </div>
+                
+                <h3 style="color: #ffff00; margin-bottom: 1rem;">🏅 ランキング</h3>
+                <ul class="ranking-list" id="rankingList">
+                    <!-- ランキングがここに表示されます -->
+                </ul>
+            </div>
+            
+            <!-- アカウント設定カード -->
+            <div class="card">
+                <h2>👤 アカウント設定</h2>
+                
+                <form id="accountForm">
+                    <div class="form-group">
+                        <label for="playerName">プレイヤー名</label>
+                        <input type="text" id="playerName" placeholder="プレイヤー名を入力">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="email">メールアドレス（オプション）</label>
+                        <input type="email" id="email" placeholder="メールアドレスを入力">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="currentPassword">現在のパスワード</label>
+                        <input type="password" id="currentPassword" placeholder="現在のパスワードを入力">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="newPassword">新しいパスワード</label>
+                        <input type="password" id="newPassword" placeholder="新しいパスワードを入力">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirmPassword">新しいパスワード（確認）</label>
+                        <input type="password" id="confirmPassword" placeholder="新しいパスワードを再入力">
+                    </div>
+                    
+                    <button type="submit" class="save-button">💾 設定を保存</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-analytics-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    
+    <script>
+        // ページ読み込み時の初期化
+        window.addEventListener('load', async () => {
+            console.log('マイページ読み込み開始');
+            
+            try {
+                // Firebase認証の初期化を待つ
+                await new Promise(resolve => {
+                    const unsubscribe = firebase.auth().onAuthStateChanged((user) => {
+                        unsubscribe();
+                        resolve(user);
+                    });
+                });
+                
+                console.log('Firebase認証初期化完了');
+                
+                // 認証状態を確認
+                const currentUser = firebase.auth().currentUser;
+                const playerName = localStorage.getItem('playerName');
+                const isLoggedIn = localStorage.getItem('isLoggedIn');
+                const firebaseUid = localStorage.getItem('firebaseUid');
+                
+                console.log('マイページ認証状態確認:', {
+                    currentUser: currentUser ? currentUser.uid : null,
+                    playerName,
+                    isLoggedIn,
+                    firebaseUid
+                });
+                
+                // Firebase認証状態とローカルストレージを同期
+                if (currentUser) {
+                    console.log('Firebase認証ユーザーが存在します');
+                    
+                    // ローカルストレージを更新
+                    if (!playerName) {
+                        // ユーザーデータを取得してローカルストレージを更新
+                        try {
+                            const userData = await firebaseDataManager.getUserData();
+                            if (userData) {
+                                localStorage.setItem('playerName', userData.username);
+                                localStorage.setItem('userEmail', currentUser.email);
+                                localStorage.setItem('isLoggedIn', 'true');
+                                localStorage.setItem('firebaseUid', currentUser.uid);
+                                console.log('ローカルストレージを更新しました');
+                            }
+                        } catch (error) {
+                            console.error('ユーザーデータ取得エラー:', error);
+                            // メールアドレスをユーザーネームとして使用
+                            localStorage.setItem('playerName', currentUser.email.split('@')[0]);
+                            localStorage.setItem('userEmail', currentUser.email);
+                            localStorage.setItem('isLoggedIn', 'true');
+                            localStorage.setItem('firebaseUid', currentUser.uid);
+                        }
+                    } else if (firebaseUid !== currentUser.uid) {
+                        // UIDが不一致の場合は更新
+                        localStorage.setItem('firebaseUid', currentUser.uid);
+                        console.log('Firebase UIDを更新しました');
+                    }
+                }
+                
+                // ログイン状態をチェック
+                if (!(await checkLoginStatus())) {
+                    console.log('認証チェック失敗');
+                    return; // ログインしていない場合は処理を停止
+                }
+                
+                console.log('認証成功 - データ読み込み開始');
+                await loadUserData();
+                await loadRanking();
+                console.log('データ読み込み完了');
+            } catch (error) {
+                console.error('マイページ初期化エラー:', error);
+                alert('ページの読み込みに失敗しました。\n\nホームページに戻ります。');
+                window.location.href = 'index.html';
+            }
+        });
+        
+        // ユーザーデータの読み込み
+        async function loadUserData() {
+            try {
+                // Firebaseからユーザーデータを取得
+                const userData = await firebaseDataManager.getUserData();
+                
+                if (userData) {
+                    // 表示を更新
+                    document.getElementById('highScore').textContent = userData.highScore || 0;
+                    document.getElementById('playerName').value = userData.username || 'プレイヤー';
+                    document.getElementById('email').value = userData.email || '';
+                    document.getElementById('totalGames').textContent = userData.totalGames || 0;
+                    
+                    // 平均スコアを計算
+                    const avgScore = userData.totalGames > 0 ? Math.round(userData.totalScore / userData.totalGames) : 0;
+                    document.getElementById('avgScore').textContent = avgScore;
+                    
+                    // 設定を取得
+                    const settings = await firebaseDataManager.getSettings();
+                    const difficulty = settings.difficulty || 'normal';
+                    document.getElementById('difficulty').value = difficulty;
+                    
+                    // 現在の設定を表示
+                    updateCurrentSettings(difficulty);
+                }
+            } catch (error) {
+                console.error('ユーザーデータ読み込みエラー:', error);
+                // エラー時はローカルストレージから読み込み
+                const highScore = localStorage.getItem('shootingGameHighScore') || 0;
+                const playerName = localStorage.getItem('playerName') || 'プレイヤー';
+                const email = localStorage.getItem('playerEmail') || '';
+                const difficulty = localStorage.getItem('gameDifficulty') || 'normal';
+                const totalGames = localStorage.getItem('totalGames') || 0;
+                const totalScore = localStorage.getItem('totalScore') || 0;
+                
+                document.getElementById('highScore').textContent = highScore;
+                document.getElementById('playerName').value = playerName;
+                document.getElementById('email').value = email;
+                document.getElementById('difficulty').value = difficulty;
+                document.getElementById('totalGames').textContent = totalGames;
+                
+                const avgScore = totalGames > 0 ? Math.round(totalScore / totalGames) : 0;
+                document.getElementById('avgScore').textContent = avgScore;
+                
+                updateCurrentSettings(difficulty);
+            }
+        }
+        
+        // 現在の設定を更新
+        function updateCurrentSettings(difficulty) {
+            let difficultyText = '通常';
+            let speedText = '100%';
+            
+            switch(difficulty) {
+                case 'easy':
+                    difficultyText = '簡単';
+                    speedText = '70%';
+                    break;
+                case 'hard':
+                    difficultyText = '難しい';
+                    speedText = '140%';
+                    break;
+                default:
+                    difficultyText = '通常';
+                    speedText = '100%';
+                    break;
+            }
+            
+            document.getElementById('currentDifficulty').textContent = difficultyText;
+            document.getElementById('speedMultiplier').textContent = speedText;
+        }
+        
+        // ランキングの読み込み
+        async function loadRanking() {
+            try {
+                const rankingList = document.getElementById('rankingList');
+                const currentPlayerName = localStorage.getItem('playerName') || 'プレイヤー';
+                
+                // Firebaseからランキングを取得
+                const ranking = await firebaseDataManager.getRanking();
+                
+                // ランキングを表示
+                rankingList.innerHTML = '';
+                ranking.forEach((player, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'ranking-item';
+                    if (player.username === currentPlayerName) {
+                        li.classList.add('current');
+                    }
+                    
+                    li.innerHTML = `
+                        <span class="rank">#${index + 1}</span>
+                        <span class="player-name">${player.username}</span>
+                        <span class="player-score">${player.highScore}</span>
+                    `;
+                    
+                    rankingList.appendChild(li);
+                });
+            } catch (error) {
+                console.error('ランキング読み込みエラー:', error);
+                // エラー時はサンプルデータを表示
+                const rankingList = document.getElementById('rankingList');
+                const currentPlayerName = localStorage.getItem('playerName') || 'プレイヤー';
+                const currentHighScore = parseInt(localStorage.getItem('shootingGameHighScore')) || 0;
+                
+                const sampleRanking = [
+                    { name: 'チャンピオン', score: 2500 },
+                    { name: 'スコアラー', score: 1800 },
+                    { name: 'ゲーマー', score: 1200 },
+                    { name: currentPlayerName, score: currentHighScore },
+                    { name: '初心者', score: 500 }
+                ];
+                
+                sampleRanking.sort((a, b) => b.score - a.score);
+                
+                rankingList.innerHTML = '';
+                sampleRanking.forEach((player, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'ranking-item';
+                    if (player.name === currentPlayerName) {
+                        li.classList.add('current');
+                    }
+                    
+                    li.innerHTML = `
+                        <span class="rank">#${index + 1}</span>
+                        <span class="player-name">${player.name}</span>
+                        <span class="player-score">${player.score}</span>
+                    `;
+                    
+                    rankingList.appendChild(li);
+                });
+            }
+        }
+        
+        // アカウント設定の保存
+        document.getElementById('accountForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const playerName = document.getElementById('playerName').value;
+            const email = document.getElementById('email').value;
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            // パスワード変更の処理
+            if (newPassword || confirmPassword) {
+                // パスワード変更が要求されている場合
+                if (!currentPassword) {
+                    alert('現在のパスワードを入力してください。');
+                    return;
+                }
+                
+                if (!newPassword) {
+                    alert('新しいパスワードを入力してください。');
+                    return;
+                }
+                
+                if (newPassword !== confirmPassword) {
+                    alert('新しいパスワードが一致しません。');
+                    return;
+                }
+                
+                if (newPassword.length < 6) {
+                    alert('パスワードは6文字以上で入力してください。');
+                    return;
+                }
+                
+                // 現在のパスワードを確認（簡易的な実装）
+                const storedPassword = localStorage.getItem('userPassword') || '';
+                if (storedPassword && currentPassword !== storedPassword) {
+                    alert('現在のパスワードが正しくありません。');
+                    return;
+                }
+                
+                // 新しいパスワードを保存
+                localStorage.setItem('userPassword', newPassword);
+                
+                // パスワードフィールドをクリア
+                document.getElementById('currentPassword').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('confirmPassword').value = '';
+                
+                alert('パスワードが変更されました！');
+            }
+            
+            // ローカルストレージに保存
+            localStorage.setItem('playerName', playerName);
+            localStorage.setItem('playerEmail', email);
+            
+            // 成功メッセージ
+            alert('アカウント設定が保存されました！');
+            
+            // ランキングを更新
+            loadRanking();
+        });
+        
+        // 難易度設定の保存
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const difficulty = document.getElementById('difficulty').value;
+            
+            try {
+                // Firebaseに設定を保存
+                await firebaseDataManager.saveSettings({ difficulty: difficulty });
+                
+                // ローカルストレージにも保存（フォールバック用）
+                localStorage.setItem('gameDifficulty', difficulty);
+                
+                // 現在の設定を更新
+                updateCurrentSettings(difficulty);
+                
+                // 成功メッセージ
+                alert('難易度設定が保存されました！\n\n難易度変更は次回のゲーム開始時に適用されます。');
+            } catch (error) {
+                console.error('設定保存エラー:', error);
+                alert('設定の保存に失敗しました。');
+            }
+        });
+        
+        // ログイン状態チェック
+        async function checkLoginStatus() {
+            const playerName = localStorage.getItem('playerName');
+            const isLoggedIn = localStorage.getItem('isLoggedIn');
+            const firebaseUid = localStorage.getItem('firebaseUid');
+            
+            console.log('認証チェック開始:', {
+                playerName,
+                isLoggedIn,
+                firebaseUid
+            });
+            
+            // Firebase認証状態を非同期で確認
+            return new Promise((resolve) => {
+                const unsubscribe = firebase.auth().onAuthStateChanged((currentUser) => {
+                    unsubscribe(); // リスナーを解除
+                    
+                    console.log('Firebase認証状態:', {
+                        currentUser: currentUser ? currentUser.uid : null,
+                        email: currentUser ? currentUser.email : null
+                    });
+                    
+                    // 認証状態のチェック
+                    if (!playerName || isLoggedIn !== 'true') {
+                        console.log('ローカルストレージ認証失敗');
+                        alert('ログインが必要です。\n\nホームページに戻ります。');
+                        window.location.href = 'index.html';
+                        resolve(false);
+                        return;
+                    }
+                    
+                    if (!currentUser) {
+                        console.log('Firebase認証失敗 - ユーザーなし');
+                        alert('ログインが必要です。\n\nホームページに戻ります。');
+                        window.location.href = 'index.html';
+                        resolve(false);
+                        return;
+                    }
+                    
+                    if (firebaseUid && currentUser.uid !== firebaseUid) {
+                        console.log('Firebase UID不一致');
+                        alert('ログインが必要です。\n\nホームページに戻ります。');
+                        window.location.href = 'index.html';
+                        resolve(false);
+                        return;
+                    }
+                    
+                    console.log('認証成功');
+                    resolve(true);
+                });
+            });
+        }
+        
+        // ログアウト機能
+        async function logout() {
+            if (confirm('ログアウトしますか？\n\nログアウトすると、アカウント情報は保持されますが、再度ログインが必要になります。')) {
+                try {
+                    // Firebase認証でログアウト
+                    await firebaseDataManager.logoutUser();
+                    
+                    // ローカルストレージをクリア
+                    localStorage.removeItem('playerName');
+                    localStorage.removeItem('userEmail');
+                    localStorage.removeItem('isLoggedIn');
+                    localStorage.removeItem('firebaseUid');
+                    
+                    alert('ログアウトしました。\n\nホームページに戻ります。');
+                    window.location.href = 'index.html';
+                } catch (error) {
+                    console.error('ログアウトエラー:', error);
+                    alert('ログアウトに失敗しました。');
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

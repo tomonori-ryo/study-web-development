@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PvP対戦モード - 戦闘機シューティングゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: linear-gradient(to bottom, #001122, #003366);
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: clamp(14px, 2.5vw, 18px);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .player-info {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .player1-info {
+            border-left: 4px solid #00ff00;
+        }
+        
+        .player2-info {
+            border-left: 4px solid #ff0000;
+        }
+        
+        .hp-bar {
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+        
+        .hp-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        
+        .player1-hp {
+            background: linear-gradient(90deg, #00ff00, #00cc00);
+        }
+        
+        .player2-hp {
+            background: linear-gradient(90deg, #ff0000, #cc0000);
+        }
+        
+        #timer {
+            color: #ffff00;
+            font-size: clamp(16px, 3vw, 20px);
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        #gameStatus {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: clamp(24px, 6vw, 36px);
+            text-align: center;
+            display: none;
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        #waitingRoom {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: clamp(20px, 5vw, 28px);
+            text-align: center;
+            z-index: 150;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .status-buttons {
+            margin-top: 20px;
+        }
+        
+        .status-btn {
+            background: #4444ff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: clamp(14px, 3vw, 18px);
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .status-btn:hover {
+            background: #3333cc;
+            transform: scale(1.05);
+        }
+        
+        .status-btn.home {
+            background: #ff4444;
+        }
+        
+        .status-btn.home:hover {
+            background: #cc3333;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-size: clamp(10px, 2vw, 12px);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px;
+            border-radius: 5px;
+            backdrop-filter: blur(5px);
+            z-index: 50;
+        }
+        
+        #controls h3 {
+            margin: 0 0 5px 0;
+            font-size: clamp(12px, 2.5vw, 14px);
+            color: #00ffff;
+        }
+        
+        #controls p {
+            margin: 2px 0;
+            font-size: clamp(8px, 1.8vw, 10px);
+        }
+        
+        /* レスポンシブ対応 */
+        @media (max-width: 768px) {
+            #ui {
+                font-size: clamp(12px, 2vw, 16px);
+                padding: 10px;
+            }
+            
+            .hp-bar {
+                width: 150px;
+                height: 15px;
+            }
+            
+            #timer {
+                font-size: clamp(14px, 2.5vw, 18px);
+            }
+            
+            #gameStatus, #waitingRoom {
+                font-size: clamp(18px, 4vw, 24px);
+                padding: 20px;
+            }
+            
+            .status-btn {
+                padding: 10px 20px;
+                font-size: clamp(12px, 2.5vw, 16px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div class="player-info player1-info">
+            <div>プレイヤー1 (あなた)</div>
+            <div class="hp-bar">
+                <div class="hp-fill player1-hp" id="player1Hp" style="width: 100%;"></div>
+            </div>
+        </div>
+        <div class="player-info player2-info">
+            <div>プレイヤー2 (相手)</div>
+            <div class="hp-bar">
+                <div class="hp-fill player2-hp" id="player2Hp" style="width: 100%;"></div>
+            </div>
+        </div>
+        <div id="timer">残り時間: 2:00</div>
+    </div>
+    
+    <div id="waitingRoom">
+        <div>対戦相手を待っています...</div>
+        <div style="font-size: 0.8em; margin-top: 10px; color: #cccccc;">
+            相手が参加すると自動的にゲームが開始されます
+        </div>
+        <div class="status-buttons">
+            <button class="status-btn home" onclick="goHome()">ホームに戻る</button>
+        </div>
+    </div>
+    
+    <div id="gameStatus">
+        <div id="statusMessage">ゲーム終了</div>
+        <div class="status-buttons">
+            <button class="status-btn" onclick="restartGame()">もう一度対戦</button>
+            <button class="status-btn home" onclick="goHome()">ホームに戻る</button>
+        </div>
+    </div>
+    
+    <div id="controls">
+        <h3>🎮 操作方法</h3>
+        <p><strong>移動:</strong> 矢印キー/WASD</p>
+        <p><strong>攻撃:</strong> スペースキー</p>
+        <p><strong>武器選択:</strong> 数字キー1-4</p>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-analytics-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const player1HpElement = document.getElementById('player1Hp');
+        const player2HpElement = document.getElementById('player2Hp');
+        const timerElement = document.getElementById('timer');
+        const waitingRoomElement = document.getElementById('waitingRoom');
+        const gameStatusElement = document.getElementById('gameStatus');
+        const statusMessageElement = document.getElementById('statusMessage');
+
+        // キャンバスサイズを画面サイズに設定
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        // 初期キャンバスサイズ設定
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // ゲーム状態
+        let gameRunning = false;
+        let gameTime = 120; // 2分 = 120秒
+        let gameStartTime = Date.now();
+        let isPlayer1 = true; // プレイヤー1かどうか
+        let waitingForOpponent = true;
+        let gameId = null;
+        let opponentId = null;
+
+        // プレイヤー情報
+        let player1 = {
+            x: canvas.width / 4,
+            y: canvas.height - 100,
+            width: 40,
+            height: 50,
+            speed: 5,
+            hp: 100,
+            maxHp: 100,
+            bullets: [],
+            lastShootTime: 0,
+            shootCooldown: 200
+        };
+
+        let player2 = {
+            x: (canvas.width * 3) / 4,
+            y: 100,
+            width: 40,
+            height: 50,
+            speed: 5,
+            hp: 100,
+            maxHp: 100,
+            bullets: [],
+            lastShootTime: 0,
+            shootCooldown: 200
+        };
+
+        // 障害物
+        let obstacles = [];
+        
+        // 武器の定義
+        const weapons = {
+            1: { name: '通常弾', ammoCost: 1, bulletCount: 1, spread: 0, speed: 8, color: '#ffff00' },
+            2: { name: '連射弾', ammoCost: 2, bulletCount: 3, spread: 0.2, speed: 7, color: '#ff8800' },
+            3: { name: '散弾', ammoCost: 3, bulletCount: 5, spread: 0.5, speed: 6, color: '#ff0000' },
+            4: { name: 'レーザー', ammoCost: 5, bulletCount: 1, spread: 0, speed: 12, color: '#00ffff' }
+        };
+
+        let currentWeapon = 1;
+        let unlockedWeapons = [1];
+
+        // キー入力
+        const keys = {};
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                const now = Date.now();
+                const player = isPlayer1 ? player1 : player2;
+                if (now - player.lastShootTime > player.shootCooldown) {
+                    shoot();
+                    player.lastShootTime = now;
+                }
+            }
+            
+            // 武器選択（数字キー1-4）
+            if (e.key >= '1' && e.key <= '4') {
+                const weaponNum = parseInt(e.key);
+                if (unlockedWeapons.includes(weaponNum) && currentWeapon !== weaponNum) {
+                    currentWeapon = weaponNum;
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // 弾丸発射
+        function shoot() {
+            const weapon = weapons[currentWeapon];
+            const player = isPlayer1 ? player1 : player2;
+            
+            for (let i = 0; i < weapon.bulletCount; i++) {
+                const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
+                const speedX = Math.sin(spread) * weapon.speed * 0.3;
+                const speedY = isPlayer1 ? -weapon.speed : weapon.speed;
+                
+                player.bullets.push({
+                    x: player.x + player.width / 2 - 2,
+                    y: isPlayer1 ? player.y : player.y + player.height,
+                    width: 4,
+                    height: 12,
+                    speedX: speedX,
+                    speedY: speedY,
+                    color: weapon.color,
+                    playerId: isPlayer1 ? 1 : 2
+                });
+            }
+            
+            // Firebaseに弾丸情報を送信
+            if (gameId) {
+                firebaseDataManager.sendBullet(gameId, isPlayer1 ? 1 : 2, player.bullets[player.bullets.length - 1]);
+            }
+        }
+
+        // 障害物生成
+        function generateObstacles() {
+            obstacles = [];
+            const obstacleCount = 5 + Math.floor(Math.random() * 5); // 5-10個
+            
+            for (let i = 0; i < obstacleCount; i++) {
+                obstacles.push({
+                    x: Math.random() * (canvas.width - 60),
+                    y: Math.random() * (canvas.height - 60) + 100,
+                    width: 40 + Math.random() * 40,
+                    height: 40 + Math.random() * 40,
+                    color: '#8B0000'
+                });
+            }
+        }
+
+        // 衝突判定
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // プレイヤー描画
+        function drawPlayer(player, isPlayer1) {
+            const x = player.x;
+            const y = player.y;
+            const w = player.width;
+            const h = player.height;
+            
+            // プレイヤーの色
+            const color = isPlayer1 ? '#0066cc' : '#cc0000';
+            
+            // 戦闘機の本体
+            ctx.fillStyle = color;
+            ctx.fillRect(x + w/4, y + h/3, w/2, h/2);
+            
+            // 戦闘機の機首
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x + w/3, y, w/3, h/3);
+            
+            // 戦闘機の翼
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y + h/3, w/4, h/3);
+            ctx.fillRect(x + 3*w/4, y + h/3, w/4, h/3);
+            
+            // 戦闘機の尾翼
+            ctx.fillStyle = color;
+            ctx.fillRect(x + w/3, y + 2*h/3, w/3, h/3);
+            
+            // エンジン部分
+            ctx.fillStyle = '#ff6600';
+            ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
+            
+            // コックピット
+            ctx.fillStyle = isPlayer1 ? '#00ccff' : '#ff0000';
+            ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
+        }
+
+        // 弾丸描画
+        function drawBullets(bullets) {
+            bullets.forEach(bullet => {
+                ctx.fillStyle = bullet.color;
+                ctx.shadowColor = bullet.color;
+                ctx.shadowBlur = 5;
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        // 障害物描画
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                ctx.fillStyle = obstacle.color;
+                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                
+                // 岩の質感
+                ctx.fillStyle = '#660000';
+                ctx.fillRect(obstacle.x + 5, obstacle.y + 5, obstacle.width - 10, obstacle.height - 10);
+            });
+        }
+
+        // ゲーム更新
+        function update() {
+            if (!gameRunning) return;
+
+            // 時間更新
+            const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+            const remainingTime = Math.max(0, gameTime - elapsed);
+            const minutes = Math.floor(remainingTime / 60);
+            const seconds = remainingTime % 60;
+            timerElement.textContent = `残り時間: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+            // 時間切れ
+            if (remainingTime <= 0) {
+                endGame('timeout');
+                return;
+            }
+
+            // プレイヤー移動
+            const player = isPlayer1 ? player1 : player2;
+            
+            if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
+                player.x += player.speed;
+            }
+            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > (isPlayer1 ? canvas.height / 2 : 0)) {
+                player.y -= player.speed;
+            }
+            if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < (isPlayer1 ? canvas.height - player.height : canvas.height / 2)) {
+                player.y += player.speed;
+            }
+
+            // 障害物との衝突チェック
+            obstacles.forEach(obstacle => {
+                if (checkCollision(player, obstacle)) {
+                    // 障害物に衝突した場合、元の位置に戻す
+                    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.x += player.speed;
+                    if (keys['ArrowRight'] || keys['d'] || keys['D']) player.x -= player.speed;
+                    if (keys['ArrowUp'] || keys['w'] || keys['W']) player.y += player.speed;
+                    if (keys['ArrowDown'] || keys['s'] || keys['S']) player.y -= player.speed;
+                }
+            });
+
+            // 弾丸更新
+            updateBullets(player1.bullets);
+            updateBullets(player2.bullets);
+
+            // HPバー更新
+            player1HpElement.style.width = `${(player1.hp / player1.maxHp) * 100}%`;
+            player2HpElement.style.width = `${(player2.hp / player2.maxHp) * 100}%`;
+
+            // 勝利条件チェック
+            if (player1.hp <= 0) {
+                endGame('player2');
+            } else if (player2.hp <= 0) {
+                endGame('player1');
+            }
+        }
+
+        // 弾丸更新
+        function updateBullets(bullets) {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.x += bullet.speedX;
+                bullet.y += bullet.speedY;
+
+                // 画面外に出た弾丸を削除
+                if (bullet.y < -bullet.height || bullet.y > canvas.height) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+
+                // 障害物との衝突
+                obstacles.forEach(obstacle => {
+                    if (checkCollision(bullet, obstacle)) {
+                        bullets.splice(i, 1);
+                        return;
+                    }
+                });
+
+                // プレイヤーとの衝突
+                const targetPlayer = bullet.playerId === 1 ? player2 : player1;
+                if (checkCollision(bullet, targetPlayer)) {
+                    targetPlayer.hp -= 10;
+                    bullets.splice(i, 1);
+                    return;
+                }
+
+                // 弾丸同士の衝突（相殺）
+                const otherBullets = bullet.playerId === 1 ? player2.bullets : player1.bullets;
+                for (let j = otherBullets.length - 1; j >= 0; j--) {
+                    const otherBullet = otherBullets[j];
+                    if (checkCollision(bullet, otherBullet)) {
+                        bullets.splice(i, 1);
+                        otherBullets.splice(j, 1);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ゲーム描画
+        function draw() {
+            // 背景クリア
+            ctx.fillStyle = '#001122';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 星の背景
+            ctx.fillStyle = '#ffffff';
+            for (let i = 0; i < 50; i++) {
+                ctx.fillRect(
+                    (i * 37) % canvas.width,
+                    (i * 73) % canvas.height,
+                    1, 1
+                );
+            }
+
+            // 中央の境界線
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height / 2);
+            ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            drawObstacles();
+            drawPlayer(player1, true);
+            drawPlayer(player2, false);
+            drawBullets(player1.bullets);
+            drawBullets(player2.bullets);
+        }
+
+        // ゲーム終了
+        function endGame(reason) {
+            gameRunning = false;
+            
+            let message = '';
+            switch (reason) {
+                case 'player1':
+                    message = isPlayer1 ? 'あなたの勝利！' : '相手の勝利！';
+                    break;
+                case 'player2':
+                    message = isPlayer1 ? '相手の勝利！' : 'あなたの勝利！';
+                    break;
+                case 'timeout':
+                    if (player1.hp > player2.hp) {
+                        message = isPlayer1 ? 'あなたの勝利！' : '相手の勝利！';
+                    } else if (player2.hp > player1.hp) {
+                        message = isPlayer1 ? '相手の勝利！' : 'あなたの勝利！';
+                    } else {
+                        message = '引き分け！';
+                    }
+                    break;
+            }
+            
+            statusMessageElement.textContent = message;
+            gameStatusElement.style.display = 'block';
+        }
+
+        // ゲーム開始
+        function startGame() {
+            gameRunning = true;
+            gameStartTime = Date.now();
+            waitingForOpponent = false;
+            waitingRoomElement.style.display = 'none';
+            generateObstacles();
+        }
+
+        // リスタート
+        function restartGame() {
+            // プレイヤー情報をリセット
+            player1.hp = player1.maxHp;
+            player2.hp = player2.maxHp;
+            player1.bullets = [];
+            player2.bullets = [];
+            player1.x = canvas.width / 4;
+            player1.y = canvas.height - 100;
+            player2.x = (canvas.width * 3) / 4;
+            player2.y = 100;
+            
+            gameStatusElement.style.display = 'none';
+            startGame();
+        }
+
+        // ホームに戻る
+        function goHome() {
+            window.location.href = 'index.html';
+        }
+
+        // ゲームループ
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 初期化
+        function init() {
+            // ログイン状態をチェック
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) {
+                alert('ログインが必要です');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // ゲームループ開始
+            gameLoop();
+            
+            // 対戦相手を待つ
+            // 実際の実装では、Firebase Realtime DatabaseやWebSocketを使用
+            setTimeout(() => {
+                if (waitingForOpponent) {
+                    // デモ用：3秒後に自動開始
+                    startGame();
+                }
+            }, 3000);
+        }
+
+        // ゲーム開始
+        init();
+    </script>
+</body>
+</html> 
