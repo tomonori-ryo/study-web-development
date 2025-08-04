@@ -526,16 +526,18 @@
         // マッチング機能
         async function startMatching() {
             try {
+                console.log('マッチングを開始します...');
+                statusMessageElement.textContent = 'マッチング中...';
+                
                 // 利用可能なルームを取得
                 const availableRooms = await firebaseDataManager.getAvailableRooms();
+                console.log('利用可能なルーム:', availableRooms);
                 
                 if (availableRooms.length > 0) {
                     // 既存のルームに参加
-                    const room = availableRooms[0];
-                    roomId = room.id;
+                    const roomToJoin = availableRooms[0];
+                    roomId = await firebaseDataManager.joinPvPRoom(roomToJoin.id);
                     isPlayer1 = false; // プレイヤー2として参加
-                    
-                    await firebaseDataManager.joinPvPRoom(roomId);
                     console.log('既存のルームに参加しました:', roomId);
                 } else {
                     // 新しいルームを作成
@@ -573,29 +575,21 @@
                 roomListener(); // 既存のリスナーを解除
             }
             
-            let lastRoomUpdate = 0;
-            const updateCooldown = 1000; // 1秒間のクールダウン
-            
             roomListener = firebaseDataManager.onRoomStateChange(roomId, (roomData) => {
-                const now = Date.now();
+                console.log('ルーム状態更新:', roomData);
                 
-                // クールダウン期間内の場合は更新をスキップ
-                if (now - lastRoomUpdate < updateCooldown) {
-                    return;
-                }
-                
-                lastRoomUpdate = now;
-                
-                // 重要な状態変更のみログ出力
                 if (roomData.status === 'ready' && roomData.player2 && !waitingForOpponent) {
+                    // 対戦相手が参加した
                     console.log('対戦相手が参加しました');
                     waitingForOpponent = false;
                     opponentId = isPlayer1 ? roomData.player2.uid : roomData.player1.uid;
                     startGame();
-                } else if (roomData.status === 'waiting' && waitingForOpponent) {
-                    // まだ相手を待っている（ログは出力しない）
+                } else if (roomData.status === 'waiting') {
+                    // まだ相手を待っている
+                    waitingForOpponent = true;
                     statusMessageElement.textContent = '対戦相手を待っています...';
                 } else if (roomData.status === 'finished') {
+                    // ゲーム終了
                     console.log('ゲーム終了:', roomData.winner);
                     endGame(roomData.winner);
                 }
@@ -608,19 +602,7 @@
                 bulletsListener(); // 既存のリスナーを解除
             }
             
-            let lastBulletUpdate = 0;
-            const bulletUpdateCooldown = 100; // 100ミリ秒間のクールダウン
-            
             bulletsListener = firebaseDataManager.onBulletsChange(roomId, (bullets) => {
-                const now = Date.now();
-                
-                // クールダウン期間内の場合は更新をスキップ
-                if (now - lastBulletUpdate < bulletUpdateCooldown) {
-                    return;
-                }
-                
-                lastBulletUpdate = now;
-                
                 // 相手の弾丸を受信
                 bullets.forEach(bulletData => {
                     if (bulletData.playerId !== (isPlayer1 ? 1 : 2)) {

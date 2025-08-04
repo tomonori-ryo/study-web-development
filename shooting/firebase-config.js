@@ -257,6 +257,8 @@ class FirebaseDataManager {
   // 利用可能なルーム取得
   async getAvailableRooms() {
     try {
+      console.log('利用可能なルームを検索中...');
+      
       // インデックスエラーを回避するため、シンプルなクエリを使用
       const snapshot = await this.db.collection('pvp_rooms')
         .where('status', '==', 'waiting')
@@ -273,6 +275,7 @@ class FirebaseDataManager {
         });
       });
       
+      console.log(`利用可能なルーム数: ${rooms.length}`);
       return rooms;
     } catch (error) {
       console.error('ルーム取得エラー:', error);
@@ -280,6 +283,7 @@ class FirebaseDataManager {
       // インデックスエラーの場合は空の配列を返す
       if (error.message.includes('index') || error.message.includes('requires an index')) {
         console.log('Firebaseインデックスが作成中です。空のルームリストを返します。');
+        console.log('インデックス作成URL:', error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/));
         return [];
       }
       
