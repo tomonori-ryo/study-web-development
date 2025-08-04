@@ -700,15 +700,30 @@
 
         // プレイヤーの位置を動的に調整する関数
         function updatePlayerPositions() {
-            if (isPlayer1) {
-                // 自分がプレイヤー1の場合：自分が下、相手が上
-                player1.y = canvas.height - 100; // 自分（下）
-                player2.y = 100; // 相手（上）
+            // デバッグログ追加
+            console.log('updatePlayerPositions呼び出し');
+            console.log('isPlayer1:', isPlayer1);
+            console.log('player1.y:', player1.y, 'player2.y:', player2.y);
+            
+            // 移動中でない場合のみ位置を調整
+            const isMoving = keys['ArrowUp'] || keys['ArrowDown'] || keys['w'] || keys['W'] || keys['s'] || keys['S'];
+            
+            if (!isMoving) {
+                if (isPlayer1) {
+                    // 自分がプレイヤー1の場合：自分が下、相手が上
+                    player1.y = canvas.height - 100; // 自分（下）
+                    player2.y = 100; // 相手（上）
+                } else {
+                    // 自分がプレイヤー2の場合：自分が下、相手が上
+                    player2.y = canvas.height - 100; // 自分（下）
+                    player1.y = 100; // 相手（上）
+                }
+                console.log('位置調整実行');
             } else {
-                // 自分がプレイヤー2の場合：自分が下、相手が上
-                player2.y = canvas.height - 100; // 自分（下）
-                player1.y = 100; // 相手（上）
+                console.log('移動中のため位置調整をスキップ');
             }
+            
+            console.log('調整後 - player1.y:', player1.y, 'player2.y:', player2.y);
         }
 
         // UIラベルを動的に更新する関数
@@ -959,6 +974,9 @@
             const y = player.y;
             const w = player.width;
             const h = player.height;
+            
+            // デバッグログ追加
+            console.log(`プレイヤー${isPlayer1 ? '1' : '2'}描画: x=${x}, y=${y}, w=${w}, h=${h}`);
             
             // プレイヤーの色
             const color = isPlayer1 ? '#0066cc' : '#cc0000';
