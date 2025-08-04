@@ -516,12 +516,44 @@
         // 障害物描画
         function drawObstacles() {
             obstacles.forEach(obstacle => {
-                ctx.fillStyle = obstacle.color;
-                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                const x = obstacle.x;
+                const y = obstacle.y;
+                const w = obstacle.width;
+                const h = obstacle.height;
                 
-                // 岩の質感
-                ctx.fillStyle = '#660000';
-                ctx.fillRect(obstacle.x + 5, obstacle.y + 5, obstacle.width - 10, obstacle.height - 10);
+                // 岩の影効果
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 8;
+                
+                // 岩の本体（暗い赤褐色）
+                ctx.fillStyle = '#8B0000';
+                ctx.fillRect(x, y, w, h);
+                
+                // 岩の影効果をリセット
+                ctx.shadowBlur = 0;
+                
+                // 岩の質感（明るい部分）
+                ctx.fillStyle = '#A0522D';
+                ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
+                
+                // 岩の亀裂
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x + w/4, y + h/3);
+                ctx.lineTo(x + 3*w/4, y + 2*h/3);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(x + w/3, y + h/4);
+                ctx.lineTo(x + 2*w/3, y + 3*h/4);
+                ctx.stroke();
+                
+                // 岩の凹凸
+                ctx.fillStyle = '#696969';
+                ctx.fillRect(x + w/6, y + h/6, w/6, h/6);
+                ctx.fillRect(x + 2*w/3, y + h/3, w/6, h/6);
+                ctx.fillRect(x + w/3, y + 2*h/3, w/6, h/6);
             });
         }
 
@@ -706,22 +738,54 @@
             drawBullets(player1.bullets);
             drawBullets(player2.bullets);
 
-            // 補給ユニット描画
+            // 補給ユニットの描画（シューティングゲームと同じ）
             supplyUnits.forEach(unit => {
+                const x = unit.x;
+                const y = unit.y;
+                const w = unit.width;
+                const h = unit.height;
+
                 ctx.fillStyle = unit.color;
                 ctx.shadowColor = unit.color;
                 ctx.shadowBlur = 5;
-                ctx.fillRect(unit.x, unit.y, unit.width, unit.height);
+                ctx.fillRect(x, y, w, h);
                 ctx.shadowBlur = 0;
+
+                // 補給マーク
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('+', x + w/2, y + h/2 + 5);
+
+                // 補給表示
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '12px Arial';
+                ctx.fillText('補給', x + w/2, y + h + 15);
             });
 
-            // ライフ回復アイテム描画
+            // ライフ回復アイテムの描画（シューティングゲームと同じ）
             healthItems.forEach(item => {
+                const x = item.x;
+                const y = item.y;
+                const w = item.width;
+                const h = item.height;
+
                 ctx.fillStyle = item.color;
                 ctx.shadowColor = item.color;
-                ctx.shadowBlur = 5;
-                ctx.fillRect(item.x, item.y, item.width, item.height);
+                ctx.shadowBlur = 8;
+                ctx.fillRect(x, y, w, h);
                 ctx.shadowBlur = 0;
+
+                // ハートマーク
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('♥', x + w/2, y + h/2 + 5);
+
+                // ライフ回復表示
+                ctx.fillStyle = '#ff69b4';
+                ctx.font = '12px Arial';
+                ctx.fillText('ライフ', x + w/2, y + h + 15);
             });
         }
 
