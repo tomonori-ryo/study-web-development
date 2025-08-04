@@ -708,7 +708,8 @@
             // 移動中でない場合のみ位置を調整
             const isMoving = keys['ArrowUp'] || keys['ArrowDown'] || keys['w'] || keys['W'] || keys['s'] || keys['S'];
             
-            if (!isMoving) {
+            // 初期位置設定のみ実行（移動中はスキップ）
+            if (!isMoving && !gameRunning) {
                 if (isPlayer1) {
                     // 自分がプレイヤー1の場合：自分が下、相手が上
                     player1.y = canvas.height - 100; // 自分（下）
@@ -718,9 +719,11 @@
                     player2.y = canvas.height - 100; // 自分（下）
                     player1.y = 100; // 相手（上）
                 }
-                console.log('位置調整実行');
-            } else {
+                console.log('初期位置設定実行');
+            } else if (isMoving) {
                 console.log('移動中のため位置調整をスキップ');
+            } else {
+                console.log('ゲーム実行中のため位置調整をスキップ');
             }
             
             console.log('調整後 - player1.y:', player1.y, 'player2.y:', player2.y);
@@ -1179,8 +1182,12 @@
             spawnHealthItems();
 
             // HPバー更新
-            player1HpElement.style.width = `${(player1.hp / player1.maxHp) * 100}%`;
-            player2HpElement.style.width = `${(player2.hp / player2.maxHp) * 100}%`;
+            const player1HpPercent = (player1.hp / player1.maxHp) * 100;
+            const player2HpPercent = (player2.hp / player2.maxHp) * 100;
+            player1HpElement.style.width = `${player1HpPercent}%`;
+            player2HpElement.style.width = `${player2HpPercent}%`;
+            console.log(`UI更新: プレイヤー1 HP ${player1.hp}/${player1.maxHp} (${player1HpPercent.toFixed(1)}%)`);
+            console.log(`UI更新: プレイヤー2 HP ${player2.hp}/${player2.maxHp} (${player2HpPercent.toFixed(1)}%)`);
 
             // 弾薬表示更新
             document.getElementById('player1Ammo').textContent = `弾薬: ${player1.ammo}/${player1.maxAmmo}`;
@@ -1265,7 +1272,10 @@
                 // プレイヤーとの衝突
                 const targetPlayer = bullet.playerId === 1 ? player2 : player1;
                 if (checkCollision(bullet, targetPlayer)) {
+                    console.log(`ダメージ判定: プレイヤー${bullet.playerId === 1 ? '2' : '1'}にダメージ適用`);
+                    console.log(`ダメージ前HP: ${targetPlayer.hp}`);
                     targetPlayer.hp -= 10;
+                    console.log(`ダメージ後HP: ${targetPlayer.hp}`);
                     bullets.splice(i, 1);
                     playSound(explosionSound); // ヒット音
                     sendImportantGameState(); // 重要な状態変更を即座に送信
