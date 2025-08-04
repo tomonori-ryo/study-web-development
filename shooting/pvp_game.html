@@ -518,6 +518,82 @@
         let waitingForOpponent = true;
         let gameId = null;
         let opponentId = null;
+        let roomId = null; // ルームID
+        let roomListener = null; // ルーム状態監視リスナー
+        let bulletsListener = null; // 弾丸監視リスナー
+
+        // マッチング機能
+        async function startMatching() {
+            try {
+                // 利用可能なルームを取得
+                const availableRooms = await firebaseDataManager.getAvailableRooms();
+                
+                if (availableRooms.length > 0) {
+                    // 既存のルームに参加
+                    const room = availableRooms[0];
+                    roomId = room.id;
+                    isPlayer1 = false; // プレイヤー2として参加
+                    
+                    await firebaseDataManager.joinPvPRoom(roomId);
+                    console.log('既存のルームに参加しました:', roomId);
+                } else {
+                    // 新しいルームを作成
+                    roomId = await firebaseDataManager.createPvPRoom();
+                    isPlayer1 = true; // プレイヤー1として作成
+                    console.log('新しいルームを作成しました:', roomId);
+                }
+                
+                // ルーム状態を監視
+                startRoomListener();
+                
+            } catch (error) {
+                console.error('マッチングエラー:', error);
+                alert('マッチングに失敗しました: ' + error.message);
+            }
+        }
+
+        // ルーム状態監視
+        function startRoomListener() {
+            if (roomListener) {
+                roomListener(); // 既存のリスナーを解除
+            }
+            
+            roomListener = firebaseDataManager.onRoomStateChange(roomId, (roomData) => {
+                console.log('ルーム状態更新:', roomData);
+                
+                if (roomData.status === 'ready' && roomData.player2) {
+                    // 対戦相手が参加した
+                    waitingForOpponent = false;
+                    opponentId = isPlayer1 ? roomData.player2.uid : roomData.player1.uid;
+                    startGame();
+                } else if (roomData.status === 'waiting') {
+                    // まだ相手を待っている
+                    waitingForOpponent = true;
+                    statusMessageElement.textContent = '対戦相手を待っています...';
+                } else if (roomData.status === 'finished') {
+                    // ゲーム終了
+                    endGame(roomData.winner);
+                }
+            });
+        }
+
+        // 弾丸監視
+        function startBulletsListener() {
+            if (bulletsListener) {
+                bulletsListener(); // 既存のリスナーを解除
+            }
+            
+            bulletsListener = firebaseDataManager.onBulletsChange(roomId, (bullets) => {
+                // 相手の弾丸を受信
+                bullets.forEach(bulletData => {
+                    if (bulletData.playerId !== (isPlayer1 ? 1 : 2)) {
+                        // 自分の弾丸ではない場合、相手の弾丸として追加
+                        const targetPlayer = isPlayer1 ? player2 : player1;
+                        targetPlayer.bullets.push(bulletData.bullet);
+                    }
+                });
+            });
+        }
 
         // オーディオ要素
         let shootSound = null;
@@ -732,38 +808,39 @@
             const weapon = weapons[currentWeapon];
             const player = isPlayer1 ? player1 : player2;
             
-            // 弾薬チェック
             if (player.ammo < weapon.ammoCost) {
                 return; // 弾薬が不足している場合は発射できない
             }
             
+            // 武器に応じた弾丸を発射
             for (let i = 0; i < weapon.bulletCount; i++) {
                 const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
                 const speedX = Math.sin(spread) * weapon.speed * 0.3;
-                const speedY = isPlayer1 ? -weapon.speed : weapon.speed;
+                const speedY = isPlayer1 ? -weapon.speed : weapon.speed; // プレイヤー1は上向き、プレイヤー2は下向き
                 
-                player.bullets.push({
+                const bullet = {
                     x: player.x + player.width / 2 - 2,
-                    y: isPlayer1 ? player.y : player.y + player.height,
+                    y: player.y,
                     width: 4,
                     height: 12,
                     speedX: speedX,
                     speedY: speedY,
                     color: weapon.color,
                     playerId: isPlayer1 ? 1 : 2
-                });
+                };
+                
+                player.bullets.push(bullet);
+                
+                // Firebaseに弾丸情報を送信
+                if (roomId) {
+                    firebaseDataManager.sendBullet(roomId, isPlayer1 ? 1 : 2, bullet).catch(error => {
+                        console.error('弾丸送信エラー:', error);
+                    });
+                }
             }
             
-            // サウンド再生
             playSound(shootSound);
-            
-            // 弾薬消費
-            player.ammo -= weapon.ammoCost;
-            
-            // Firebaseに弾丸情報を送信
-            if (gameId) {
-                firebaseDataManager.sendBullet(gameId, isPlayer1 ? 1 : 2, player.bullets[player.bullets.length - 1]);
-            }
+            player.ammo -= weapon.ammoCost; // 武器に応じた弾薬を消費
         }
 
         // 障害物生成
@@ -1011,6 +1088,22 @@
             } else if (player2.hp <= 0) {
                 endGame('player1');
             }
+
+            // 定期的にゲーム状態をFirebaseに送信（5秒ごと）
+            if (roomId && elapsed % 5 === 0) {
+                firebaseDataManager.updateGameState(roomId, {
+                    player1Hp: player1.hp,
+                    player2Hp: player2.hp,
+                    player1Ammo: player1.ammo,
+                    player2Ammo: player2.ammo,
+                    remainingTime: remainingTime,
+                    obstacles: obstacles,
+                    supplyUnits: supplyUnits,
+                    healthItems: healthItems
+                }).catch(error => {
+                    console.error('ゲーム状態更新エラー:', error);
+                });
+            }
         }
 
         // 弾丸更新
@@ -1165,23 +1258,54 @@
         function endGame(reason) {
             gameRunning = false;
             
+            // リスナーを解除
+            if (roomListener) {
+                roomListener();
+                roomListener = null;
+            }
+            if (bulletsListener) {
+                bulletsListener();
+                bulletsListener = null;
+            }
+            
             let message = '';
+            let winner = '';
+            
             switch (reason) {
                 case 'player1':
                     message = isPlayer1 ? 'あなたの勝利！' : '相手の勝利！';
+                    winner = 'player1';
                     break;
                 case 'player2':
                     message = isPlayer1 ? '相手の勝利！' : 'あなたの勝利！';
+                    winner = 'player2';
                     break;
                 case 'timeout':
                     if (player1.hp > player2.hp) {
                         message = isPlayer1 ? 'あなたの勝利！' : '相手の勝利！';
+                        winner = 'player1';
                     } else if (player2.hp > player1.hp) {
                         message = isPlayer1 ? '相手の勝利！' : 'あなたの勝利！';
+                        winner = 'player2';
                     } else {
                         message = '引き分け！';
+                        winner = 'draw';
                     }
                     break;
+            }
+            
+            // Firebaseにゲーム終了を通知
+            if (roomId) {
+                firebaseDataManager.updateGameState(roomId, {
+                    status: 'finished',
+                    winner: winner,
+                    finalHp: {
+                        player1: player1.hp,
+                        player2: player2.hp
+                    }
+                }).catch(error => {
+                    console.error('ゲーム終了通知エラー:', error);
+                });
             }
             
             statusMessageElement.textContent = message;
@@ -1199,6 +1323,7 @@
             updateWeaponSelector(); // ゲーム開始時に武器選択UIを更新
             updatePlayerPositions(); // ゲーム開始時にプレイヤー位置を更新
             updateUILabels(); // ゲーム開始時にUIラベルを更新
+            startBulletsListener(); // ゲーム開始時に弾丸監視を開始
         }
 
         // リスタート
@@ -1257,17 +1382,11 @@
             // サウンド初期化
             initSounds();
 
+            // マッチング開始
+            startMatching();
+            
             // ゲームループ開始
             gameLoop();
-            
-            // 対戦相手を待つ
-            // 実際の実装では、Firebase Realtime DatabaseやWebSocketを使用
-            setTimeout(() => {
-                if (waitingForOpponent) {
-                    // デモ用：3秒後に自動開始
-                    startGame();
-                }
-            }, 3000);
         }
 
         // ゲーム開始
