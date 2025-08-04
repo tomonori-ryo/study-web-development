@@ -875,42 +875,40 @@
 
         // 弾丸発射
         function shoot() {
-            const weapon = weapons[currentWeapon];
             const player = isPlayer1 ? player1 : player2;
+            const weapon = weapons[currentWeapon];
             
-            if (player.ammo < weapon.ammoCost) {
-                return; // 弾薬が不足している場合は発射できない
-            }
-            
-            // 武器に応じた弾丸を発射
-            for (let i = 0; i < weapon.bulletCount; i++) {
-                const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
-                const speedX = Math.sin(spread) * weapon.speed * 0.3;
-                const speedY = isPlayer1 ? -weapon.speed : weapon.speed; // プレイヤー1は上向き、プレイヤー2は下向き
+            if (player.ammo >= weapon.ammoCost) {
+                for (let i = 0; i < weapon.bulletCount; i++) {
+                    const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
+                    const bullet = {
+                        x: player.x + player.width / 2,
+                        y: isPlayer1 ? player.y : player.y + player.height,
+                        width: 4,
+                        height: 8,
+                        speedX: spread,
+                        speedY: isPlayer1 ? -weapon.speed : weapon.speed,
+                        color: weapon.color,
+                        playerId: isPlayer1 ? 1 : 2
+                    };
+                    
+                    player.bullets.push(bullet);
+                }
                 
-                const bullet = {
-                    x: player.x + player.width / 2 - 2,
-                    y: player.y,
-                    width: 4,
-                    height: 12,
-                    speedX: speedX,
-                    speedY: speedY,
-                    color: weapon.color,
-                    playerId: isPlayer1 ? 1 : 2
-                };
-                
-                player.bullets.push(bullet);
-                
-                // Firebaseに弾丸情報を送信
+                // 弾丸をFirebaseに送信（クォータ制限を考慮）
                 if (roomId) {
                     firebaseDataManager.sendBullet(roomId, isPlayer1 ? 1 : 2, bullet).catch(error => {
                         console.error('弾丸送信エラー:', error);
+                        // クォータエラーの場合は送信を停止
+                        if (error.code === 'resource-exhausted') {
+                            console.log('Firebaseクォータ制限に達しました。弾丸送信を停止します。');
+                        }
                     });
                 }
+                
+                playSound(shootSound);
+                player.ammo -= weapon.ammoCost; // 武器に応じた弾薬を消費
             }
-            
-            playSound(shootSound);
-            player.ammo -= weapon.ammoCost; // 武器に応じた弾薬を消費
         }
 
         // 障害物生成（固定位置）
@@ -1237,8 +1235,8 @@
                 endGame('player1');
             }
 
-            // 定期的にゲーム状態をFirebaseに送信（30秒ごと、かつ重要な変更があった場合のみ）
-            if (roomId && elapsed % 30 === 0) {
+            // 定期的にゲーム状態をFirebaseに送信（60秒ごと、かつ重要な変更があった場合のみ）
+            if (roomId && elapsed % 60 === 0) {
                 // 前回の状態と比較して、重要な変更があった場合のみ送信
                 const currentState = {
                     player1Hp: player1.hp,
@@ -1254,10 +1252,14 @@
                     lastGameState.player2Hp !== currentState.player2Hp ||
                     lastGameState.player1Ammo !== currentState.player1Ammo ||
                     lastGameState.player2Ammo !== currentState.player2Ammo ||
-                    Math.abs(lastGameState.remainingTime - currentState.remainingTime) > 10) {
+                    Math.abs(lastGameState.remainingTime - currentState.remainingTime) > 30) {
                     
                     firebaseDataManager.updateGameState(roomId, currentState).catch(error => {
                         console.error('ゲーム状態更新エラー:', error);
+                        // クォータエラーの場合は更新を停止
+                        if (error.code === 'resource-exhausted') {
+                            console.log('Firebaseクォータ制限に達しました。更新を停止します。');
+                        }
                     });
                     
                     // 現在の状態を保存
@@ -1279,6 +1281,10 @@
                 
                 firebaseDataManager.updateGameState(roomId, currentState).catch(error => {
                     console.error('重要なゲーム状態更新エラー:', error);
+                    // クォータエラーの場合は更新を停止
+                    if (error.code === 'resource-exhausted') {
+                        console.log('Firebaseクォータ制限に達しました。重要な更新も停止します。');
+                    }
                 });
                 
                 lastGameState = { ...currentState };
@@ -1593,8 +1599,16 @@
                 startMatching();
             }).catch((error) => {
                 console.error('Firebase接続エラー:', error);
-                // オフライン時はデモモードで開始
-                startDemoMode();
+                
+                // クォータ制限エラーの場合はオフライン機能で開始
+                if (error.message === 'QUOTA_EXCEEDED') {
+                    console.log('Firebaseクォータ制限のため、オフライン機能で開始します。');
+                    alert('Firebaseクォータ制限に達しています。オフライン機能で開始します。');
+                    startDemoMode();
+                } else {
+                    // その他のエラーの場合はデモモードで開始
+                    startDemoMode();
+                }
             });
             
             // ゲームループ開始
@@ -1618,7 +1632,14 @@
                     }).catch((error) => {
                         clearTimeout(timeout);
                         console.error('Firebase接続エラー:', error);
-                        reject(error);
+                        
+                        // クォータ制限エラーの場合は特別な処理
+                        if (error.code === 'resource-exhausted') {
+                            console.log('Firebaseクォータ制限に達しています。オフライン機能で開始します。');
+                            reject(new Error('QUOTA_EXCEEDED'));
+                        } else {
+                            reject(error);
+                        }
                     });
                 } catch (error) {
                     clearTimeout(timeout);
