@@ -342,7 +342,7 @@
     
     <div id="ui">
         <div class="player-info player1-info">
-            <div id="player1Label">プレイヤー1 (あなた)</div>
+            <div id="player1Label">プレイヤー1 (自分)</div>
             <div class="hp-bar">
                 <div class="hp-fill player1-hp" id="player1Hp" style="width: 100%;"></div>
             </div>
@@ -697,12 +697,12 @@
             
             if (isPlayer1) {
                 // 自分がプレイヤー1の場合
-                player1Label.textContent = 'プレイヤー1 (あなた)';
+                player1Label.textContent = 'プレイヤー1 (自分)';
                 player2Label.textContent = 'プレイヤー2 (相手)';
             } else {
                 // 自分がプレイヤー2の場合
                 player1Label.textContent = 'プレイヤー1 (相手)';
-                player2Label.textContent = 'プレイヤー2 (あなた)';
+                player2Label.textContent = 'プレイヤー2 (自分)';
             }
         }
         
