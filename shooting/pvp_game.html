@@ -540,17 +540,28 @@
                     roomId = await firebaseDataManager.joinPvPRoom(roomToJoin.id);
                     isPlayer1 = false; // プレイヤー2として参加
                     console.log('既存のルームに参加しました:', roomId);
+                    
+                    // 既存のルームに参加した場合は、すぐにゲームを開始
+                    console.log('既存のルームに参加したため、すぐにゲームを開始します');
+                    waitingForOpponent = false;
+                    startGame();
                 } else {
                     // 新しいルームを作成
                     console.log('新しいルームを作成します');
                     roomId = await firebaseDataManager.createPvPRoom();
                     isPlayer1 = true; // プレイヤー1として作成
                     console.log('新しいルームを作成しました:', roomId);
+                    
+                    // 新しいルームを作成した場合は、ルーム状態監視を開始
+                    console.log('新しいルームを作成したため、ルーム状態監視を開始します');
+                    startRoomListener();
                 }
                 
-                // ルーム状態を監視
-                console.log('ルーム状態監視を開始します');
-                startRoomListener();
+                // ルーム状態を監視（既存ルーム参加の場合は不要）
+                if (availableRooms.length === 0) {
+                    console.log('ルーム状態監視を開始します');
+                    startRoomListener();
+                }
                 
             } catch (error) {
                 console.error('マッチングエラー:', error);
@@ -583,8 +594,11 @@
             
             roomListener = firebaseDataManager.onRoomStateChange(roomId, (roomData) => {
                 console.log('ルーム状態更新:', roomData);
+                console.log('waitingForOpponent:', waitingForOpponent);
+                console.log('roomData.status:', roomData.status);
+                console.log('roomData.player2:', roomData.player2);
                 
-                if (roomData.status === 'ready' && roomData.player2 && !waitingForOpponent) {
+                if (roomData.status === 'ready' && roomData.player2) {
                     // 対戦相手が参加した
                     console.log('対戦相手が参加しました。startGame()を呼び出します。');
                     waitingForOpponent = false;
