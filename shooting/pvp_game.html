@@ -197,12 +197,14 @@
             <div class="hp-bar">
                 <div class="hp-fill player1-hp" id="player1Hp" style="width: 100%;"></div>
             </div>
+            <div id="player1Ammo" style="color: #ffff00; font-size: 0.9em;">弾薬: 50/50</div>
         </div>
         <div class="player-info player2-info">
             <div>プレイヤー2 (相手)</div>
             <div class="hp-bar">
                 <div class="hp-fill player2-hp" id="player2Hp" style="width: 100%;"></div>
             </div>
+            <div id="player2Ammo" style="color: #ffff00; font-size: 0.9em;">弾薬: 50/50</div>
         </div>
         <div id="timer">残り時間: 2:00</div>
     </div>
@@ -268,6 +270,29 @@
         let gameId = null;
         let opponentId = null;
 
+        // オーディオ要素
+        let shootSound = null;
+        let explosionSound = null;
+
+        // サウンド初期化
+        function initSounds() {
+            // プレイヤーの銃撃音
+            shootSound = new Audio('shoot.mp3');
+            shootSound.volume = 0.3;
+            
+            // 敵の爆発音
+            explosionSound = new Audio('explosion.mp3');
+            explosionSound.volume = 0.3;
+        }
+
+        // サウンド再生関数
+        function playSound(audio) {
+            if (audio) {
+                audio.currentTime = 0; // 音を最初から再生
+                audio.play().catch(e => console.log('音声再生エラー:', e));
+            }
+        }
+
         // プレイヤー情報
         let player1 = {
             x: canvas.width / 4,
@@ -279,7 +304,9 @@
             maxHp: 100,
             bullets: [],
             lastShootTime: 0,
-            shootCooldown: 200
+            shootCooldown: 200,
+            ammo: 50,
+            maxAmmo: 50
         };
 
         let player2 = {
@@ -292,11 +319,19 @@
             maxHp: 100,
             bullets: [],
             lastShootTime: 0,
-            shootCooldown: 200
+            shootCooldown: 200,
+            ammo: 50,
+            maxAmmo: 50
         };
 
         // 障害物
         let obstacles = [];
+        
+        // 補給ユニット
+        let supplyUnits = [];
+        
+        // ライフ回復アイテム
+        let healthItems = [];
         
         // 武器の定義
         const weapons = {
@@ -341,6 +376,11 @@
             const weapon = weapons[currentWeapon];
             const player = isPlayer1 ? player1 : player2;
             
+            // 弾薬チェック
+            if (player.ammo < weapon.ammoCost) {
+                return; // 弾薬が不足している場合は発射できない
+            }
+            
             for (let i = 0; i < weapon.bulletCount; i++) {
                 const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
                 const speedX = Math.sin(spread) * weapon.speed * 0.3;
@@ -357,6 +397,12 @@
                     playerId: isPlayer1 ? 1 : 2
                 });
             }
+            
+            // サウンド再生
+            playSound(shootSound);
+            
+            // 弾薬消費
+            player.ammo -= weapon.ammoCost;
             
             // Firebaseに弾丸情報を送信
             if (gameId) {
@@ -376,6 +422,38 @@
                     width: 40 + Math.random() * 40,
                     height: 40 + Math.random() * 40,
                     color: '#8B0000'
+                });
+            }
+        }
+
+        // 補給ユニット生成
+        function spawnSupplyUnits() {
+            // ランダムで補給ユニットを生成（シューティングゲームと同じ確率）
+            const spawnRate = 0.003; // 0.3%の確率
+            if (Math.random() < spawnRate) {
+                supplyUnits.push({
+                    x: Math.random() * (canvas.width - 28),
+                    y: Math.random() * (canvas.height - 28),
+                    width: 28,
+                    height: 28,
+                    color: '#00ff00',
+                    isCollected: false
+                });
+            }
+        }
+        
+        // ライフ回復アイテム生成
+        function spawnHealthItems() {
+            // 低確率でライフ回復アイテムを生成（シューティングゲームと同じ確率）
+            const spawnRate = 0.0001; // 0.01%の確率
+            if (Math.random() < spawnRate) {
+                healthItems.push({
+                    x: Math.random() * (canvas.width - 30),
+                    y: Math.random() * (canvas.height - 30),
+                    width: 30,
+                    height: 30,
+                    color: '#ff69b4', // ピンク色
+                    isCollected: false
                 });
             }
         }
@@ -495,9 +573,55 @@
             updateBullets(player1.bullets);
             updateBullets(player2.bullets);
 
+            // 補給ユニット更新
+            supplyUnits = supplyUnits.filter(unit => {
+                unit.y += 1; // ゆっくり落下
+                if (unit.y > canvas.height) {
+                    return false; // 画面外に出たら消去
+                }
+                // プレイヤーとの衝突判定
+                const player = isPlayer1 ? player1 : player2;
+                if (checkCollision(unit, player)) {
+                    unit.isCollected = true;
+                    player.ammo = Math.min(player.maxAmmo, player.ammo + 20); // 20発補給
+                    playSound(explosionSound); // 補給取得音
+                    return false; // 取得されたら消去
+                }
+                return true;
+            });
+            
+            // ライフ回復アイテム更新
+            healthItems = healthItems.filter(item => {
+                item.y += 1; // ゆっくり落下
+                if (item.y > canvas.height) {
+                    return false; // 画面外に出たら消去
+                }
+                // プレイヤーとの衝突判定
+                const player = isPlayer1 ? player1 : player2;
+                if (checkCollision(item, player)) {
+                    item.isCollected = true;
+                    if (player.hp < player.maxHp) { // 最大HPは100
+                        player.hp = Math.min(player.maxHp, player.hp + 20); // 20HP回復
+                    }
+                    playSound(explosionSound); // ライフ回復取得音
+                    return false; // 取得されたら消去
+                }
+                return true;
+            });
+
+            // 補給ユニット生成
+            spawnSupplyUnits();
+            
+            // ライフ回復アイテム生成
+            spawnHealthItems();
+
             // HPバー更新
             player1HpElement.style.width = `${(player1.hp / player1.maxHp) * 100}%`;
             player2HpElement.style.width = `${(player2.hp / player2.maxHp) * 100}%`;
+
+            // 弾薬表示更新
+            document.getElementById('player1Ammo').textContent = `弾薬: ${player1.ammo}/${player1.maxAmmo}`;
+            document.getElementById('player2Ammo').textContent = `弾薬: ${player2.ammo}/${player2.maxAmmo}`;
 
             // 勝利条件チェック
             if (player1.hp <= 0) {
@@ -533,6 +657,7 @@
                 if (checkCollision(bullet, targetPlayer)) {
                     targetPlayer.hp -= 10;
                     bullets.splice(i, 1);
+                    playSound(explosionSound); // ヒット音
                     return;
                 }
 
@@ -580,6 +705,24 @@
             drawPlayer(player2, false);
             drawBullets(player1.bullets);
             drawBullets(player2.bullets);
+
+            // 補給ユニット描画
+            supplyUnits.forEach(unit => {
+                ctx.fillStyle = unit.color;
+                ctx.shadowColor = unit.color;
+                ctx.shadowBlur = 5;
+                ctx.fillRect(unit.x, unit.y, unit.width, unit.height);
+                ctx.shadowBlur = 0;
+            });
+
+            // ライフ回復アイテム描画
+            healthItems.forEach(item => {
+                ctx.fillStyle = item.color;
+                ctx.shadowColor = item.color;
+                ctx.shadowBlur = 5;
+                ctx.fillRect(item.x, item.y, item.width, item.height);
+                ctx.shadowBlur = 0;
+            });
         }
 
         // ゲーム終了
@@ -625,10 +768,16 @@
             player2.hp = player2.maxHp;
             player1.bullets = [];
             player2.bullets = [];
+            player1.ammo = player1.maxAmmo;
+            player2.ammo = player2.maxAmmo;
             player1.x = canvas.width / 4;
             player1.y = canvas.height - 100;
             player2.x = (canvas.width * 3) / 4;
             player2.y = 100;
+            
+            // 補給ユニットとライフ回復アイテムをクリア
+            supplyUnits = [];
+            healthItems = [];
             
             gameStatusElement.style.display = 'none';
             startGame();
@@ -664,6 +813,9 @@
                 window.location.href = 'index.html';
                 return;
             }
+
+            // サウンド初期化
+            initSounds();
 
             // ゲームループ開始
             gameLoop();
