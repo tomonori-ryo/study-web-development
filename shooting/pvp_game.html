@@ -1492,11 +1492,59 @@
             initSounds();
             initImages(); // 画像初期化を追加
 
-            // マッチング開始
-            startMatching();
+            // Firebase接続状態をチェック
+            checkFirebaseConnection().then(() => {
+                // マッチング開始
+                startMatching();
+            }).catch((error) => {
+                console.error('Firebase接続エラー:', error);
+                // オフライン時はデモモードで開始
+                startDemoMode();
+            });
             
             // ゲームループ開始
             gameLoop();
+        }
+
+        // Firebase接続状態をチェック
+        async function checkFirebaseConnection() {
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Firebase接続タイムアウト'));
+                }, 3000); // タイムアウトを3秒に短縮
+
+                try {
+                    // Firestoreの接続テスト（より軽量なテスト）
+                    const testDoc = firebase.firestore().collection('pvp_rooms').limit(1);
+                    testDoc.get().then(() => {
+                        clearTimeout(timeout);
+                        console.log('Firebase接続成功');
+                        resolve();
+                    }).catch((error) => {
+                        clearTimeout(timeout);
+                        console.error('Firebase接続エラー:', error);
+                        reject(error);
+                    });
+                } catch (error) {
+                    clearTimeout(timeout);
+                    reject(error);
+                }
+            });
+        }
+
+        // デモモード開始
+        function startDemoMode() {
+            console.log('デモモードで開始します');
+            alert('ネットワーク接続に問題があります。デモモードで開始します。');
+            
+            isPlayer1 = true;
+            roomId = 'demo-room';
+            
+            // 2秒後にゲーム開始
+            setTimeout(() => {
+                console.log('デモモードでゲームを開始します');
+                startGame();
+            }, 2000);
         }
 
         // ゲーム開始
