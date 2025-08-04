@@ -612,6 +612,9 @@
         // オーディオ要素
         let shootSound = null;
         let explosionSound = null;
+        
+        // 画像要素
+        let rockImage = null;
 
         // サウンド初期化
         function initSounds() {
@@ -622,6 +625,12 @@
             // 敵の爆発音
             explosionSound = new Audio('explosion.mp3');
             explosionSound.volume = 0.3;
+        }
+        
+        // 画像初期化
+        function initImages() {
+            rockImage = new Image();
+            rockImage.src = 'iwa.png';
         }
 
         // サウンド再生関数
@@ -970,39 +979,37 @@
                 const w = obstacle.width;
                 const h = obstacle.height;
                 
-                // 岩の影効果
-                ctx.shadowColor = '#000000';
-                ctx.shadowBlur = 8;
-                
-                // 岩の本体（暗い赤褐色）
-                ctx.fillStyle = '#8B0000';
-                ctx.fillRect(x, y, w, h);
-                
-                // 岩の影効果をリセット
-                ctx.shadowBlur = 0;
-                
-                // 岩の質感（明るい部分）
-                ctx.fillStyle = '#A0522D';
-                ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
-                
-                // 岩の亀裂
-                ctx.strokeStyle = '#654321';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(x + w/4, y + h/3);
-                ctx.lineTo(x + 3*w/4, y + 2*h/3);
-                ctx.stroke();
-                
-                ctx.beginPath();
-                ctx.moveTo(x + w/3, y + h/4);
-                ctx.lineTo(x + 2*w/3, y + 3*h/4);
-                ctx.stroke();
-                
-                // 岩の凹凸
-                ctx.fillStyle = '#696969';
-                ctx.fillRect(x + w/6, y + h/6, w/6, h/6);
-                ctx.fillRect(x + 2*w/3, y + h/3, w/6, h/6);
-                ctx.fillRect(x + w/3, y + 2*h/3, w/6, h/6);
+                // 岩の画像を描画
+                if (rockImage && rockImage.complete) {
+                    ctx.drawImage(rockImage, x, y, w, h);
+                } else {
+                    // 画像が読み込まれていない場合は従来の描画
+                    ctx.shadowColor = '#000000';
+                    ctx.shadowBlur = 8;
+                    ctx.fillStyle = '#8B0000';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.shadowBlur = 0;
+                    
+                    ctx.fillStyle = '#A0522D';
+                    ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
+                    
+                    ctx.strokeStyle = '#654321';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x + w/4, y + h/3);
+                    ctx.lineTo(x + 3*w/4, y + 2*h/3);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x + w/3, y + h/4);
+                    ctx.lineTo(x + 2*w/3, y + 3*h/4);
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = '#696969';
+                    ctx.fillRect(x + w/6, y + h/6, w/6, h/6);
+                    ctx.fillRect(x + 2*w/3, y + h/3, w/6, h/6);
+                    ctx.fillRect(x + w/3, y + 2*h/3, w/6, h/6);
+                }
             });
         }
 
@@ -1399,6 +1406,7 @@
 
             // サウンド初期化
             initSounds();
+            initImages(); // 画像初期化を追加
 
             // マッチング開始
             startMatching();
