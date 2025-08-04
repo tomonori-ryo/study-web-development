@@ -1603,11 +1603,11 @@
             }).catch((error) => {
                 console.error('Firebase接続エラー:', error);
                 
-                // クォータ制限エラーの場合はGitHubベースのマッチングを試す
+                // クォータ制限エラーの場合はローカルマッチングを試す
                 if (error.message === 'QUOTA_EXCEEDED') {
-                    console.log('Firebaseクォータ制限のため、GitHubベースのマッチングを試します。');
-                    alert('Firebaseクォータ制限に達しています。GitHubベースのマッチングを試します。');
-                    startGitHubMatching();
+                    console.log('Firebaseクォータ制限のため、ローカルマッチングを試します。');
+                    alert('Firebaseクォータ制限に達しています。ローカルマッチングを試します。');
+                    startLocalMatching();
                 } else {
                     // その他のエラーの場合はデモモードで開始
                     console.log('Firebase接続エラーのため、デモモードで開始します。');
@@ -1664,15 +1664,19 @@
             }, 2000);
         }
 
-        // GitHubベースのマッチング機能
+        // GitHubベースのマッチング機能（認証なし版）
         async function startGitHubMatching() {
-            console.log('GitHubベースのマッチングを開始します');
+            console.log('GitHubベースのマッチングを開始します（認証なし版）');
             
             try {
-                // GitHub Issues APIを使用してマッチング
+                // GitHub Issues APIを使用してマッチング（認証なし）
                 const response = await fetch('https://api.github.com/repos/tomonori-ryo/study-web-development/issues?labels=pvp-match&state=open');
-                const issues = await response.json();
                 
+                if (!response.ok) {
+                    throw new Error(`GitHub API エラー: ${response.status}`);
+                }
+                
+                const issues = await response.json();
                 console.log('GitHub Issues:', issues);
                 
                 // 利用可能なルームを探す
@@ -1686,24 +1690,13 @@
                     const roomToJoin = availableRooms[0];
                     console.log('既存のGitHubルームに参加:', roomToJoin.title);
                     
-                    // ルームを満員にする
-                    await joinGitHubRoom(roomToJoin.number);
-                    
-                    // ゲーム開始
                     isPlayer1 = false;
                     roomId = `github-${roomToJoin.number}`;
                     startGame();
                 } else {
-                    // 新しいルームを作成
-                    console.log('新しいGitHubルームを作成');
-                    const newRoom = await createGitHubRoom();
-                    
-                    isPlayer1 = true;
-                    roomId = `github-${newRoom.number}`;
-                    
-                    // 相手を待つ
-                    waitingForOpponent = true;
-                    statusMessageElement.textContent = '対戦相手を待っています...';
+                    // 新しいルームを作成（認証なしのため、ローカルマッチングにフォールバック）
+                    console.log('GitHub認証なしのため、ローカルマッチングに切り替え');
+                    startLocalMatching();
                 }
                 
             } catch (error) {
@@ -1714,42 +1707,7 @@
             }
         }
 
-        // GitHubルーム作成
-        async function createGitHubRoom() {
-            const roomData = {
-                title: `PvP Room ${Date.now()}`,
-                body: `PvP対戦ルーム\n作成者: ${localStorage.getItem('playerName') || 'Unknown'}\n作成時刻: ${new Date().toISOString()}`,
-                labels: ['pvp-match']
-            };
-            
-            const response = await fetch('https://api.github.com/repos/tomonori-ryo/study-web-development/issues', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'token YOUR_GITHUB_TOKEN' // 実際のトークンに置き換える必要があります
-                },
-                body: JSON.stringify(roomData)
-            });
-            
-            return await response.json();
-        }
 
-        // GitHubルーム参加
-        async function joinGitHubRoom(issueNumber) {
-            const updateData = {
-                title: `PvP Room ${issueNumber} - FULL`,
-                body: `PvP対戦ルーム（満員）\n参加者: ${localStorage.getItem('playerName') || 'Unknown'}\n参加時刻: ${new Date().toISOString()}`
-            };
-            
-            await fetch(`https://api.github.com/repos/tomonori-ryo/study-web-development/issues/${issueNumber}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'token YOUR_GITHUB_TOKEN'
-                },
-                body: JSON.stringify(updateData)
-            });
-        }
 
         // ローカルストレージベースの簡易マッチング
         function startLocalMatching() {
@@ -1786,9 +1744,9 @@
                 isPlayer1 = true;
                 roomId = `local-${roomData.id}`;
                 
-                // 相手を待つ（5秒後に自動開始）
+                // 相手を待つ（3秒後に自動開始）
                 waitingForOpponent = true;
-                statusMessageElement.textContent = '対戦相手を待っています...（5秒後に自動開始）';
+                statusMessageElement.textContent = '対戦相手を待っています...（3秒後に自動開始）';
                 
                 setTimeout(() => {
                     if (waitingForOpponent) {
@@ -1796,7 +1754,7 @@
                         localStorage.removeItem(roomKey);
                         startDemoMode();
                     }
-                }, 5000);
+                }, 3000);
             }
         }
 
