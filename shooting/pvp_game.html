@@ -648,9 +648,18 @@
 
         // 初期化
         function init() {
-            // ログイン状態をチェック
+            // ログイン状態をチェック（Firebase認証とローカルストレージの両方を確認）
+            const playerName = localStorage.getItem('playerName');
+            const isLoggedIn = localStorage.getItem('isLoggedIn');
+            const firebaseUid = localStorage.getItem('firebaseUid');
             const currentUser = firebase.auth().currentUser;
-            if (!currentUser) {
+            
+            // ログイン状態の判定（Firebase認証またはローカルストレージ）
+            const isAuthenticated = (playerName && isLoggedIn === 'true') || 
+                                  (currentUser && firebaseUid === currentUser.uid) ||
+                                  currentUser;
+            
+            if (!isAuthenticated) {
                 alert('ログインが必要です');
                 window.location.href = 'index.html';
                 return;
