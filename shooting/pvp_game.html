@@ -573,20 +573,30 @@
                 roomListener(); // 既存のリスナーを解除
             }
             
+            let lastRoomUpdate = 0;
+            const updateCooldown = 1000; // 1秒間のクールダウン
+            
             roomListener = firebaseDataManager.onRoomStateChange(roomId, (roomData) => {
-                console.log('ルーム状態更新:', roomData);
+                const now = Date.now();
                 
-                if (roomData.status === 'ready' && roomData.player2) {
-                    // 対戦相手が参加した
+                // クールダウン期間内の場合は更新をスキップ
+                if (now - lastRoomUpdate < updateCooldown) {
+                    return;
+                }
+                
+                lastRoomUpdate = now;
+                
+                // 重要な状態変更のみログ出力
+                if (roomData.status === 'ready' && roomData.player2 && !waitingForOpponent) {
+                    console.log('対戦相手が参加しました');
                     waitingForOpponent = false;
                     opponentId = isPlayer1 ? roomData.player2.uid : roomData.player1.uid;
                     startGame();
-                } else if (roomData.status === 'waiting') {
-                    // まだ相手を待っている
-                    waitingForOpponent = true;
+                } else if (roomData.status === 'waiting' && waitingForOpponent) {
+                    // まだ相手を待っている（ログは出力しない）
                     statusMessageElement.textContent = '対戦相手を待っています...';
                 } else if (roomData.status === 'finished') {
-                    // ゲーム終了
+                    console.log('ゲーム終了:', roomData.winner);
                     endGame(roomData.winner);
                 }
             });
@@ -598,7 +608,19 @@
                 bulletsListener(); // 既存のリスナーを解除
             }
             
+            let lastBulletUpdate = 0;
+            const bulletUpdateCooldown = 100; // 100ミリ秒間のクールダウン
+            
             bulletsListener = firebaseDataManager.onBulletsChange(roomId, (bullets) => {
+                const now = Date.now();
+                
+                // クールダウン期間内の場合は更新をスキップ
+                if (now - lastBulletUpdate < bulletUpdateCooldown) {
+                    return;
+                }
+                
+                lastBulletUpdate = now;
+                
                 // 相手の弾丸を受信
                 bullets.forEach(bulletData => {
                     if (bulletData.playerId !== (isPlayer1 ? 1 : 2)) {
@@ -1115,8 +1137,8 @@
                 endGame('player1');
             }
 
-            // 定期的にゲーム状態をFirebaseに送信（10秒ごと、かつ重要な変更があった場合のみ）
-            if (roomId && elapsed % 10 === 0) {
+            // 定期的にゲーム状態をFirebaseに送信（30秒ごと、かつ重要な変更があった場合のみ）
+            if (roomId && elapsed % 30 === 0) {
                 // 前回の状態と比較して、重要な変更があった場合のみ送信
                 const currentState = {
                     player1Hp: player1.hp,
@@ -1132,7 +1154,7 @@
                     lastGameState.player2Hp !== currentState.player2Hp ||
                     lastGameState.player1Ammo !== currentState.player1Ammo ||
                     lastGameState.player2Ammo !== currentState.player2Ammo ||
-                    Math.abs(lastGameState.remainingTime - currentState.remainingTime) > 5) {
+                    Math.abs(lastGameState.remainingTime - currentState.remainingTime) > 10) {
                     
                     firebaseDataManager.updateGameState(roomId, currentState).catch(error => {
                         console.error('ゲーム状態更新エラー:', error);
