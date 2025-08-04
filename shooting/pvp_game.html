@@ -521,6 +521,7 @@
         let roomId = null; // ルームID
         let roomListener = null; // ルーム状態監視リスナー
         let bulletsListener = null; // 弾丸監視リスナー
+        let lastGameState = null; // 前回のゲーム状態
 
         // マッチング機能
         async function startMatching() {
@@ -1067,6 +1068,7 @@
                     unit.isCollected = true;
                     player.ammo = Math.min(player.maxAmmo, player.ammo + 20); // 20発補給
                     playSound(explosionSound); // 補給取得音
+                    sendImportantGameState(); // 重要な状態変更を即座に送信
                     return false; // 取得されたら消去
                 }
                 return true;
@@ -1086,6 +1088,7 @@
                         player.hp = Math.min(player.maxHp, player.hp + 20); // 20HP回復
                     }
                     playSound(explosionSound); // ライフ回復取得音
+                    sendImportantGameState(); // 重要な状態変更を即座に送信
                     return false; // 取得されたら消去
                 }
                 return true;
@@ -1112,22 +1115,51 @@
                 endGame('player1');
             }
 
-            // 定期的にゲーム状態をFirebaseに送信（5秒ごと）
-            if (roomId && elapsed % 5 === 0) {
-                // 障害物は固定位置なので、位置情報を送信しない
-                const gameState = {
+            // 定期的にゲーム状態をFirebaseに送信（10秒ごと、かつ重要な変更があった場合のみ）
+            if (roomId && elapsed % 10 === 0) {
+                // 前回の状態と比較して、重要な変更があった場合のみ送信
+                const currentState = {
                     player1Hp: player1.hp,
                     player2Hp: player2.hp,
                     player1Ammo: player1.ammo,
                     player2Ammo: player2.ammo,
-                    remainingTime: remainingTime,
-                    supplyUnits: supplyUnits,
-                    healthItems: healthItems
+                    remainingTime: remainingTime
                 };
                 
-                firebaseDataManager.updateGameState(roomId, gameState).catch(error => {
-                    console.error('ゲーム状態更新エラー:', error);
+                // 前回の状態と比較（初回は送信）
+                if (!lastGameState || 
+                    lastGameState.player1Hp !== currentState.player1Hp ||
+                    lastGameState.player2Hp !== currentState.player2Hp ||
+                    lastGameState.player1Ammo !== currentState.player1Ammo ||
+                    lastGameState.player2Ammo !== currentState.player2Ammo ||
+                    Math.abs(lastGameState.remainingTime - currentState.remainingTime) > 5) {
+                    
+                    firebaseDataManager.updateGameState(roomId, currentState).catch(error => {
+                        console.error('ゲーム状態更新エラー:', error);
+                    });
+                    
+                    // 現在の状態を保存
+                    lastGameState = { ...currentState };
+                }
+            }
+        }
+
+        // 重要なゲーム状態変更を即座に送信
+        function sendImportantGameState() {
+            if (roomId && gameRunning) {
+                const currentState = {
+                    player1Hp: player1.hp,
+                    player2Hp: player2.hp,
+                    player1Ammo: player1.ammo,
+                    player2Ammo: player2.ammo,
+                    remainingTime: Math.max(0, gameTime - Math.floor((Date.now() - gameStartTime) / 1000))
+                };
+                
+                firebaseDataManager.updateGameState(roomId, currentState).catch(error => {
+                    console.error('重要なゲーム状態更新エラー:', error);
                 });
+                
+                lastGameState = { ...currentState };
             }
         }
 
@@ -1158,6 +1190,7 @@
                     targetPlayer.hp -= 10;
                     bullets.splice(i, 1);
                     playSound(explosionSound); // ヒット音
+                    sendImportantGameState(); // 重要な状態変更を即座に送信
                     return;
                 }
 
@@ -1342,6 +1375,7 @@
             gameRunning = true;
             gameStartTime = Date.now();
             waitingForOpponent = false;
+            lastGameState = null; // 前回の状態をリセット
             waitingRoomElement.style.display = 'none';
             generateObstacles();
             initWeaponSelector(); // ゲーム開始時に武器選択UIを初期化
