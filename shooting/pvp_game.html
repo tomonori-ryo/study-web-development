@@ -342,14 +342,14 @@
     
     <div id="ui">
         <div class="player-info player1-info">
-            <div>プレイヤー1 (あなた)</div>
+            <div id="player1Label">プレイヤー1 (あなた)</div>
             <div class="hp-bar">
                 <div class="hp-fill player1-hp" id="player1Hp" style="width: 100%;"></div>
             </div>
             <div id="player1Ammo" style="color: #ffff00; font-size: 0.9em;">弾薬: 50/50</div>
         </div>
         <div class="player-info player2-info">
-            <div>プレイヤー2 (相手)</div>
+            <div id="player2Label">プレイヤー2 (相手)</div>
             <div class="hp-bar">
                 <div class="hp-fill player2-hp" id="player2Hp" style="width: 100%;"></div>
             </div>
@@ -573,6 +573,35 @@
             maxAmmo: 50
         };
 
+        // プレイヤーの位置を動的に調整する関数
+        function updatePlayerPositions() {
+            if (isPlayer1) {
+                // 自分がプレイヤー1の場合：自分が下、相手が上
+                player1.y = canvas.height - 100; // 自分（下）
+                player2.y = 100; // 相手（上）
+            } else {
+                // 自分がプレイヤー2の場合：自分が下、相手が上
+                player2.y = canvas.height - 100; // 自分（下）
+                player1.y = 100; // 相手（上）
+            }
+        }
+
+        // UIラベルを動的に更新する関数
+        function updateUILabels() {
+            const player1Label = document.getElementById('player1Label');
+            const player2Label = document.getElementById('player2Label');
+            
+            if (isPlayer1) {
+                // 自分がプレイヤー1の場合
+                player1Label.textContent = 'プレイヤー1 (あなた)';
+                player2Label.textContent = 'プレイヤー2 (相手)';
+            } else {
+                // 自分がプレイヤー2の場合
+                player1Label.textContent = 'プレイヤー1 (相手)';
+                player2Label.textContent = 'プレイヤー2 (あなた)';
+            }
+        }
+        
         // 障害物
         let obstacles = [];
         
@@ -672,12 +701,12 @@
                     const newX = playerStartX + deltaX;
                     const newY = playerStartY + deltaY;
                     
-                    // 画面境界内に制限
+                    // 画面境界内に制限（常に自分が下半分）
                     player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
                     player.y = Math.max(
-                        isPlayer1 ? canvas.height / 2 : 0, 
+                        canvas.height / 2, // 常に下半分から
                         Math.min(
-                            isPlayer1 ? canvas.height - player.height : canvas.height / 2 - player.height, 
+                            canvas.height - player.height, 
                             newY
                         )
                     );
@@ -902,29 +931,23 @@
             }
 
             // プレイヤー移動
-            const player = isPlayer1 ? player1 : player2;
-            
-            if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
-                player.x -= player.speed;
-            }
-            if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
-                player.x += player.speed;
-            }
-            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > (isPlayer1 ? canvas.height / 2 : 0)) {
-                player.y -= player.speed;
-            }
-            if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < (isPlayer1 ? canvas.height - player.height : canvas.height / 2)) {
-                player.y += player.speed;
-            }
+            updatePlayerMovement();
 
             // 障害物との衝突チェック
             obstacles.forEach(obstacle => {
-                if (checkCollision(player, obstacle)) {
+                if (checkCollision(player1, obstacle)) {
                     // 障害物に衝突した場合、元の位置に戻す
-                    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.x += player.speed;
-                    if (keys['ArrowRight'] || keys['d'] || keys['D']) player.x -= player.speed;
-                    if (keys['ArrowUp'] || keys['w'] || keys['W']) player.y += player.speed;
-                    if (keys['ArrowDown'] || keys['s'] || keys['S']) player.y -= player.speed;
+                    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player1.x += player1.speed;
+                    if (keys['ArrowRight'] || keys['d'] || keys['D']) player1.x -= player1.speed;
+                    if (keys['ArrowUp'] || keys['w'] || keys['W']) player1.y += player1.speed;
+                    if (keys['ArrowDown'] || keys['s'] || keys['S']) player1.y -= player1.speed;
+                }
+                if (checkCollision(player2, obstacle)) {
+                    // 障害物に衝突した場合、元の位置に戻す
+                    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player2.x += player2.speed;
+                    if (keys['ArrowRight'] || keys['d'] || keys['D']) player2.x -= player2.speed;
+                    if (keys['ArrowUp'] || keys['w'] || keys['W']) player2.y += player2.speed;
+                    if (keys['ArrowDown'] || keys['s'] || keys['S']) player2.y -= player2.speed;
                 }
             });
 
@@ -1030,6 +1053,28 @@
                         return;
                     }
                 }
+            }
+        }
+
+        // プレイヤー移動
+        function updatePlayerMovement() {
+            const player = isPlayer1 ? player1 : player2;
+            
+            // 移動制限を動的に設定
+            const minY = isPlayer1 ? canvas.height / 2 : canvas.height / 2;
+            const maxY = isPlayer1 ? canvas.height - player.height : canvas.height - player.height;
+            
+            if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
+                player.x += player.speed;
+            }
+            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > minY) {
+                player.y -= player.speed;
+            }
+            if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < maxY) {
+                player.y += player.speed;
             }
         }
 
@@ -1152,6 +1197,8 @@
             generateObstacles();
             initWeaponSelector(); // ゲーム開始時に武器選択UIを初期化
             updateWeaponSelector(); // ゲーム開始時に武器選択UIを更新
+            updatePlayerPositions(); // ゲーム開始時にプレイヤー位置を更新
+            updateUILabels(); // ゲーム開始時にUIラベルを更新
         }
 
         // リスタート
