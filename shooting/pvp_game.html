@@ -918,10 +918,45 @@
             obstacles = [];
             const obstacleCount = 5 + Math.floor(Math.random() * 5); // 5-10個
             
+            // 戦闘機の初期位置を定義
+            const player1InitialX = canvas.width / 4;
+            const player1InitialY = canvas.height - 100;
+            const player2InitialX = (canvas.width * 3) / 4;
+            const player2InitialY = 100;
+            const playerWidth = 40;
+            const playerHeight = 50;
+            
+            // 安全な距離（障害物と戦闘機の間隔）
+            const safeDistance = 80;
+            
             for (let i = 0; i < obstacleCount; i++) {
+                let validPosition = false;
+                let x, y;
+                
+                // 有効な位置が見つかるまで繰り返し
+                while (!validPosition) {
+                    x = Math.random() * (canvas.width - 60);
+                    y = Math.random() * (canvas.height - 60) + 100;
+                    
+                    // 戦闘機の初期位置との距離をチェック
+                    const distanceToPlayer1 = Math.sqrt(
+                        Math.pow(x - player1InitialX, 2) + 
+                        Math.pow(y - player1InitialY, 2)
+                    );
+                    const distanceToPlayer2 = Math.sqrt(
+                        Math.pow(x - player2InitialX, 2) + 
+                        Math.pow(y - player2InitialY, 2)
+                    );
+                    
+                    // 両方の戦闘機から安全な距離にある場合のみ有効
+                    if (distanceToPlayer1 > safeDistance && distanceToPlayer2 > safeDistance) {
+                        validPosition = true;
+                    }
+                }
+                
                 obstacles.push({
-                    x: Math.random() * (canvas.width - 60),
-                    y: Math.random() * (canvas.height - 60) + 100,
+                    x: x,
+                    y: y,
                     width: 40 + Math.random() * 40,
                     height: 40 + Math.random() * 40,
                     color: '#8B0000',
@@ -929,6 +964,8 @@
                     isFixed: true
                 });
             }
+            
+            console.log(`障害物を${obstacles.length}個生成しました`);
         }
 
         // 補給ユニット生成
