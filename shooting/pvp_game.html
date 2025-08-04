@@ -751,6 +751,8 @@
         const keys = {};
         document.addEventListener('keydown', (e) => {
             keys[e.key] = true;
+            console.log('キー押下:', e.key); // デバッグログ追加
+            
             if (e.key === ' ') {
                 e.preventDefault();
                 const now = Date.now();
@@ -772,6 +774,7 @@
         
         document.addEventListener('keyup', (e) => {
             keys[e.key] = false;
+            console.log('キー離上:', e.key); // デバッグログ追加
         });
 
         // タッチ操作の変数
@@ -1269,8 +1272,16 @@
             const player = isPlayer1 ? player1 : player2;
             
             // 移動制限を動的に設定
-            const minY = isPlayer1 ? canvas.height / 2 : canvas.height / 2;
-            const maxY = isPlayer1 ? canvas.height - player.height : canvas.height - player.height;
+            const minY = canvas.height / 2; // 下側のプレイヤーは中央線以下
+            const maxY = canvas.height - player.height; // 画面下部まで
+            
+            // デバッグログ追加
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+                console.log('上移動キー検出:', player.y, '>', minY);
+            }
+            if (keys['ArrowDown'] || keys['s'] || keys['S']) {
+                console.log('下移動キー検出:', player.y, '<', maxY);
+            }
             
             if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
                 player.x -= player.speed;
@@ -1280,9 +1291,11 @@
             }
             if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > minY) {
                 player.y -= player.speed;
+                console.log('上移動実行:', player.y);
             }
             if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < maxY) {
                 player.y += player.speed;
+                console.log('下移動実行:', player.y);
             }
         }
 
