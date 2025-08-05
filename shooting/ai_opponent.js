@@ -46,7 +46,7 @@ class AIOpponent {
         };
     }
     
-    // 戦略的移動
+    // 戦略的移動（改善版）
     move() {
         const dx = this.targetX - this.player2.x;
         const dy = this.targetY - this.player2.y;
@@ -56,59 +56,126 @@ class AIOpponent {
         const minY = 0;
         const maxY = this.canvas.height / 2 - this.player2.height;
         
-        // 障害物回避を考慮した移動
-        const newX = this.player2.x + (dx > 0 ? this.player2.speed : -this.player2.speed);
-        const newY = this.player2.y + (dy > 0 ? this.player2.speed : -this.player2.speed);
+        // 現在位置で障害物と衝突しているかチェック
+        const isCurrentlyColliding = this.checkCurrentCollision();
         
-        // 左右移動（障害物チェック付き）
-        if (Math.abs(dx) > 10) {
-            const testPlayer = {
-                x: newX,
-                y: this.player2.y,
-                width: this.player2.width,
-                height: this.player2.height
-            };
+        if (isCurrentlyColliding) {
+            // 現在衝突している場合は即座に回避
+            this.emergencyAvoidObstacle();
+            return;
+        }
+        
+        // 目標に向かって移動
+        let moved = false;
+        
+        // 左右移動
+        if (Math.abs(dx) > 5) {
+            const moveDirection = dx > 0 ? 1 : -1;
+            const newX = this.player2.x + (moveDirection * this.player2.speed);
             
-            // 障害物との衝突をチェック
-            let canMoveX = true;
-            this.obstacles.forEach(obstacle => {
-                if (this.checkCollision(testPlayer, obstacle)) {
-                    canMoveX = false;
-                }
-            });
-            
-            if (canMoveX && newX >= 0 && newX <= this.canvas.width - this.player2.width) {
+            if (this.canMoveTo(newX, this.player2.y)) {
                 this.player2.x = newX;
-            } else {
-                // 障害物がある場合、上下移動で回避を試みる
-                this.avoidObstacle();
+                moved = true;
             }
         }
         
-        // 上下移動（制限内で、障害物チェック付き）
-        if (Math.abs(dy) > 10) {
-            const testPlayer = {
-                x: this.player2.x,
-                y: newY,
-                width: this.player2.width,
-                height: this.player2.height
-            };
+        // 上下移動
+        if (Math.abs(dy) > 5) {
+            const moveDirection = dy > 0 ? 1 : -1;
+            const newY = this.player2.y + (moveDirection * this.player2.speed);
             
-            // 障害物との衝突をチェック
-            let canMoveY = true;
-            this.obstacles.forEach(obstacle => {
-                if (this.checkCollision(testPlayer, obstacle)) {
-                    canMoveY = false;
-                }
-            });
-            
-            if (canMoveY && newY >= minY && newY <= maxY) {
+            if (newY >= minY && newY <= maxY && this.canMoveTo(this.player2.x, newY)) {
                 this.player2.y = newY;
+                moved = true;
             }
+        }
+        
+        // 移動できなかった場合の代替戦略
+        if (!moved && distance > 20) {
+            this.findAlternativePath();
         }
         
         // 縦移動の追加（戦略的な上下移動）
         this.performVerticalMovement();
+    }
+    
+    // 現在位置での衝突チェック
+    checkCurrentCollision() {
+        const currentPosition = {
+            x: this.player2.x,
+            y: this.player2.y,
+            width: this.player2.width,
+            height: this.player2.height
+        };
+        
+        return this.obstacles.some(obstacle => this.checkCollision(currentPosition, obstacle));
+    }
+    
+    // 指定位置に移動可能かチェック
+    canMoveTo(x, y) {
+        // 境界チェック
+        if (x < 0 || x > this.canvas.width - this.player2.width) return false;
+        if (y < 0 || y > this.canvas.height / 2 - this.player2.height) return false;
+        
+        // 障害物チェック
+        const testPosition = {
+            x: x,
+            y: y,
+            width: this.player2.width,
+            height: this.player2.height
+        };
+        
+        return !this.obstacles.some(obstacle => this.checkCollision(testPosition, obstacle));
+    }
+    
+    // 緊急回避
+    emergencyAvoidObstacle() {
+        // 現在位置から最も近い安全な位置を探す
+        const directions = [
+            { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+            { x: 1, y: 1 }, { x: -1, y: 1 }, { x: 1, y: -1 }, { x: -1, y: -1 }
+        ];
+        
+        for (let i = 0; i < directions.length; i++) {
+            const dir = directions[i];
+            const newX = this.player2.x + (dir.x * this.player2.speed * 2);
+            const newY = this.player2.y + (dir.y * this.player2.speed * 2);
+            
+            if (this.canMoveTo(newX, newY)) {
+                this.player2.x = newX;
+                this.player2.y = newY;
+                return;
+            }
+        }
+        
+        // どの方向にも移動できない場合はランダムな位置に移動
+        this.moveToRandomSafePosition();
+    }
+    
+    // ランダムな安全な位置に移動
+    moveToRandomSafePosition() {
+        for (let attempts = 0; attempts < 10; attempts++) {
+            const randomX = Math.random() * (this.canvas.width - this.player2.width);
+            const randomY = Math.random() * (this.canvas.height / 2 - this.player2.height);
+            
+            if (this.canMoveTo(randomX, randomY)) {
+                this.player2.x = randomX;
+                this.player2.y = randomY;
+                return;
+            }
+        }
+    }
+    
+    // 代替経路を見つける
+    findAlternativePath() {
+        // 目標の反対側からアプローチ
+        const alternativeX = this.targetX + (this.targetX > this.canvas.width / 2 ? -100 : 100);
+        const alternativeY = this.targetY;
+        
+        if (this.canMoveTo(alternativeX, alternativeY)) {
+            this.targetX = alternativeX;
+            this.targetY = alternativeY;
+        }
     }
     
     // プレイヤー予測システム
@@ -247,7 +314,7 @@ class AIOpponent {
         }
     }
     
-    // 高度な攻撃システム
+    // 高度な攻撃システム（改善版）
     attack() {
         const now = Date.now();
         if (now - this.lastAttackTime < this.attackCooldown) return;
@@ -262,10 +329,13 @@ class AIOpponent {
         const predictedDy = this.predictedPosition.y - this.player2.y;
         const predictedDistance = Math.sqrt(predictedDx * predictedDx + predictedDy * predictedDy);
         
-        // 攻撃可能距離内にいる場合
-        if (predictedDistance < 300 && Math.abs(predictedDx) < 100) {
+        // 攻撃条件を緩和（より積極的に攻撃）
+        const canAttack = (predictedDistance < 400 && Math.abs(predictedDx) < 150) || 
+                         (distance < 350 && Math.abs(dx) < 120);
+        
+        if (canAttack) {
             // 高度な武器選択
-            const weaponChoice = this.selectOptimalWeapon(predictedDistance);
+            const weaponChoice = this.selectOptimalWeapon(Math.min(predictedDistance, distance));
             const weapon = this.weapons[weaponChoice];
             
             if (this.player2.ammo >= weapon.ammoCost) {
@@ -274,8 +344,45 @@ class AIOpponent {
                 this.lastAttackTime = now;
                 this.updateWeaponPreference(weaponChoice, true);
                 this.attackCooldown = this.calculateDynamicCooldown();
+                
+                // 攻撃成功の記録
+                this.recordSuccessfulAttack();
+            } else {
+                // 弾薬がない場合は通常弾を使用
+                this.executeBasicAttack();
             }
         }
+    }
+    
+    // 基本攻撃（弾薬がない場合）
+    executeBasicAttack() {
+        const weapon = this.weapons[1]; // 通常弾
+        const dx = this.player1.x - this.player2.x;
+        const dy = this.player1.y - this.player2.y;
+        
+        const bullet = {
+            x: this.player2.x + this.player2.width / 2,
+            y: this.player2.y + this.player2.height,
+            width: 4,
+            height: 8,
+            speedX: dx > 0 ? 2 : -2,
+            speedY: weapon.speed,
+            color: weapon.color,
+            playerId: 2
+        };
+        
+        this.player2.bullets.push(bullet);
+        this.lastAttackTime = Date.now();
+        this.attackCooldown = 500;
+    }
+    
+    // 攻撃成功の記録
+    recordSuccessfulAttack() {
+        this.successfulMoves.push({
+            pattern: { type: 'attack', timestamp: Date.now() },
+            tactic: this.state,
+            timestamp: Date.now()
+        });
     }
     
     // 最適武器選択
@@ -346,18 +453,25 @@ class AIOpponent {
         weapon.lastUsed = Date.now();
     }
     
-    // 動的クールダウン計算
+    // 動的クールダウン計算（改善版）
     calculateDynamicCooldown() {
-        const baseCooldown = 300;
-        const difficultyMultiplier = this.difficulty === 'expert' ? 0.7 : 
-                                   this.difficulty === 'hard' ? 0.8 : 
-                                   this.difficulty === 'medium' ? 1.0 : 1.2;
+        const baseCooldown = 200; // 基本クールダウンを短縮
+        const difficultyMultiplier = this.difficulty === 'expert' ? 0.5 : 
+                                   this.difficulty === 'hard' ? 0.6 : 
+                                   this.difficulty === 'medium' ? 0.8 : 1.0;
         
         // 成功した戦術が多いほど攻撃頻度を上げる
         const successRate = this.successfulMoves.length / Math.max(1, this.successfulMoves.length + this.failedMoves.length);
-        const successMultiplier = 0.5 + (successRate * 0.5);
+        const successMultiplier = 0.3 + (successRate * 0.4); // より積極的な攻撃
         
-        return baseCooldown * difficultyMultiplier * successMultiplier + Math.random() * 200;
+        // 距離に基づく調整
+        const distance = Math.sqrt(
+            Math.pow(this.player1.x - this.player2.x, 2) +
+            Math.pow(this.player1.y - this.player2.y, 2)
+        );
+        const distanceMultiplier = distance < 150 ? 0.5 : 1.0; // 近距離では攻撃頻度を上げる
+        
+        return baseCooldown * difficultyMultiplier * successMultiplier * distanceMultiplier + Math.random() * 100;
     }
     
     // 回避行動
@@ -507,7 +621,7 @@ class AIOpponent {
         this.checkAndAvoidObstacles();
     }
     
-    // 最適戦略選択
+    // 最適戦略選択（改善版）
     selectOptimalStrategy() {
         const playerPattern = this.analyzeMovementPattern(this.patternMemory.slice(-5));
         const hpRatio = this.player2.hp / this.player1.hp;
@@ -516,18 +630,22 @@ class AIOpponent {
             Math.pow(this.player1.y - this.player2.y, 2)
         );
         
-        // 状況に応じた戦略選択
-        if (this.player2.hp < 30) {
+        // より積極的な戦略選択
+        if (this.player2.hp < 20) {
             return 'evading';
-        } else if (this.player1.hp < 40) {
+        } else if (this.player1.hp < 50) {
             return 'attacking';
+        } else if (distance < 200) {
+            // 近距離では積極的に攻撃
+            return Math.random() > 0.3 ? 'attacking' : 'hunting';
         } else if (playerPattern.isAggressive && distance > 200) {
             return 'flanking';
         } else if (playerPattern.isDefensive && distance < 150) {
             return 'ambush';
-        } else if (hpRatio < 0.7) {
+        } else if (hpRatio < 0.6) {
             return 'repositioning';
         } else {
+            // デフォルトでは狩猟戦略
             return 'hunting';
         }
     }
