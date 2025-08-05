@@ -8,7 +8,7 @@ class AIOpponent {
         this.weapons = weapons;
         
         // AIの状態管理
-        this.state = 'hunting'; // hunting, evading, attacking, repositioning
+        this.state = 'hunting'; // hunting, evading, attacking, repositioning, flanking, ambush
         this.lastStateChange = Date.now();
         this.targetX = player1.x;
         this.targetY = player1.y;
@@ -17,6 +17,33 @@ class AIOpponent {
         this.evasionTimer = 0;
         this.verticalMovementTimer = 0;
         this.verticalDirection = 1; // 1: 上向き, -1: 下向き
+        
+        // 高度なAI機能
+        this.difficulty = 'hard'; // easy, medium, hard, expert
+        this.predictionAccuracy = 0.8; // 予測精度
+        this.learningRate = 0.1; // 学習率
+        this.patternMemory = []; // パターン記憶
+        this.playerPatterns = []; // プレイヤーの行動パターン
+        this.successfulMoves = []; // 成功した移動
+        this.failedMoves = []; // 失敗した移動
+        this.lastPlayerPosition = { x: player1.x, y: player1.y };
+        this.playerVelocity = { x: 0, y: 0 };
+        this.predictedPosition = { x: player1.x, y: player1.y };
+        this.ambushTimer = 0;
+        this.flankTimer = 0;
+        this.psychologicalTimer = 0;
+        this.weaponPreference = this.initializeWeaponPreference();
+        this.tacticalMemory = new Map(); // 戦術的記憶
+    }
+    
+    // 武器選択の初期化
+    initializeWeaponPreference() {
+        return {
+            1: { success: 0, attempts: 0, lastUsed: 0 }, // 通常弾
+            2: { success: 0, attempts: 0, lastUsed: 0 }, // 連射弾
+            3: { success: 0, attempts: 0, lastUsed: 0 }, // 散弾
+            4: { success: 0, attempts: 0, lastUsed: 0 }  // レーザー
+        };
     }
     
     // 戦略的移動
@@ -84,14 +111,108 @@ class AIOpponent {
         this.performVerticalMovement();
     }
     
-    // 縦移動の実装
+    // プレイヤー予測システム
+    predictPlayerMovement() {
+        const currentTime = Date.now();
+        const timeDelta = (currentTime - this.lastStateChange) / 1000;
+        
+        // プレイヤーの速度を計算
+        this.playerVelocity.x = this.player1.x - this.lastPlayerPosition.x;
+        this.playerVelocity.y = this.player1.y - this.lastPlayerPosition.y;
+        
+        // 予測位置を計算
+        this.predictedPosition.x = this.player1.x + (this.playerVelocity.x * this.predictionAccuracy);
+        this.predictedPosition.y = this.player1.y + (this.playerVelocity.y * this.predictionAccuracy);
+        
+        // パターン記憶に追加
+        this.patternMemory.push({
+            time: currentTime,
+            position: { x: this.player1.x, y: this.player1.y },
+            velocity: { ...this.playerVelocity },
+            state: this.state
+        });
+        
+        // 古いパターンを削除（最新の50個を保持）
+        if (this.patternMemory.length > 50) {
+            this.patternMemory.shift();
+        }
+        
+        this.lastPlayerPosition = { x: this.player1.x, y: this.player1.y };
+    }
+    
+    // パターン学習システム
+    learnFromPatterns() {
+        if (this.patternMemory.length < 10) return;
+        
+        // 最近のパターンを分析
+        const recentPatterns = this.patternMemory.slice(-10);
+        const movementPattern = this.analyzeMovementPattern(recentPatterns);
+        
+        // 成功した戦術を記憶
+        if (this.state === 'attacking' && this.lastAttackTime > 0) {
+            const timeSinceLastAttack = Date.now() - this.lastAttackTime;
+            if (timeSinceLastAttack < 1000) { // 1秒以内に攻撃
+                this.successfulMoves.push({
+                    pattern: movementPattern,
+                    tactic: this.state,
+                    timestamp: Date.now()
+                });
+            }
+        }
+        
+        // 失敗した戦術を記憶
+        if (this.player2.hp < this.player1.hp) {
+            this.failedMoves.push({
+                pattern: movementPattern,
+                tactic: this.state,
+                timestamp: Date.now()
+            });
+        }
+    }
+    
+    // 移動パターン分析
+    analyzeMovementPattern(patterns) {
+        let horizontalMovement = 0;
+        let verticalMovement = 0;
+        let averageSpeed = 0;
+        
+        patterns.forEach((pattern, index) => {
+            if (index > 0) {
+                const prevPattern = patterns[index - 1];
+                horizontalMovement += Math.abs(pattern.position.x - prevPattern.position.x);
+                verticalMovement += Math.abs(pattern.position.y - prevPattern.position.y);
+                averageSpeed += Math.sqrt(
+                    Math.pow(pattern.position.x - prevPattern.position.x, 2) +
+                    Math.pow(pattern.position.y - prevPattern.position.y, 2)
+                );
+            }
+        });
+        
+        return {
+            horizontalTendency: horizontalMovement / patterns.length,
+            verticalTendency: verticalMovement / patterns.length,
+            averageSpeed: averageSpeed / patterns.length,
+            isAggressive: averageSpeed > 5,
+            isDefensive: averageSpeed < 2
+        };
+    }
+    
+    // 縦移動の実装（改善版）
     performVerticalMovement() {
         const now = Date.now();
         const minY = 0;
         const maxY = this.canvas.height / 2 - this.player2.height;
         
-        // 縦移動タイマーの更新
-        if (now - this.verticalMovementTimer > 2000) { // 2秒ごとに方向変更
+        // 予測に基づく縦移動
+        const predictedPlayerY = this.predictedPosition.y;
+        const distanceToPlayer = Math.abs(this.player2.y - predictedPlayerY);
+        
+        // 戦略的縦移動
+        if (distanceToPlayer > 50) {
+            // プレイヤーに近づく
+            this.verticalDirection = this.player2.y > predictedPlayerY ? -1 : 1;
+        } else if (now - this.verticalMovementTimer > 3000) {
+            // 3秒ごとにランダム方向変更
             this.verticalMovementTimer = now;
             this.verticalDirection = Math.random() > 0.5 ? 1 : -1;
         }
@@ -126,7 +247,7 @@ class AIOpponent {
         }
     }
     
-    // 攻撃判定
+    // 高度な攻撃システム
     attack() {
         const now = Date.now();
         if (now - this.lastAttackTime < this.attackCooldown) return;
@@ -136,39 +257,107 @@ class AIOpponent {
         const dy = this.player1.y - this.player2.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
+        // 予測位置での攻撃
+        const predictedDx = this.predictedPosition.x - this.player2.x;
+        const predictedDy = this.predictedPosition.y - this.player2.y;
+        const predictedDistance = Math.sqrt(predictedDx * predictedDx + predictedDy * predictedDy);
+        
         // 攻撃可能距離内にいる場合
-        if (distance < 300 && Math.abs(dx) < 100) {
-            // 武器選択（状況に応じて）
-            let weaponChoice = 1; // デフォルトは通常弾
-            
-            if (distance < 150) {
-                weaponChoice = 3; // 近距離では散弾
-            } else if (distance < 250) {
-                weaponChoice = 2; // 中距離では連射弾
-            }
-            
+        if (predictedDistance < 300 && Math.abs(predictedDx) < 100) {
+            // 高度な武器選択
+            const weaponChoice = this.selectOptimalWeapon(predictedDistance);
             const weapon = this.weapons[weaponChoice];
+            
             if (this.player2.ammo >= weapon.ammoCost) {
-                // 攻撃実行
-                for (let i = 0; i < weapon.bulletCount; i++) {
-                    const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
-                    const bullet = {
-                        x: this.player2.x + this.player2.width / 2,
-                        y: this.player2.y + this.player2.height,
-                        width: 4,
-                        height: 8,
-                        speedX: spread,
-                        speedY: weapon.speed,
-                        color: weapon.color,
-                        playerId: 2
-                    };
-                    this.player2.bullets.push(bullet);
-                }
-                this.player2.ammo -= weapon.ammoCost;
+                // 予測位置に向けて攻撃
+                this.executePredictedAttack(weapon, predictedDx, predictedDy);
                 this.lastAttackTime = now;
-                this.attackCooldown = 300 + Math.random() * 400; // 動的クールダウン
+                this.updateWeaponPreference(weaponChoice, true);
+                this.attackCooldown = this.calculateDynamicCooldown();
             }
         }
+    }
+    
+    // 最適武器選択
+    selectOptimalWeapon(distance) {
+        // 武器の成功率を考慮
+        const weaponScores = {};
+        Object.keys(this.weaponPreference).forEach(weaponId => {
+            const weapon = this.weaponPreference[weaponId];
+            const successRate = weapon.attempts > 0 ? weapon.success / weapon.attempts : 0.5;
+            const timeSinceLastUse = Date.now() - weapon.lastUsed;
+            
+            // 距離に基づく基本スコア
+            let baseScore = 0;
+            if (distance < 150) {
+                baseScore = weaponId == 3 ? 10 : 5; // 散弾が近距離で有利
+            } else if (distance < 250) {
+                baseScore = weaponId == 2 ? 10 : 5; // 連射弾が中距離で有利
+            } else {
+                baseScore = weaponId == 1 ? 10 : 5; // 通常弾が遠距離で有利
+            }
+            
+            weaponScores[weaponId] = baseScore * successRate * (1 + timeSinceLastUse / 10000);
+        });
+        
+        // 最高スコアの武器を選択
+        let bestWeapon = 1;
+        let bestScore = 0;
+        Object.keys(weaponScores).forEach(weaponId => {
+            if (weaponScores[weaponId] > bestScore) {
+                bestScore = weaponScores[weaponId];
+                bestWeapon = parseInt(weaponId);
+            }
+        });
+        
+        return bestWeapon;
+    }
+    
+    // 予測攻撃実行
+    executePredictedAttack(weapon, predictedDx, predictedDy) {
+        // 予測位置に向けて攻撃
+        const angle = Math.atan2(predictedDy, predictedDx);
+        
+        for (let i = 0; i < weapon.bulletCount; i++) {
+            const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
+            const bullet = {
+                x: this.player2.x + this.player2.width / 2,
+                y: this.player2.y + this.player2.height,
+                width: 4,
+                height: 8,
+                speedX: Math.cos(angle) * weapon.speed + spread,
+                speedY: Math.sin(angle) * weapon.speed,
+                color: weapon.color,
+                playerId: 2
+            };
+            this.player2.bullets.push(bullet);
+        }
+        
+        this.player2.ammo -= weapon.ammoCost;
+    }
+    
+    // 武器選択の更新
+    updateWeaponPreference(weaponId, wasSuccessful) {
+        const weapon = this.weaponPreference[weaponId];
+        weapon.attempts++;
+        if (wasSuccessful) {
+            weapon.success++;
+        }
+        weapon.lastUsed = Date.now();
+    }
+    
+    // 動的クールダウン計算
+    calculateDynamicCooldown() {
+        const baseCooldown = 300;
+        const difficultyMultiplier = this.difficulty === 'expert' ? 0.7 : 
+                                   this.difficulty === 'hard' ? 0.8 : 
+                                   this.difficulty === 'medium' ? 1.0 : 1.2;
+        
+        // 成功した戦術が多いほど攻撃頻度を上げる
+        const successRate = this.successfulMoves.length / Math.max(1, this.successfulMoves.length + this.failedMoves.length);
+        const successMultiplier = 0.5 + (successRate * 0.5);
+        
+        return baseCooldown * difficultyMultiplier * successMultiplier + Math.random() * 200;
     }
     
     // 回避行動
@@ -265,22 +454,18 @@ class AIOpponent {
         }
     }
     
-    // 戦略的思考
+    // 高度な戦略的思考システム
     think() {
         const now = Date.now();
         
-        // 状態変更の判定
-        if (now - this.lastStateChange > 3000) { // 3秒ごとに状態を再評価
+        // プレイヤー予測と学習
+        this.predictPlayerMovement();
+        this.learnFromPatterns();
+        
+        // 状態変更の判定（より頻繁に）
+        if (now - this.lastStateChange > 2000) { // 2秒ごとに状態を再評価
             this.lastStateChange = now;
-            
-            // HPに基づく戦略変更
-            if (this.player2.hp < 30) {
-                this.state = 'evading';
-            } else if (this.player1.hp < 50) {
-                this.state = 'attacking';
-            } else {
-                this.state = 'hunting';
-            }
+            this.state = this.selectOptimalStrategy();
         }
         
         // 回避タイマーが有効な場合
@@ -288,39 +473,150 @@ class AIOpponent {
             this.state = 'evading';
         }
         
+        // 心理戦術の実行
+        this.executePsychologicalTactics();
+        
         // 状態に基づく行動
         switch (this.state) {
             case 'hunting':
-                this.targetX = this.player1.x;
-                this.targetY = Math.max(50, this.player1.y - 100); // 少し上に位置取る
-                this.move();
-                this.attack();
+                this.executeHuntingStrategy();
                 break;
                 
             case 'evading':
-                this.evade();
-                this.targetX = this.canvas.width / 2; // 中央に移動
-                this.targetY = 100;
-                this.move();
+                this.executeEvasionStrategy();
                 break;
                 
             case 'attacking':
-                this.targetX = this.player1.x;
-                this.targetY = Math.max(50, this.player1.y - 80);
-                this.move();
-                this.attack();
-                this.attackCooldown = 200; // 攻撃頻度を上げる
+                this.executeAttackingStrategy();
                 break;
                 
             case 'repositioning':
-                this.targetX = this.canvas.width / 2;
-                this.targetY = 150;
-                this.move();
+                this.executeRepositioningStrategy();
+                break;
+                
+            case 'flanking':
+                this.executeFlankingStrategy();
+                break;
+                
+            case 'ambush':
+                this.executeAmbushStrategy();
                 break;
         }
         
         // 障害物回避の優先チェック（全状態で実行）
         this.checkAndAvoidObstacles();
+    }
+    
+    // 最適戦略選択
+    selectOptimalStrategy() {
+        const playerPattern = this.analyzeMovementPattern(this.patternMemory.slice(-5));
+        const hpRatio = this.player2.hp / this.player1.hp;
+        const distance = Math.sqrt(
+            Math.pow(this.player1.x - this.player2.x, 2) +
+            Math.pow(this.player1.y - this.player2.y, 2)
+        );
+        
+        // 状況に応じた戦略選択
+        if (this.player2.hp < 30) {
+            return 'evading';
+        } else if (this.player1.hp < 40) {
+            return 'attacking';
+        } else if (playerPattern.isAggressive && distance > 200) {
+            return 'flanking';
+        } else if (playerPattern.isDefensive && distance < 150) {
+            return 'ambush';
+        } else if (hpRatio < 0.7) {
+            return 'repositioning';
+        } else {
+            return 'hunting';
+        }
+    }
+    
+    // 狩猟戦略
+    executeHuntingStrategy() {
+        this.targetX = this.predictedPosition.x;
+        this.targetY = Math.max(50, this.predictedPosition.y - 100);
+        this.move();
+        this.attack();
+    }
+    
+    // 回避戦略
+    executeEvasionStrategy() {
+        this.evade();
+        this.targetX = this.canvas.width / 2;
+        this.targetY = 100;
+        this.move();
+    }
+    
+    // 攻撃戦略
+    executeAttackingStrategy() {
+        this.targetX = this.predictedPosition.x;
+        this.targetY = Math.max(50, this.predictedPosition.y - 80);
+        this.move();
+        this.attack();
+        this.attackCooldown = 200;
+    }
+    
+    // 再配置戦略
+    executeRepositioningStrategy() {
+        this.targetX = this.canvas.width / 2;
+        this.targetY = 150;
+        this.move();
+    }
+    
+    // 側面攻撃戦略
+    executeFlankingStrategy() {
+        const flankDirection = this.player1.x > this.canvas.width / 2 ? -1 : 1;
+        this.targetX = this.player1.x + (flankDirection * 150);
+        this.targetY = Math.max(50, this.player1.y - 120);
+        this.move();
+        this.attack();
+    }
+    
+    // 待ち伏せ戦略
+    executeAmbushStrategy() {
+        // プレイヤーの進行方向を予測して待ち伏せ
+        const ambushX = this.predictedPosition.x;
+        const ambushY = Math.max(50, this.predictedPosition.y - 150);
+        
+        this.targetX = ambushX;
+        this.targetY = ambushY;
+        this.move();
+        
+        // 待ち伏せ位置に到達したら攻撃
+        const distanceToAmbush = Math.sqrt(
+            Math.pow(this.player2.x - ambushX, 2) +
+            Math.pow(this.player2.y - ambushY, 2)
+        );
+        
+        if (distanceToAmbush < 30) {
+            this.attack();
+        }
+    }
+    
+    // 心理戦術の実行
+    executePsychologicalTactics() {
+        const now = Date.now();
+        
+        // ランダムな行動で予測を困難にする
+        if (now - this.psychologicalTimer > 5000) {
+            this.psychologicalTimer = now;
+            
+            // 10%の確率でランダムな行動を実行
+            if (Math.random() < 0.1) {
+                this.targetX = Math.random() * this.canvas.width;
+                this.targetY = Math.random() * (this.canvas.height / 2);
+            }
+        }
+        
+        // 成功した戦術を繰り返す
+        if (this.successfulMoves.length > 0) {
+            const lastSuccessfulMove = this.successfulMoves[this.successfulMoves.length - 1];
+            if (now - lastSuccessfulMove.timestamp < 10000) { // 10秒以内の成功戦術
+                // 成功した戦術を優先的に実行
+                this.state = lastSuccessfulMove.tactic;
+            }
+        }
     }
     
     // 衝突判定
