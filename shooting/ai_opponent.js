@@ -34,6 +34,31 @@ class AIOpponent {
         this.psychologicalTimer = 0;
         this.weaponPreference = this.initializeWeaponPreference();
         this.tacticalMemory = new Map(); // 戦術的記憶
+        
+        // 精度向上のための追加機能
+        this.accuracyStats = {
+            hitRate: 0,
+            totalShots: 0,
+            successfulPredictions: 0,
+            totalPredictions: 0,
+            averageReactionTime: 0,
+            reactionTimes: []
+        };
+        // 高度な予測システム
+        this.advancedPrediction = {
+            velocityHistory: [],
+            accelerationHistory: [],
+            patternWeights: [0.3, 0.25, 0.2, 0.15, 0.1], // 最近のパターンほど重みが高い
+            predictionHorizon: 5, // 5フレーム先まで予測
+            confidenceThreshold: 0.7
+        };
+        // リアルタイム学習システム
+        this.realTimeLearning = {
+            adaptationRate: 0.2,
+            patternRecognition: new Map(),
+            counterStrategy: new Map(),
+            successThreshold: 0.6
+        };
     }
     
     // 武器選択の初期化
@@ -181,60 +206,82 @@ class AIOpponent {
     // プレイヤー予測システム
     predictPlayerMovement() {
         const currentTime = Date.now();
-        const timeDelta = (currentTime - this.lastStateChange) / 1000;
-        
-        // プレイヤーの速度を計算
-        this.playerVelocity.x = this.player1.x - this.lastPlayerPosition.x;
-        this.playerVelocity.y = this.player1.y - this.lastPlayerPosition.y;
-        
-        // 予測位置を計算
-        this.predictedPosition.x = this.player1.x + (this.playerVelocity.x * this.predictionAccuracy);
-        this.predictedPosition.y = this.player1.y + (this.playerVelocity.y * this.predictionAccuracy);
-        
-        // パターン記憶に追加
+        const currentVelocity = {
+            x: this.player1.x - this.lastPlayerPosition.x,
+            y: this.player1.y - this.lastPlayerPosition.y
+        };
+        this.advancedPrediction.velocityHistory.push({
+            time: currentTime,
+            velocity: currentVelocity
+        });
+        if (this.advancedPrediction.velocityHistory.length > 20) {
+            this.advancedPrediction.velocityHistory.shift();
+        }
+        if (this.advancedPrediction.velocityHistory.length >= 2) {
+            const prevVelocity = this.advancedPrediction.velocityHistory[this.advancedPrediction.velocityHistory.length - 2].velocity;
+            const acceleration = {
+                x: currentVelocity.x - prevVelocity.x,
+                y: currentVelocity.y - prevVelocity.y
+            };
+            this.advancedPrediction.accelerationHistory.push(acceleration);
+            if (this.advancedPrediction.accelerationHistory.length > 10) {
+                this.advancedPrediction.accelerationHistory.shift();
+            }
+        }
+        const weightedVelocity = this.calculateWeightedVelocity();
+        const predictionTime = 0.5;
+        const averageAcceleration = this.calculateAverageAcceleration();
+        this.predictedPosition.x = this.player1.x + (weightedVelocity.x * predictionTime) + (0.5 * averageAcceleration.x * predictionTime * predictionTime);
+        this.predictedPosition.y = this.player1.y + (weightedVelocity.y * predictionTime) + (0.5 * averageAcceleration.y * predictionTime * predictionTime);
         this.patternMemory.push({
             time: currentTime,
             position: { x: this.player1.x, y: this.player1.y },
-            velocity: { ...this.playerVelocity },
+            velocity: currentVelocity,
+            predictedPosition: { ...this.predictedPosition },
             state: this.state
         });
-        
-        // 古いパターンを削除（最新の50個を保持）
-        if (this.patternMemory.length > 50) {
+        if (this.patternMemory.length > 100) {
             this.patternMemory.shift();
         }
-        
         this.lastPlayerPosition = { x: this.player1.x, y: this.player1.y };
+        this.updatePredictionAccuracy();
     }
     
     // パターン学習システム
     learnFromPatterns() {
         if (this.patternMemory.length < 10) return;
-        
-        // 最近のパターンを分析
         const recentPatterns = this.patternMemory.slice(-10);
         const movementPattern = this.analyzeMovementPattern(recentPatterns);
-        
-        // 成功した戦術を記憶
+        const patternKey = this.generatePatternKey(movementPattern);
+        if (!this.realTimeLearning.patternRecognition.has(patternKey)) {
+            this.realTimeLearning.patternRecognition.set(patternKey, {
+                count: 0,
+                successRate: 0,
+                bestCounter: null
+            });
+        }
+        const patternData = this.realTimeLearning.patternRecognition.get(patternKey);
+        patternData.count++;
         if (this.state === 'attacking' && this.lastAttackTime > 0) {
             const timeSinceLastAttack = Date.now() - this.lastAttackTime;
-            if (timeSinceLastAttack < 1000) { // 1秒以内に攻撃
+            if (timeSinceLastAttack < 1000) {
                 this.successfulMoves.push({
                     pattern: movementPattern,
                     tactic: this.state,
                     timestamp: Date.now()
                 });
+                patternData.successRate = (patternData.successRate * (patternData.count - 1) + 1) / patternData.count;
             }
         }
-        
-        // 失敗した戦術を記憶
         if (this.player2.hp < this.player1.hp) {
             this.failedMoves.push({
                 pattern: movementPattern,
                 tactic: this.state,
                 timestamp: Date.now()
             });
+            patternData.successRate = (patternData.successRate * (patternData.count - 1) + 0) / patternData.count;
         }
+        this.learnOptimalCounterStrategy(patternKey, movementPattern);
     }
     
     // 移動パターン分析
@@ -314,39 +361,39 @@ class AIOpponent {
         }
     }
     
-    // 高度な攻撃システム（改善版）
+    // 高度な攻撃システム（精度向上版）
     attack() {
         const now = Date.now();
         if (now - this.lastAttackTime < this.attackCooldown) return;
-        
         // プレイヤーとの距離を計算
         const dx = this.player1.x - this.player2.x;
         const dy = this.player1.y - this.player2.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
         // 予測位置での攻撃
         const predictedDx = this.predictedPosition.x - this.player2.x;
         const predictedDy = this.predictedPosition.y - this.player2.y;
         const predictedDistance = Math.sqrt(predictedDx * predictedDx + predictedDy * predictedDy);
-        
-        // 攻撃条件を緩和（より積極的に攻撃）
-        const canAttack = (predictedDistance < 400 && Math.abs(predictedDx) < 150) || 
+        // 精度に基づく攻撃条件の調整
+        const confidence = this.accuracyStats.predictionAccuracy || 0.5;
+        const baseAttackRange = 400;
+        const adjustedAttackRange = baseAttackRange * (0.8 + confidence * 0.4); // 精度に応じて攻撃範囲を調整
+        // 攻撃条件を精度に応じて調整
+        const canAttack = (predictedDistance < adjustedAttackRange && Math.abs(predictedDx) < 150 * confidence) || 
                          (distance < 350 && Math.abs(dx) < 120);
-        
         if (canAttack) {
-            // 高度な武器選択
-            const weaponChoice = this.selectOptimalWeapon(Math.min(predictedDistance, distance));
+            // 高度な武器選択（精度を考慮）
+            const weaponChoice = this.selectOptimalWeaponWithAccuracy(Math.min(predictedDistance, distance), confidence);
             const weapon = this.weapons[weaponChoice];
-            
             if (this.player2.ammo >= weapon.ammoCost) {
-                // 予測位置に向けて攻撃
-                this.executePredictedAttack(weapon, predictedDx, predictedDy);
+                // 精度に基づく予測攻撃
+                this.executePrecisionAttack(weapon, predictedDx, predictedDy, confidence);
                 this.lastAttackTime = now;
                 this.updateWeaponPreference(weaponChoice, true);
                 this.attackCooldown = this.calculateDynamicCooldown();
-                
                 // 攻撃成功の記録
                 this.recordSuccessfulAttack();
+                // 精度統計を更新
+                this.accuracyStats.totalShots++;
             } else {
                 // 弾薬がない場合は通常弾を使用
                 this.executeBasicAttack();
@@ -385,15 +432,13 @@ class AIOpponent {
         });
     }
     
-    // 最適武器選択
-    selectOptimalWeapon(distance) {
-        // 武器の成功率を考慮
+    // 精度を考慮した武器選択
+    selectOptimalWeaponWithAccuracy(distance, confidence) {
         const weaponScores = {};
         Object.keys(this.weaponPreference).forEach(weaponId => {
             const weapon = this.weaponPreference[weaponId];
             const successRate = weapon.attempts > 0 ? weapon.success / weapon.attempts : 0.5;
             const timeSinceLastUse = Date.now() - weapon.lastUsed;
-            
             // 距離に基づく基本スコア
             let baseScore = 0;
             if (distance < 150) {
@@ -403,10 +448,10 @@ class AIOpponent {
             } else {
                 baseScore = weaponId == 1 ? 10 : 5; // 通常弾が遠距離で有利
             }
-            
-            weaponScores[weaponId] = baseScore * successRate * (1 + timeSinceLastUse / 10000);
+            // 精度に基づく調整
+            const accuracyMultiplier = 0.5 + confidence * 0.5;
+            weaponScores[weaponId] = baseScore * successRate * accuracyMultiplier * (1 + timeSinceLastUse / 10000);
         });
-        
         // 最高スコアの武器を選択
         let bestWeapon = 1;
         let bestScore = 0;
@@ -416,17 +461,17 @@ class AIOpponent {
                 bestWeapon = parseInt(weaponId);
             }
         });
-        
         return bestWeapon;
     }
-    
-    // 予測攻撃実行
-    executePredictedAttack(weapon, predictedDx, predictedDy) {
+    // 精度に基づく予測攻撃
+    executePrecisionAttack(weapon, predictedDx, predictedDy, confidence) {
+        // 精度に基づく予測調整
+        const adjustedDx = predictedDx * confidence;
+        const adjustedDy = predictedDy * confidence;
         // 予測位置に向けて攻撃
-        const angle = Math.atan2(predictedDy, predictedDx);
-        
+        const angle = Math.atan2(adjustedDy, adjustedDx);
         for (let i = 0; i < weapon.bulletCount; i++) {
-            const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
+            const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread * (1 - confidence * 0.5); // 精度が高いほど散弾を狭める
             const bullet = {
                 x: this.player2.x + this.player2.width / 2,
                 y: this.player2.y + this.player2.height,
@@ -439,7 +484,6 @@ class AIOpponent {
             };
             this.player2.bullets.push(bullet);
         }
-        
         this.player2.ammo -= weapon.ammoCost;
     }
     
@@ -621,7 +665,7 @@ class AIOpponent {
         this.checkAndAvoidObstacles();
     }
     
-    // 最適戦略選択（改善版）
+    // 最適戦略選択（精度向上版）
     selectOptimalStrategy() {
         const playerPattern = this.analyzeMovementPattern(this.patternMemory.slice(-5));
         const hpRatio = this.player2.hp / this.player1.hp;
@@ -629,15 +673,24 @@ class AIOpponent {
             Math.pow(this.player1.x - this.player2.x, 2) +
             Math.pow(this.player1.y - this.player2.y, 2)
         );
-        
-        // より積極的な戦略選択
+        // パターン認識に基づく戦略選択
+        const patternKey = this.generatePatternKey(playerPattern);
+        const patternData = this.realTimeLearning.patternRecognition.get(patternKey);
+        const bestCounter = patternData?.bestCounter;
+        // 精度に基づく戦略調整
+        const confidence = this.accuracyStats.predictionAccuracy || 0.5;
+        // より積極的な戦略選択（精度が高いほど積極的）
         if (this.player2.hp < 20) {
             return 'evading';
         } else if (this.player1.hp < 50) {
             return 'attacking';
         } else if (distance < 200) {
-            // 近距離では積極的に攻撃
-            return Math.random() > 0.3 ? 'attacking' : 'hunting';
+            // 近距離では積極的に攻撃（精度に応じて調整）
+            const attackProbability = 0.3 + confidence * 0.4;
+            return Math.random() > attackProbability ? 'attacking' : 'hunting';
+        } else if (bestCounter && confidence > 0.6) {
+            // 学習した最適な対抗戦略を使用
+            return bestCounter;
         } else if (playerPattern.isAggressive && distance > 200) {
             return 'flanking';
         } else if (playerPattern.isDefensive && distance < 150) {
@@ -749,6 +802,88 @@ class AIOpponent {
     execute() {
         this.think();
     }
+
+    // --- 高度な予測システム ---
+    calculateWeightedVelocity() {
+        if (this.advancedPrediction.velocityHistory.length === 0) {
+            return { x: 0, y: 0 };
+        }
+        let weightedSumX = 0;
+        let weightedSumY = 0;
+        let totalWeight = 0;
+        const weights = this.advancedPrediction.patternWeights;
+        const recentVelocities = this.advancedPrediction.velocityHistory.slice(-weights.length);
+        recentVelocities.forEach((entry, index) => {
+            const weight = weights[index] || 0.1;
+            weightedSumX += entry.velocity.x * weight;
+            weightedSumY += entry.velocity.y * weight;
+            totalWeight += weight;
+        });
+        return {
+            x: weightedSumX / totalWeight,
+            y: weightedSumY / totalWeight
+        };
+    }
+    calculateAverageAcceleration() {
+        if (this.advancedPrediction.accelerationHistory.length === 0) {
+            return { x: 0, y: 0 };
+        }
+        const sumX = this.advancedPrediction.accelerationHistory.reduce((sum, acc) => sum + acc.x, 0);
+        const sumY = this.advancedPrediction.accelerationHistory.reduce((sum, acc) => sum + acc.y, 0);
+        const count = this.advancedPrediction.accelerationHistory.length;
+        return {
+            x: sumX / count,
+            y: sumY / count
+        };
+    }
+    updatePredictionAccuracy() {
+        if (this.patternMemory.length < 2) return;
+        const lastPrediction = this.patternMemory[this.patternMemory.length - 2];
+        const actualPosition = this.patternMemory[this.patternMemory.length - 1].position;
+        if (lastPrediction.predictedPosition) {
+            const predictionError = Math.sqrt(
+                Math.pow(actualPosition.x - lastPrediction.predictedPosition.x, 2) +
+                Math.pow(actualPosition.y - lastPrediction.predictedPosition.y, 2)
+            );
+            this.accuracyStats.totalPredictions++;
+            if (predictionError < 30) {
+                this.accuracyStats.successfulPredictions++;
+            }
+            this.accuracyStats.predictionAccuracy = 
+                this.accuracyStats.successfulPredictions / this.accuracyStats.totalPredictions;
+        }
+    }
+    // --- リアルタイム学習システム ---
+    generatePatternKey(pattern) {
+        return `${pattern.isAggressive ? 'A' : 'D'}_${pattern.horizontalTendency > 3 ? 'H' : 'L'}_${pattern.verticalTendency > 2 ? 'V' : 'S'}`;
+    }
+    learnOptimalCounterStrategy(patternKey, pattern) {
+        const currentTactic = this.state;
+        const successRate = this.realTimeLearning.patternRecognition.get(patternKey)?.successRate || 0;
+        if (!this.realTimeLearning.counterStrategy.has(patternKey)) {
+            this.realTimeLearning.counterStrategy.set(patternKey, new Map());
+        }
+        const counterMap = this.realTimeLearning.counterStrategy.get(patternKey);
+        if (!counterMap.has(currentTactic)) {
+            counterMap.set(currentTactic, { success: 0, attempts: 0 });
+        }
+        const tacticData = counterMap.get(currentTactic);
+        tacticData.attempts++;
+        if (this.player2.hp >= this.player1.hp) {
+            tacticData.success++;
+        }
+        let bestTactic = currentTactic;
+        let bestSuccessRate = 0;
+        counterMap.forEach((data, tactic) => {
+            const successRate = data.attempts > 0 ? data.success / data.attempts : 0;
+            if (successRate > bestSuccessRate) {
+                bestSuccessRate = successRate;
+                bestTactic = tactic;
+            }
+        });
+        this.realTimeLearning.patternRecognition.get(patternKey).bestCounter = bestTactic;
+    }
+    // --- 攻撃・戦略選択の精度向上版は既存attack, selectOptimalStrategyの内容を上書きしてください ---
 }
 
 // グローバルにエクスポート
