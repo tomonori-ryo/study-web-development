@@ -1808,14 +1808,109 @@
                     const minY = 0;
                     const maxY = canvas.height / 2 - player2.height;
                     
-                    // 左右移動
+                    // 障害物回避を考慮した移動
+                    const newX = player2.x + (dx > 0 ? player2.speed : -player2.speed);
+                    const newY = player2.y + (dy > 0 ? player2.speed : -player2.speed);
+                    
+                    // 左右移動（障害物チェック付き）
                     if (Math.abs(dx) > 10) {
-                        player2.x += dx > 0 ? player2.speed : -player2.speed;
+                        const testPlayer = {
+                            x: newX,
+                            y: player2.y,
+                            width: player2.width,
+                            height: player2.height
+                        };
+                        
+                        // 障害物との衝突をチェック
+                        let canMoveX = true;
+                        obstacles.forEach(obstacle => {
+                            if (checkCollision(testPlayer, obstacle)) {
+                                canMoveX = false;
+                            }
+                        });
+                        
+                        if (canMoveX && newX >= 0 && newX <= canvas.width - player2.width) {
+                            player2.x = newX;
+                        } else {
+                            // 障害物がある場合、上下移動で回避を試みる
+                            this.avoidObstacle();
+                        }
                     }
                     
-                    // 上下移動（制限内で）
+                    // 上下移動（制限内で、障害物チェック付き）
                     if (Math.abs(dy) > 10) {
-                        const newY = player2.y + (dy > 0 ? player2.speed : -player2.speed);
+                        const testPlayer = {
+                            x: player2.x,
+                            y: newY,
+                            width: player2.width,
+                            height: player2.height
+                        };
+                        
+                        // 障害物との衝突をチェック
+                        let canMoveY = true;
+                        obstacles.forEach(obstacle => {
+                            if (checkCollision(testPlayer, obstacle)) {
+                                canMoveY = false;
+                            }
+                        });
+                        
+                        if (canMoveY && newY >= minY && newY <= maxY) {
+                            player2.y = newY;
+                        }
+                    }
+                },
+                
+                // 障害物回避
+                avoidObstacle() {
+                    // 現在位置から障害物を検出
+                    const nearbyObstacles = obstacles.filter(obstacle => {
+                        const dx = obstacle.x - player2.x;
+                        const dy = obstacle.y - player2.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        return distance < 100; // 100px以内の障害物
+                    });
+                    
+                    if (nearbyObstacles.length > 0) {
+                        // 最も近い障害物を取得
+                        const closestObstacle = nearbyObstacles.reduce((closest, obstacle) => {
+                            const dx = obstacle.x - player2.x;
+                            const dy = obstacle.y - player2.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            const closestDx = closest.x - player2.x;
+                            const closestDy = closest.y - player2.y;
+                            const closestDistance = Math.sqrt(closestDx * closestDx + closestDy * closestDy);
+                            
+                            return distance < closestDistance ? obstacle : closest;
+                        });
+                        
+                        // 障害物から離れる方向を計算
+                        const dx = player2.x - closestObstacle.x;
+                        const dy = player2.y - closestObstacle.y;
+                        
+                        // 回避方向を決定（左右優先）
+                        let avoidX = 0;
+                        let avoidY = 0;
+                        
+                        if (Math.abs(dx) < Math.abs(dy)) {
+                            // 左右回避
+                            avoidX = dx > 0 ? player2.speed * 2 : -player2.speed * 2;
+                        } else {
+                            // 上下回避
+                            avoidY = dy > 0 ? player2.speed * 2 : -player2.speed * 2;
+                        }
+                        
+                        // 回避移動を実行
+                        const newX = player2.x + avoidX;
+                        const newY = player2.y + avoidY;
+                        
+                        // 境界チェック
+                        if (newX >= 0 && newX <= canvas.width - player2.width) {
+                            player2.x = newX;
+                        }
+                        
+                        const minY = 0;
+                        const maxY = canvas.height / 2 - player2.height;
                         if (newY >= minY && newY <= maxY) {
                             player2.y = newY;
                         }
@@ -1888,6 +1983,22 @@
                     }
                 },
                 
+                // 障害物回避の優先チェック
+                checkAndAvoidObstacles() {
+                    // 現在位置で障害物との衝突をチェック
+                    const isColliding = obstacles.some(obstacle => 
+                        checkCollision(player2, obstacle)
+                    );
+                    
+                    if (isColliding) {
+                        // 衝突している場合は即座に回避
+                        this.avoidObstacle();
+                        // 回避状態に切り替え
+                        this.state = 'evading';
+                        this.evasionTimer = Date.now() + 2000; // 2秒間回避モード
+                    }
+                },
+                
                 // 戦略的思考
                 think() {
                     const now = Date.now();
@@ -1941,6 +2052,9 @@
                             this.move();
                             break;
                     }
+                    
+                    // 障害物回避の優先チェック（全状態で実行）
+                    this.checkAndAvoidObstacles();
                 }
             };
             
