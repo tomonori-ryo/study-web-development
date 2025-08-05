@@ -1049,28 +1049,21 @@
         function generateObstacles() {
             obstacles = [];
             
-            // 固定の障害物配置（15個に増加）
+            // 固定の障害物配置（よりまばらに配置）
             const fixedObstacles = [
-                // 上部エリア（プレイヤー2エリア）
-                { x: 150, y: 120, width: 60, height: 50, color: '#8B0000' },
-                { x: 400, y: 100, width: 45, height: 60, color: '#8B0000' },
-                { x: 600, y: 150, width: 55, height: 45, color: '#8B0000' },
-                { x: 250, y: 180, width: 50, height: 55, color: '#8B0000' },
-                { x: 500, y: 130, width: 40, height: 65, color: '#8B0000' },
-                { x: 700, y: 110, width: 65, height: 40, color: '#8B0000' },
-                { x: 100, y: 140, width: 45, height: 50, color: '#8B0000' },
-                { x: 350, y: 160, width: 55, height: 45, color: '#8B0000' },
+                // 上部エリア（プレイヤー2エリア）- まばらに配置
+                { x: 200, y: 120, width: 60, height: 50, color: '#8B0000' },
+                { x: 600, y: 100, width: 45, height: 60, color: '#8B0000' },
+                { x: 100, y: 150, width: 55, height: 45, color: '#8B0000' },
+                { x: 700, y: 180, width: 50, height: 55, color: '#8B0000' },
                 
-                // 中央エリア（戦略的配置）
-                { x: 300, y: 280, width: 70, height: 40, color: '#8B0000' },
-                { x: 500, y: 320, width: 50, height: 60, color: '#8B0000' },
-                { x: 200, y: 350, width: 60, height: 50, color: '#8B0000' },
-                { x: 650, y: 290, width: 45, height: 55, color: '#8B0000' },
+                // 中央エリア（最小限の配置）
+                { x: 400, y: 300, width: 70, height: 40, color: '#8B0000' },
                 
-                // 下部エリア（プレイヤー1エリア）
+                // 下部エリア（プレイヤー1エリア）- まばらに配置
                 { x: 150, y: 450, width: 55, height: 45, color: '#8B0000' },
-                { x: 400, y: 480, width: 50, height: 60, color: '#8B0000' },
-                { x: 600, y: 460, width: 60, height: 50, color: '#8B0000' }
+                { x: 650, y: 480, width: 50, height: 60, color: '#8B0000' },
+                { x: 300, y: 460, width: 60, height: 50, color: '#8B0000' }
             ];
             
             // 固定障害物を追加
@@ -1081,7 +1074,7 @@
                 });
             });
             
-            console.log(`固定障害物を${obstacles.length}個配置しました`);
+            console.log(`固定障害物を${obstacles.length}個配置しました（まばら配置）`);
         }
 
         // 補給ユニット生成
@@ -1793,40 +1786,169 @@
         // AIの行動ループ
         function aiLoop() {
             if (!gameRunning || gameMode !== 'ai') return;
-            // 簡易AI: プレイヤー1の位置に向かって移動し、一定確率で攻撃
-            const dx = player1.x - player2.x;
-            if (Math.abs(dx) > 5) {
-                player2.x += dx > 0 ? player2.speed : -player2.speed;
-            }
-            // プレイヤー1のy座標より少し上をキープ
-            if (player2.y < canvas.height / 2 - 60) {
-                player2.y += player2.speed;
-            } else if (player2.y > canvas.height / 2 - 40) {
-                player2.y -= player2.speed;
-            }
-            // 一定確率で攻撃
-            if (Math.random() < 0.08) {
-                // AIが攻撃
-                const weapon = weapons[1];
-                if (player2.ammo >= weapon.ammoCost) {
-                    for (let i = 0; i < weapon.bulletCount; i++) {
-                        const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
-                        const bullet = {
-                            x: player2.x + player2.width / 2,
-                            y: player2.y + player2.height,
-                            width: 4,
-                            height: 8,
-                            speedX: spread,
-                            speedY: weapon.speed,
-                            color: weapon.color,
-                            playerId: 2
-                        };
-                        player2.bullets.push(bullet);
+            
+            // 高度なAI: 戦略的思考と動的適応
+            const ai = {
+                // AIの状態管理
+                state: 'hunting', // hunting, evading, attacking, repositioning
+                lastStateChange: Date.now(),
+                targetX: player1.x,
+                targetY: player1.y,
+                lastAttackTime: 0,
+                attackCooldown: 500,
+                evasionTimer: 0,
+                
+                // 戦略的移動
+                move() {
+                    const dx = this.targetX - player2.x;
+                    const dy = this.targetY - player2.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // 移動制限を考慮
+                    const minY = 0;
+                    const maxY = canvas.height / 2 - player2.height;
+                    
+                    // 左右移動
+                    if (Math.abs(dx) > 10) {
+                        player2.x += dx > 0 ? player2.speed : -player2.speed;
                     }
-                    player2.ammo -= weapon.ammoCost;
+                    
+                    // 上下移動（制限内で）
+                    if (Math.abs(dy) > 10) {
+                        const newY = player2.y + (dy > 0 ? player2.speed : -player2.speed);
+                        if (newY >= minY && newY <= maxY) {
+                            player2.y = newY;
+                        }
+                    }
+                },
+                
+                // 攻撃判定
+                attack() {
+                    const now = Date.now();
+                    if (now - this.lastAttackTime < this.attackCooldown) return;
+                    
+                    // プレイヤーとの距離を計算
+                    const dx = player1.x - player2.x;
+                    const dy = player1.y - player2.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // 攻撃可能距離内にいる場合
+                    if (distance < 300 && Math.abs(dx) < 100) {
+                        // 武器選択（状況に応じて）
+                        let weaponChoice = 1; // デフォルトは通常弾
+                        
+                        if (distance < 150) {
+                            weaponChoice = 3; // 近距離では散弾
+                        } else if (distance < 250) {
+                            weaponChoice = 2; // 中距離では連射弾
+                        }
+                        
+                        const weapon = weapons[weaponChoice];
+                        if (player2.ammo >= weapon.ammoCost) {
+                            // 攻撃実行
+                            for (let i = 0; i < weapon.bulletCount; i++) {
+                                const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
+                                const bullet = {
+                                    x: player2.x + player2.width / 2,
+                                    y: player2.y + player2.height,
+                                    width: 4,
+                                    height: 8,
+                                    speedX: spread,
+                                    speedY: weapon.speed,
+                                    color: weapon.color,
+                                    playerId: 2
+                                };
+                                player2.bullets.push(bullet);
+                            }
+                            player2.ammo -= weapon.ammoCost;
+                            this.lastAttackTime = now;
+                            this.attackCooldown = 300 + Math.random() * 400; // 動的クールダウン
+                        }
+                    }
+                },
+                
+                // 回避行動
+                evade() {
+                    // プレイヤーの弾丸を回避
+                    const incomingBullets = player1.bullets.filter(bullet => 
+                        bullet.y < canvas.height / 2 && 
+                        Math.abs(bullet.x - player2.x) < 50
+                    );
+                    
+                    if (incomingBullets.length > 0) {
+                        // 回避移動
+                        const evadeDirection = Math.random() > 0.5 ? 1 : -1;
+                        const newX = player2.x + (evadeDirection * player2.speed * 2);
+                        
+                        if (newX >= 0 && newX <= canvas.width - player2.width) {
+                            player2.x = newX;
+                        }
+                        
+                        this.evasionTimer = Date.now() + 1000; // 1秒間回避モード
+                    }
+                },
+                
+                // 戦略的思考
+                think() {
+                    const now = Date.now();
+                    
+                    // 状態変更の判定
+                    if (now - this.lastStateChange > 3000) { // 3秒ごとに状態を再評価
+                        this.lastStateChange = now;
+                        
+                        // HPに基づく戦略変更
+                        if (player2.hp < 30) {
+                            this.state = 'evading';
+                        } else if (player1.hp < 50) {
+                            this.state = 'attacking';
+                        } else {
+                            this.state = 'hunting';
+                        }
+                    }
+                    
+                    // 回避タイマーが有効な場合
+                    if (now < this.evasionTimer) {
+                        this.state = 'evading';
+                    }
+                    
+                    // 状態に基づく行動
+                    switch (this.state) {
+                        case 'hunting':
+                            this.targetX = player1.x;
+                            this.targetY = Math.max(50, player1.y - 100); // 少し上に位置取る
+                            this.move();
+                            this.attack();
+                            break;
+                            
+                        case 'evading':
+                            this.evade();
+                            this.targetX = canvas.width / 2; // 中央に移動
+                            this.targetY = 100;
+                            this.move();
+                            break;
+                            
+                        case 'attacking':
+                            this.targetX = player1.x;
+                            this.targetY = Math.max(50, player1.y - 80);
+                            this.move();
+                            this.attack();
+                            this.attackCooldown = 200; // 攻撃頻度を上げる
+                            break;
+                            
+                        case 'repositioning':
+                            this.targetX = canvas.width / 2;
+                            this.targetY = 150;
+                            this.move();
+                            break;
+                    }
                 }
-            }
-            setTimeout(aiLoop, 100 + Math.random() * 200);
+            };
+            
+            // AIの思考と行動を実行
+            ai.think();
+            
+            // 次のループをスケジュール
+            setTimeout(aiLoop, 50 + Math.random() * 100); // より頻繁な更新
         }
 
         // オフライン専用のマッチングを開始
