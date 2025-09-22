@@ -1,11 +1,15 @@
 {
   "indexes": [
     {
-      "collectionGroup": "users",
+      "collectionGroup": "pvp_rooms",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "highScore",
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
           "order": "DESCENDING"
         }
       ]

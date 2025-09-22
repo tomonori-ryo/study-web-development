@@ -697,14 +697,56 @@
         function startPvP() {
             try {
                 console.log('PvP対戦ボタンがクリックされました');
-                // PvP対戦画面に遷移
-                window.location.href = 'pvp_game.html';
+                // モード選択モーダルを表示
+                showModeSelectModal();
             } catch (error) {
                 console.error('PvP対戦開始エラー:', error);
                 alert('PvP対戦の開始に失敗しました: ' + error.message);
             }
         }
 
+        // モード選択モーダルを表示
+        function showModeSelectModal() {
+            // モーダル要素を作成
+            const modal = document.createElement('div');
+            modal.id = 'modeSelectModal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0,0,0,0.85);
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            `;
+            
+            modal.innerHTML = `
+                <h2 style="color: #fff; margin-bottom: 32px; font-size: 2rem;">対戦モードを選択</h2>
+                <p style="color: #ff7f50; margin-bottom: 20px; font-size: 1.2rem;">推奨: AI対戦（安定動作）</p>
+                <button id="aiModeBtn" style="font-size: 2rem; padding: 20px 60px; margin: 10px; background: #ff7f50; color: #fff; border: none; border-radius: 10px; cursor: pointer;">AI対戦</button>
+                <button id="onlineModeBtn" style="font-size: 2rem; padding: 20px 60px; margin: 10px; background: #00c3ff; color: #fff; border: none; border-radius: 10px; cursor: pointer;">オンライン対戦</button>
+                <button id="cancelModeBtn" style="font-size: 1.5rem; padding: 15px 40px; margin: 10px; background: #666; color: #fff; border: none; border-radius: 8px; cursor: pointer;">キャンセル</button>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // イベントリスナーを追加
+            document.getElementById('aiModeBtn').addEventListener('click', () => {
+                window.location.href = 'pvp_game.html?mode=ai';
+            });
+            
+            document.getElementById('onlineModeBtn').addEventListener('click', () => {
+                window.location.href = 'pvp_game.html?mode=online';
+            });
+            
+            document.getElementById('cancelModeBtn').addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+        }
         
         // タブ切り替え
         document.querySelectorAll('.tab-button').forEach(button => {
