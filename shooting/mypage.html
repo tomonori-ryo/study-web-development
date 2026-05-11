@@ -1169,52 +1169,60 @@
         });
         
         // ログイン状態チェック
+        // Firebase 認証を「真実」とし、localStorage は付随情報。
+        // localStorage が欠けていても Firebase 側にユーザーがいれば自動的に補完する。
         async function checkLoginStatus() {
-            const playerName = localStorage.getItem('playerName');
-            const isLoggedIn = localStorage.getItem('isLoggedIn');
-            const firebaseUid = localStorage.getItem('firebaseUid');
-            
             console.log('認証チェック開始:', {
-                playerName,
-                isLoggedIn,
-                firebaseUid
+                playerName:  localStorage.getItem('playerName'),
+                isLoggedIn:  localStorage.getItem('isLoggedIn'),
+                firebaseUid: localStorage.getItem('firebaseUid')
             });
-            
-            // Firebase認証状態を非同期で確認
+
             return new Promise((resolve) => {
-                const unsubscribe = firebase.auth().onAuthStateChanged((currentUser) => {
-                    unsubscribe(); // リスナーを解除
-                    
+                const unsubscribe = firebase.auth().onAuthStateChanged(async (currentUser) => {
+                    unsubscribe();
+
                     console.log('Firebase認証状態:', {
                         currentUser: currentUser ? currentUser.uid : null,
-                        email: currentUser ? currentUser.email : null
+                        email:       currentUser ? currentUser.email : null
                     });
-                    
-                    // 認証状態のチェック
-                    if (!playerName || isLoggedIn !== 'true') {
-                        console.log('ローカルストレージ認証失敗');
-                        alert('ログインが必要です。\n\nホームページに戻ります。');
-                        window.location.href = 'index.html';
-                        resolve(false);
-                        return;
-                    }
-                    
+
+                    // Firebase に認証済みユーザーがいない場合だけリダイレクト
                     if (!currentUser) {
-                        console.log('Firebase認証失敗 - ユーザーなし');
+                        console.log('Firebase 認証失敗 - ユーザーなし');
                         alert('ログインが必要です。\n\nホームページに戻ります。');
                         window.location.href = 'index.html';
                         resolve(false);
                         return;
                     }
-                    
-                    if (firebaseUid && currentUser.uid !== firebaseUid) {
-                        console.log('Firebase UID不一致');
-                        alert('ログインが必要です。\n\nホームページに戻ります。');
-                        window.location.href = 'index.html';
-                        resolve(false);
-                        return;
+
+                    // localStorage を Firebase 側から補完（直リンク・クリア時の救済）
+                    try {
+                        const storedName = localStorage.getItem('playerName');
+                        if (!storedName) {
+                            let displayName = null;
+                            try {
+                                const userData = await firebaseDataManager.getUserData();
+                                displayName = userData && userData.username;
+                            } catch (e) {
+                                console.warn('userData 取得失敗、メールから推測します:', e);
+                            }
+                            if (!displayName && currentUser.email) {
+                                displayName = currentUser.email.split('@')[0];
+                            }
+                            if (displayName) {
+                                localStorage.setItem('playerName', displayName);
+                            }
+                        }
+                        if (currentUser.email) {
+                            localStorage.setItem('userEmail', currentUser.email);
+                        }
+                        localStorage.setItem('isLoggedIn', 'true');
+                        localStorage.setItem('firebaseUid', currentUser.uid);
+                    } catch (e) {
+                        console.warn('localStorage 同期エラー:', e);
                     }
-                    
+
                     console.log('認証成功');
                     resolve(true);
                 });
