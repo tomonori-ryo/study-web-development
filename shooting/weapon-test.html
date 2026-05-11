@@ -206,8 +206,8 @@ const weaponCatalog = {
                 damage: 8, range: 9999, pierce: 0, width: 16, height: 16, color: '#ffcc33',
                 lifeFrames: 360, explodeOnImpact: { radius: 110, damage: 8 } },
     blade:    { id: 'blade',    name: 'ブレード',   ammoCost: 0, maxAmmo: 0, bulletCount: 1, spread: 0,    speed: 14,
-                damage: 4, range: 100, pierce: 1, width: 22, height: 8,  color: '#00ffaa',
-                blocksBossBullets: true,
+                damage: 4, range: 100, pierce: 1, width: 36, height: 18, color: '#00ffaa',
+                blocksBossBullets: true, bulletStyle: 'slash',
                 usesStamina: true, staminaMax: 100, staminaPerShot: 10, staminaRegen: 30, overheatRecover: 0.4 },
     shield:   { id: 'shield',   name: 'シールド',   ammoCost: 1, maxAmmo: 20, bulletCount: 1, spread: 0,    speed: 3,
                 damage: 1, range: 200, pierce: 99, width: 32, height: 6,  color: '#66ddff',
@@ -436,7 +436,9 @@ function shoot() {
             pullForce: w.pullForce || 0,
             explodeOnImpact: w.explodeOnImpact || null,
             blocksBossBullets: !!w.blocksBossBullets,
-            lifeFrames: (typeof w.lifeFrames === 'number') ? w.lifeFrames : null
+            lifeFrames: (typeof w.lifeFrames === 'number') ? w.lifeFrames : null,
+            bulletStyle: w.bulletStyle || 'rect',
+            spawnedAt: Date.now()
         });
     }
     if (w.usesStamina) {
@@ -664,6 +666,44 @@ function draw() {
     const nowDraw = Date.now();
     bullets.forEach(b => {
         ctx.save();
+        // ブレード: 三日月斬撃
+        if (b.bulletStyle === 'slash') {
+            const cx = b.x + b.width / 2;
+            const cy = b.y + b.height / 2;
+            const age = Math.min(120, nowDraw - (b.spawnedAt || nowDraw));
+            const t = Math.min(1, age / 80);
+            const radius = 18 + t * 6;
+            const arcCenterY = cy + 14 + (1 - t) * 4;
+            const startAngle = Math.PI * (1.18 - 0.08 * t);
+            const endAngle   = Math.PI * (1.82 + 0.08 * t);
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = b.color || '#00ffaa';
+            ctx.shadowColor = b.color || '#00ffaa';
+            ctx.shadowBlur = 22;
+            ctx.lineWidth = 7;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.arc(cx, arcCenterY, radius, startAngle, endAngle);
+            ctx.stroke();
+            ctx.shadowBlur = 6;
+            ctx.lineWidth = 2.2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(cx, arcCenterY, radius, startAngle + 0.04, endAngle - 0.04);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            const sx = cx + Math.cos(startAngle) * radius;
+            const sy = arcCenterY + Math.sin(startAngle) * radius;
+            const ex = cx + Math.cos(endAngle) * radius;
+            const ey = arcCenterY + Math.sin(endAngle) * radius;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 2.2, 0, Math.PI * 2);
+            ctx.arc(ex, ey, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            return;
+        }
         // 機雷は点滅 + 残量で色変化
         const isMine = (b.lifeFrames !== null && b.lifeFrames !== undefined
                         && b.speedX === 0 && b.speedY === 0);

@@ -924,8 +924,9 @@
                 usesStamina: true,
                 staminaMax: 100, staminaPerShot: 10, staminaRegen: 30, overheatRecover: 0.4,
                 ammoCost: 0, maxAmmo: 0, bulletCount: 1, spread: 0, speed: 14,
-                damage: 4, range: 100, pierce: 1, width: 22, height: 8, color: '#00ffaa',
+                damage: 4, range: 100, pierce: 1, width: 36, height: 18, color: '#00ffaa',
                 blocksBossBullets: true,                            // 敵弾を切り裂く
+                bulletStyle: 'slash',                               // 弾矩形ではなく三日月の斬撃として描画
                 runTrigger: {
                     type: 'all',
                     requirements: [
@@ -1689,7 +1690,9 @@
                     pullForce: weapon.pullForce || 0,
                     explodeOnImpact: weapon.explodeOnImpact || null,
                     blocksBossBullets: !!weapon.blocksBossBullets,
-                    lifeFrames: (typeof weapon.lifeFrames === 'number') ? weapon.lifeFrames : null
+                    lifeFrames: (typeof weapon.lifeFrames === 'number') ? weapon.lifeFrames : null,
+                    bulletStyle: weapon.bulletStyle || 'rect',
+                    spawnedAt: Date.now()
                 });
             }
             
@@ -1882,9 +1885,58 @@
         }
 
         // 弾丸描画
+        // 三日月の斬撃（ブレード）。中心を通過する円弧を描き、内側に白い芯を入れる。
+        // 生成時刻からの経過で開閉アニメーション（出現直後はわずかに細く、徐々に開く）。
+        function drawSlash(bullet, now) {
+            const cx = bullet.x + bullet.width / 2;
+            const cy = bullet.y + bullet.height / 2;
+            const age = Math.min(120, now - (bullet.spawnedAt || now));
+            const t = Math.min(1, age / 80);                            // 0 → 1 の開閉
+            const radius = 18 + t * 6;
+            // 進行方向（上方）に膨らむ三日月にするため、円の中心を弾の少し下に
+            const arcCenterY = cy + 14 + (1 - t) * 4;
+            const startAngle = Math.PI * (1.18 - 0.08 * t);
+            const endAngle   = Math.PI * (1.82 + 0.08 * t);
+            ctx.save();
+            // 外周のオーラ
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = bullet.color || '#00ffaa';
+            ctx.shadowColor = bullet.color || '#00ffaa';
+            ctx.shadowBlur = 22;
+            ctx.lineWidth = 7;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.arc(cx, arcCenterY, radius, startAngle, endAngle);
+            ctx.stroke();
+            // 中央の白い刃芯
+            ctx.shadowBlur = 6;
+            ctx.lineWidth = 2.2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(cx, arcCenterY, radius, startAngle + 0.04, endAngle - 0.04);
+            ctx.stroke();
+            // 両端の閃光
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            const sx = cx + Math.cos(startAngle) * radius;
+            const sy = arcCenterY + Math.sin(startAngle) * radius;
+            const ex = cx + Math.cos(endAngle) * radius;
+            const ey = arcCenterY + Math.sin(endAngle) * radius;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 2.2, 0, Math.PI * 2);
+            ctx.arc(ex, ey, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
         function drawBullets() {
             const now = Date.now();
             bullets.forEach(bullet => {
+                // ブレード: 三日月の斬撃として描画
+                if (bullet.bulletStyle === 'slash') {
+                    drawSlash(bullet, now);
+                    return;
+                }
                 // 機雷（lifeFrames あり + 速度ゼロ）は点滅 + 残り時間で色を変えて警告
                 const isMine = (bullet.lifeFrames !== null && bullet.lifeFrames !== undefined
                                 && bullet.speedX === 0 && bullet.speedY === 0);
