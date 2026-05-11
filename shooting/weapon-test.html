@@ -205,9 +205,10 @@ const weaponCatalog = {
     mine:     { id: 'mine',     name: '機雷',       ammoCost: 1, maxAmmo: 8,  bulletCount: 1, spread: 0,    speed: 0,
                 damage: 8, range: 9999, pierce: 0, width: 16, height: 16, color: '#ffcc33',
                 lifeFrames: 360, explodeOnImpact: { radius: 110, damage: 8 } },
-    blade:    { id: 'blade',    name: 'ブレード',   ammoCost: 1, maxAmmo: 50, bulletCount: 1, spread: 0,    speed: 14,
+    blade:    { id: 'blade',    name: 'ブレード',   ammoCost: 0, maxAmmo: 0, bulletCount: 1, spread: 0,    speed: 14,
                 damage: 4, range: 100, pierce: 1, width: 22, height: 8,  color: '#00ffaa',
-                blocksBossBullets: true },
+                blocksBossBullets: true,
+                usesStamina: true, staminaMax: 100, staminaPerShot: 10, staminaRegen: 30, overheatRecover: 0.4 },
     shield:   { id: 'shield',   name: 'シールド',   ammoCost: 1, maxAmmo: 20, bulletCount: 1, spread: 0,    speed: 3,
                 damage: 1, range: 200, pierce: 99, width: 32, height: 6,  color: '#66ddff',
                 blocksBossBullets: true }
@@ -235,13 +236,33 @@ const keys = {};
 let lastShotMs = 0;             // 連射制限用
 const SHOT_COOLDOWN_MS = 110;
 
+// スタミナ式武器の状態（id -> 数値 / bool）
+let weaponStamina = {};
+let weaponOverheated = {};
+
 // 弾薬を初期化
 function refillAmmo() {
     Object.keys(weaponCatalog).forEach(id => {
-        weaponAmmo[id] = weaponCatalog[id].maxAmmo;
+        const w = weaponCatalog[id];
+        weaponAmmo[id] = w.maxAmmo;
+        if (w.usesStamina) {
+            weaponStamina[id] = w.staminaMax;
+            weaponOverheated[id] = false;
+        }
     });
 }
 refillAmmo();
+
+function updateStamina(dt) {
+    Object.keys(weaponCatalog).forEach(id => {
+        const w = weaponCatalog[id];
+        if (!w.usesStamina) return;
+        weaponStamina[id] = Math.min(w.staminaMax, (weaponStamina[id] || 0) + (w.staminaRegen * dt / 1000));
+        if (weaponOverheated[id] && weaponStamina[id] >= w.staminaMax * w.overheatRecover) {
+            weaponOverheated[id] = false;
+        }
+    });
+}
 
 // =========================================================================
 // 入力
@@ -381,7 +402,15 @@ let explosions = [];
 
 function shoot() {
     const w = weaponCatalog[currentWeapon];
-    if (weaponAmmo[currentWeapon] < w.ammoCost) return;
+    if (w.usesStamina) {
+        if (weaponOverheated[currentWeapon]) return;
+        if ((weaponStamina[currentWeapon] || 0) < w.staminaPerShot) {
+            weaponOverheated[currentWeapon] = true;
+            return;
+        }
+    } else if (weaponAmmo[currentWeapon] < w.ammoCost) {
+        return;
+    }
 
     const baseAngle = 0;
     const count = w.bulletCount;
@@ -410,7 +439,15 @@ function shoot() {
             lifeFrames: (typeof w.lifeFrames === 'number') ? w.lifeFrames : null
         });
     }
-    weaponAmmo[currentWeapon] -= w.ammoCost;
+    if (w.usesStamina) {
+        weaponStamina[currentWeapon] = (weaponStamina[currentWeapon] || 0) - w.staminaPerShot;
+        if (weaponStamina[currentWeapon] <= 0) {
+            weaponStamina[currentWeapon] = 0;
+            weaponOverheated[currentWeapon] = true;
+        }
+    } else {
+        weaponAmmo[currentWeapon] -= w.ammoCost;
+    }
     updateHud();
 }
 
@@ -467,6 +504,9 @@ let lastFrameTime = performance.now();
 let fpsAvg = 60;
 
 function update(dt) {
+    // スタミナ自然回復
+    updateStamina(dt);
+
     // プレイヤー
     if ((keys.ArrowLeft  || keys.a || keys.A) && player.x > 0)                 player.x -= player.speed;
     if ((keys.ArrowRight || keys.d || keys.D) && player.x < W - player.width)  player.x += player.speed;
@@ -727,7 +767,16 @@ function selectWeapon(id) {
 function updateHud() {
     const w = weaponCatalog[currentWeapon];
     document.getElementById('hudWeapon').textContent = w.name;
-    document.getElementById('hudAmmo').textContent = `${weaponAmmo[currentWeapon]} / ${w.maxAmmo}`;
+    if (w.usesStamina) {
+        const cur = Math.floor(weaponStamina[currentWeapon] || 0);
+        const pct = Math.round((cur / w.staminaMax) * 100);
+        const bars = Math.round((cur / w.staminaMax) * 10);
+        const bar = '▓'.repeat(bars) + '░'.repeat(10 - bars);
+        const tag = weaponOverheated[currentWeapon] ? ' (CD)' : '';
+        document.getElementById('hudAmmo').textContent = `${bar} ${pct}%${tag}`;
+    } else {
+        document.getElementById('hudAmmo').textContent = `${weaponAmmo[currentWeapon]} / ${w.maxAmmo}`;
+    }
     document.getElementById('hudStats').textContent = `D${w.damage} / R${w.range} / S${w.speed}`;
     const sp = [];
     if (w.homing)            sp.push(`追尾(${w.homingForce})`);
@@ -736,6 +785,7 @@ function updateHud() {
     if (w.slowOnHitMs)       sp.push(`減速(${w.slowOnHitMs}ms)`);
     if (w.blocksBossBullets) sp.push('弾切り');
     if (w.lifeFrames)        sp.push(`設置(${w.lifeFrames}f)`);
+    if (w.usesStamina)       sp.push(`スタミナ式(回復${w.staminaRegen}/s)`);
     document.getElementById('hudSpecial').textContent = sp.length ? sp.join(' / ') : '—';
 }
 
@@ -781,6 +831,8 @@ function loop(now) {
     update(dt);
     draw();
     updateDebug();
+    // スタミナ系武器を選んでいる時はリアルタイム更新
+    if (weaponCatalog[currentWeapon].usesStamina) updateHud();
     requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
