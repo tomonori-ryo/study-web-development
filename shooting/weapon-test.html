@@ -203,8 +203,8 @@ const weaponCatalog = {
                 damage: 2, range: 500, pierce: 0, width: 10, height: 10, color: '#9966ff',
                 pullRadius: 110, pullForce: 0.6 },
     mine:     { id: 'mine',     name: '機雷',       ammoCost: 1, maxAmmo: 8,  bulletCount: 1, spread: 0,    speed: 0,
-                damage: 8, range: 9999, pierce: 0, width: 14, height: 14, color: '#cccc33',
-                lifeFrames: 360, explodeOnImpact: { radius: 70, damage: 6 } },
+                damage: 8, range: 9999, pierce: 0, width: 16, height: 16, color: '#ffcc33',
+                lifeFrames: 360, explodeOnImpact: { radius: 110, damage: 8 } },
     blade:    { id: 'blade',    name: 'ブレード',   ammoCost: 1, maxAmmo: 50, bulletCount: 1, spread: 0,    speed: 14,
                 damage: 4, range: 100, pierce: 1, width: 22, height: 8,  color: '#00ffaa',
                 blocksBossBullets: true },
@@ -621,8 +621,43 @@ function draw() {
     });
 
     // 弾
+    const nowDraw = Date.now();
     bullets.forEach(b => {
         ctx.save();
+        // 機雷は点滅 + 残量で色変化
+        const isMine = (b.lifeFrames !== null && b.lifeFrames !== undefined
+                        && b.speedX === 0 && b.speedY === 0);
+        if (isMine) {
+            const t = b.lifeFrames / 360;
+            const danger = (t < 0.3) ? '#ff3322' : (t < 0.6 ? '#ff9933' : '#ffcc33');
+            const blinkRate = (t < 0.3) ? 80 : (t < 0.6 ? 160 : 320);
+            const visible = (Math.floor(nowDraw / blinkRate) % 2) === 0;
+            if (visible) {
+                ctx.fillStyle = danger;
+                ctx.shadowColor = danger;
+                ctx.shadowBlur = 14;
+                ctx.fillRect(b.x, b.y, b.width, b.height);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#220000';
+                ctx.fillRect(b.x + b.width / 2 - 2, b.y + b.height / 2 - 2, 4, 4);
+            } else {
+                ctx.strokeStyle = danger;
+                ctx.globalAlpha = 0.3;
+                ctx.strokeRect(b.x, b.y, b.width, b.height);
+                ctx.globalAlpha = 1;
+            }
+            // 爆発予測リング（薄く）
+            if (b.explodeOnImpact) {
+                ctx.strokeStyle = '#ff5533';
+                ctx.globalAlpha = 0.18;
+                ctx.beginPath();
+                ctx.arc(b.x + b.width / 2, b.y + b.height / 2, b.explodeOnImpact.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+            ctx.restore();
+            return;
+        }
         ctx.fillStyle = b.color;
         ctx.shadowColor = b.color;
         ctx.shadowBlur = b.pierceRemaining > 0 ? 10 : 4;
