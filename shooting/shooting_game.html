@@ -1157,17 +1157,28 @@
         }
 
         // bullet の現在の進行ベクトルを target 方向に lerp する（追尾）。
+        // 速度の大きさは bullet.maxSpeed に保たれる。lerp 後に再正規化することで、
+        // ターゲットが真後ろにある／追尾が往復するなどの局面でも速度が抜けて空中停止しない。
         function steerBulletTowards(bullet, target, force) {
+            const refSpeed = bullet.maxSpeed || Math.hypot(bullet.speedX, bullet.speedY) || 1;
             const tx = target.x + (target.width || target.size || 0) / 2;
             const ty = target.y + (target.height || target.size || 0) / 2;
             const dx = tx - bullet.x;
             const dy = ty - bullet.y;
             const dist = Math.hypot(dx, dy) || 1;
-            const speed = Math.hypot(bullet.speedX, bullet.speedY) || 1;
-            const desiredX = (dx / dist) * speed;
-            const desiredY = (dy / dist) * speed;
-            bullet.speedX = bullet.speedX * (1 - force) + desiredX * force;
-            bullet.speedY = bullet.speedY * (1 - force) + desiredY * force;
+            const desiredX = (dx / dist) * refSpeed;
+            const desiredY = (dy / dist) * refSpeed;
+            const newX = bullet.speedX * (1 - force) + desiredX * force;
+            const newY = bullet.speedY * (1 - force) + desiredY * force;
+            const newMag = Math.hypot(newX, newY);
+            if (newMag > 0.0001) {
+                bullet.speedX = (newX / newMag) * refSpeed;
+                bullet.speedY = (newY / newMag) * refSpeed;
+            } else {
+                // 万一抜けたら現在向きを維持しつつ refSpeed で再付与
+                bullet.speedX = (desiredX / refSpeed) * refSpeed;
+                bullet.speedY = (desiredY / refSpeed) * refSpeed;
+            }
         }
 
         // 範囲内の敵 / ボス を引き寄せる（重力弾用）。
@@ -1266,6 +1277,7 @@
                     x: dx, y: dy,
                     width: w.width, height: w.height,
                     speedX: 0, speedY: -w.speed,
+                    maxSpeed: w.speed,
                     damage: w.damage,
                     range: w.range,
                     traveled: 0,
@@ -1557,6 +1569,7 @@
                     height: weapon.height,
                     speedX: speedX,
                     speedY: speedY,
+                    maxSpeed: weapon.speed,
                     damage: weapon.damage,
                     range: weapon.range,
                     traveled: 0,
