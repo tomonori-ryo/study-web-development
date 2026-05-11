@@ -886,7 +886,14 @@
             drone: {
                 // 注: 真の随伴機（横並びコンパニオン）は次フェーズ。今は弾数多めの直射武器として動作。
                 id: 'drone', name: '随伴機',
-                ammoCost: 1, maxAmmo: 30, bulletCount: 1, spread: 0.05, speed: 7,
+                // 射撃キーで 1 機ずつ放出する自律ユニット。HP1 / 寿命 droneLifeMs ms。
+                // 上方に展開後、最寄り敵を狙って自動射撃する。
+                isDeployable: true,
+                droneHealth: 1,
+                droneLifeMs: 10000,                                  // 10秒で自爆
+                droneFireIntervalMs: 700,
+                droneIdealY: 110,                                    // この高さに上昇して滞空
+                ammoCost: 1, maxAmmo: 5, bulletCount: 1, spread: 0, speed: 7,
                 damage: 1, range: 600, pierce: 0, width: 4, height: 10, color: '#00ff88',
                 runTrigger: { type: 'bossLevelDefeated', level: 4, label: '1500点ボス撃破で解放' }
             },
@@ -1297,6 +1304,198 @@
             explosionEffects = explosionEffects.filter(e => { e.life--; return e.life > 0; });
         }
 
+        // ───── ボス衝撃波 ─────
+        function updateBossShockwaves() {
+            if (bossShockwaves.length === 0) return;
+            const now = Date.now();
+            const pcx = player.x + player.width / 2;
+            const pcy = player.y + player.height / 2;
+            const playerRadius = Math.max(player.width, player.height) / 2;
+            for (let i = bossShockwaves.length - 1; i >= 0; i--) {
+                const sw = bossShockwaves[i];
+                if (now < sw.chargeUntil) continue;     // 予兆中は拡張しない
+                sw.radius += sw.expandSpeed;
+                if (!sw.hit) {
+                    const dist = Math.hypot(pcx - sw.cx, pcy - sw.cy);
+                    if (Math.abs(dist - sw.radius) <= sw.thickness / 2 + playerRadius) {
+                        sw.hit = true;
+                        // 1 衝撃波 = ライフ 1 個分（複数ライフ消費を防ぐため hit フラグで一回だけ）
+                        const dmg = sw.damage || BOSS_SHOCKWAVE_DAMAGE_LIVES;
+                        lives -= dmg;
+                        if (lives < 0) lives = 0;
+                        livesElement.textContent = `ライフ: ${lives}`;
+                        runState.livesLost += dmg;
+                        recomputeUnlockedSlots();
+                        playSound(explosionSound);
+                        shockwaveFlashUntil = now + BOSS_SHOCKWAVE_FLASH_MS;
+                        if (lives <= 0) gameOver('gameover');
+                    }
+                }
+                if (sw.radius > sw.maxRadius) bossShockwaves.splice(i, 1);
+            }
+        }
+
+        // ───── ボス機雷 ─────
+        function explodeBossMine(mine) {
+            if (mine.triggered) return;
+            mine.triggered = true;
+            const cx = mine.x + mine.size / 2;
+            const cy = mine.y + mine.size / 2;
+            spawnExplosionEffect(cx, cy, BOSS_MINE_EXPLODE_RADIUS);
+            playSound(explosionSound);
+            // プレイヤーが範囲内ならライフを 1 個分減らす
+            const pcx = player.x + player.width / 2;
+            const pcy = player.y + player.height / 2;
+            const dist = Math.hypot(pcx - cx, pcy - cy);
+            if (dist <= BOSS_MINE_EXPLODE_RADIUS) {
+                lives -= BOSS_MINE_EXPLODE_DAMAGE_LIVES;
+                if (lives < 0) lives = 0;
+                livesElement.textContent = `ライフ: ${lives}`;
+                runState.livesLost += BOSS_MINE_EXPLODE_DAMAGE_LIVES;
+                recomputeUnlockedSlots();
+                shockwaveFlashUntil = Date.now() + BOSS_SHOCKWAVE_FLASH_MS;
+                if (lives <= 0) gameOver('gameover');
+            }
+        }
+
+        function updateBossMines() {
+            if (bossMines.length === 0) return;
+            const now = Date.now();
+            for (let i = bossMines.length - 1; i >= 0; i--) {
+                const m = bossMines[i];
+                if (!m.settled) {
+                    m.y += m.vy;
+                    m.x += m.vx;
+                    // 横方向の壁で反射
+                    if (m.x < 0)                       { m.x = 0; m.vx = -m.vx; }
+                    if (m.x > canvas.width - m.size)   { m.x = canvas.width - m.size; m.vx = -m.vx; }
+                    // 目標 Y に到達したら着地
+                    if (m.y >= m.targetY) {
+                        m.y = m.targetY;
+                        m.vx = 0;
+                        m.vy = 0;
+                        m.settled = true;
+                    }
+                }
+                // 寿命切れ → 自爆
+                if (now >= m.expiresAt) {
+                    explodeBossMine(m);
+                    bossMines.splice(i, 1);
+                    continue;
+                }
+                // プレイヤー接触 → 即爆発
+                if (checkCollision(player, m)) {
+                    explodeBossMine(m);
+                    bossMines.splice(i, 1);
+                    continue;
+                }
+                // 念のため画面外消滅（横向き反射ミスのフェールセーフ）
+                if (m.y > canvas.height + 60) {
+                    bossMines.splice(i, 1);
+                }
+            }
+        }
+
+        function drawBossMines() {
+            if (bossMines.length === 0) return;
+            const now = Date.now();
+            ctx.save();
+            bossMines.forEach(m => {
+                const cx = m.x + m.size / 2;
+                const cy = m.y + m.size / 2;
+                const remaining = m.expiresAt - now;
+                let blinkInterval = 0;
+                if (remaining < BOSS_MINE_LIFE_MS - BOSS_MINE_FAST_BLINK_AT_MS) blinkInterval = 80;
+                else if (remaining < BOSS_MINE_LIFE_MS - BOSS_MINE_BLINK_AT_MS) blinkInterval = 200;
+                const visible = blinkInterval === 0 || (Math.floor(now / blinkInterval) % 2 === 0);
+                // AoE 範囲のうっすらした円（残り 3 秒以下から表示）
+                if (remaining < 3000) {
+                    const t = 1 - remaining / 3000;
+                    ctx.globalAlpha = 0.08 + 0.18 * t;
+                    ctx.fillStyle = '#ff6633';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, BOSS_MINE_EXPLODE_RADIUS, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = visible ? 1 : 0.3;
+                // 機雷本体
+                ctx.fillStyle = remaining < 2000 ? '#ff3344' : '#ffaa00';
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(cx, cy, m.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+                // 表面のスパイク
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = '#552200';
+                ctx.lineWidth = 2;
+                for (let s = 0; s < 8; s++) {
+                    const a = (s / 8) * Math.PI * 2;
+                    const r1 = m.size / 2;
+                    const r2 = m.size / 2 + 4;
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+                    ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+                    ctx.stroke();
+                }
+                // 中心のコア
+                ctx.fillStyle = '#220000';
+                ctx.beginPath();
+                ctx.arc(cx, cy, m.size / 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+        function drawBossShockwaves() {
+            const now = Date.now();
+            // 被弾フラッシュ（衝撃波がなくても短時間表示）
+            if (now < shockwaveFlashUntil) {
+                const t = (shockwaveFlashUntil - now) / BOSS_SHOCKWAVE_FLASH_MS;
+                ctx.save();
+                ctx.fillStyle = `rgba(255, 60, 120, ${0.45 * t})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+            if (bossShockwaves.length === 0) return;
+            ctx.save();
+            bossShockwaves.forEach(sw => {
+                if (now < sw.chargeUntil) {
+                    // 予兆: ボスの周りに収縮するリング
+                    const t = 1 - (sw.chargeUntil - now) / BOSS_SHOCKWAVE_CHARGE_MS;
+                    const r = 80 - 60 * t;
+                    ctx.globalAlpha = 0.3 + 0.6 * t;
+                    ctx.strokeStyle = '#ff44aa';
+                    ctx.lineWidth = 3 + 4 * t;
+                    ctx.setLineDash([8, 6]);
+                    ctx.beginPath();
+                    ctx.arc(sw.cx, sw.cy, Math.max(8, r), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    return;
+                }
+                const lifeRatio = 1 - sw.radius / sw.maxRadius;
+                ctx.globalAlpha = 0.85 * lifeRatio;
+                // 外輪（鋭いリング）
+                ctx.strokeStyle = '#ff66cc';
+                ctx.shadowColor = '#ff66cc';
+                ctx.shadowBlur = 18;
+                ctx.lineWidth = sw.thickness;
+                ctx.beginPath();
+                ctx.arc(sw.cx, sw.cy, sw.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                // 内側の白いコア
+                ctx.globalAlpha = 0.6 * lifeRatio;
+                ctx.strokeStyle = '#ffffff';
+                ctx.shadowBlur = 0;
+                ctx.lineWidth = sw.thickness * 0.35;
+                ctx.beginPath();
+                ctx.arc(sw.cx, sw.cy, sw.radius, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+            ctx.restore();
+        }
+
         function drawExplosionEffects() {
             if (explosionEffects.length === 0) return;
             ctx.save();
@@ -1329,78 +1528,147 @@
             target.slowedUntil = Math.max(target.slowedUntil || 0, candidate);
         }
 
-        // ───── 随伴機（drone）コンパニオン制御 ──────────────────────────────
-        // 現在の武器が drone のときだけプレイヤーの左右に表示され、自動で前方射撃する。
-        let droneCompanions = [];
+        // ───── 随伴機（drone）自律ユニット ────────────────────────────────────
+        // 射撃キーで 1 機ずつ放出される。HP1 / droneLifeMs で自爆 / 最寄り敵を自動追尾射撃。
+        let drones = [];
+        const DRONE_BODY_SIZE = 18;
 
-        function refreshDrones() {
-            const w = equippedWeapons[currentWeapon];
-            const isDrone = !!(w && w.id === 'drone');
-            if (isDrone) {
-                if (droneCompanions.length === 0) {
-                    const startNow = Date.now();
-                    droneCompanions = [
-                        { offsetX: -32, lastFireMs: startNow,        interval: 900 },
-                        { offsetX:  32, lastFireMs: startNow + 450,  interval: 900 }
-                    ];
-                }
-            } else {
-                droneCompanions = [];
-            }
+        function spawnDrone() {
+            const w = weaponCatalog.drone;
+            if (!w) return false;
+            const now = Date.now();
+            drones.push({
+                x: player.x + player.width / 2 - DRONE_BODY_SIZE / 2,
+                y: player.y - DRONE_BODY_SIZE,
+                width: DRONE_BODY_SIZE, height: DRONE_BODY_SIZE,
+                vx: 0, vy: -2,
+                health: w.droneHealth || 1,
+                spawnedAt: now,
+                expiresAt: now + (w.droneLifeMs || 10000),
+                fireIntervalMs: w.droneFireIntervalMs || 700,
+                lastFireMs: now,
+                idealY: w.droneIdealY || 110
+            });
+            return true;
         }
 
+        // 旧コンパニオン互換: 装備変更ではドローンは消去せず、放出済みは寿命まで残る。
+        function refreshDrones() { /* no-op: 自律ユニット化したため装備変更で消滅させない */ }
+
         function updateDrones() {
-            if (droneCompanions.length === 0) return;
-            const w = equippedWeapons[currentWeapon];
-            if (!w || w.id !== 'drone') {
-                droneCompanions = [];
-                return;
-            }
+            if (drones.length === 0) return;
+            const w = weaponCatalog.drone;
+            if (!w) { drones = []; return; }
             const now = Date.now();
-            droneCompanions.forEach(d => {
-                if (now - d.lastFireMs < d.interval) return;
-                d.lastFireMs = now;
-                const dx = player.x + player.width / 2 + d.offsetX - 2;
-                const dy = player.y - 2;
-                bullets.push({
-                    x: dx, y: dy,
-                    width: w.width, height: w.height,
-                    speedX: 0, speedY: -w.speed,
-                    maxSpeed: w.speed,
-                    damage: w.damage,
-                    range: w.range,
-                    traveled: 0,
-                    pierceRemaining: w.pierce,
-                    color: w.color,
-                    homing: false, homingForce: 0,
-                    slowOnHitMs: 0,
-                    pullRadius: 0, pullForce: 0,
-                    explodeOnImpact: null,
-                    blocksBossBullets: false,
-                    lifeFrames: null
-                });
-            });
+            for (let i = drones.length - 1; i >= 0; i--) {
+                const d = drones[i];
+                if (now > d.expiresAt) {
+                    spawnExplosionEffect(d.x + d.width / 2, d.y + d.height / 2, 32);
+                    drones.splice(i, 1);
+                    continue;
+                }
+                const target = findNearestTarget(d.x + d.width / 2, d.y + d.height / 2);
+                if (d.y > d.idealY + 4) {
+                    d.vy = -1.6;
+                } else if (d.y < d.idealY - 4) {
+                    d.vy = 0.6;
+                } else {
+                    d.vy *= 0.6;
+                }
+                if (target) {
+                    const tw = target.width || target.size || 0;
+                    const tx = target.x + tw / 2;
+                    const dx = tx - (d.x + d.width / 2);
+                    d.vx = Math.sign(dx) * Math.min(Math.abs(dx) * 0.06, 2.6);
+                } else {
+                    d.vx *= 0.85;
+                }
+                d.x += d.vx;
+                d.y += d.vy;
+                if (d.x < 4)                                          { d.x = 4; d.vx = Math.abs(d.vx); }
+                if (d.x > canvas.width - d.width - 4)                 { d.x = canvas.width - d.width - 4; d.vx = -Math.abs(d.vx); }
+                if (d.y < 30)                                         { d.y = 30; d.vy = Math.abs(d.vy); }
+
+                if (target && now - d.lastFireMs >= d.fireIntervalMs) {
+                    d.lastFireMs = now;
+                    bullets.push({
+                        x: d.x + d.width / 2 - w.width / 2,
+                        y: d.y - w.height,
+                        width: w.width, height: w.height,
+                        speedX: 0, speedY: -w.speed,
+                        maxSpeed: w.speed,
+                        damage: w.damage, range: w.range, traveled: 0,
+                        pierceRemaining: w.pierce, color: w.color,
+                        homing: false, homingForce: 0,
+                        slowOnHitMs: 0, pullRadius: 0, pullForce: 0,
+                        explodeOnImpact: null, blocksBossBullets: false,
+                        lifeFrames: null,
+                        bulletStyle: 'rect',
+                        spawnedAt: now
+                    });
+                    playSound(shootSound);
+                }
+
+                let dead = false;
+                for (let bi = bossBullets.length - 1; bi >= 0; bi--) {
+                    if (checkCollision(d, bossBullets[bi])) {
+                        bossBullets.splice(bi, 1);
+                        d.health--;
+                        if (d.health <= 0) {
+                            spawnExplosionEffect(d.x + d.width / 2, d.y + d.height / 2, 32);
+                            drones.splice(i, 1);
+                            dead = true;
+                            break;
+                        }
+                    }
+                }
+                if (dead) continue;
+
+                // 敵本体との衝突 → ドローン破壊（接触ダメージは付与しない）
+                for (let ei = 0; ei < enemies.length; ei++) {
+                    if (checkCollision(d, enemies[ei])) {
+                        spawnExplosionEffect(d.x + d.width / 2, d.y + d.height / 2, 32);
+                        drones.splice(i, 1);
+                        break;
+                    }
+                }
+            }
         }
 
         function drawDrones() {
-            if (droneCompanions.length === 0) return;
+            if (drones.length === 0) return;
+            const now = Date.now();
+            const w = weaponCatalog.drone;
+            const lifeMs = (w && w.droneLifeMs) || 10000;
             ctx.save();
-            droneCompanions.forEach(d => {
-                const cx = player.x + player.width / 2 + d.offsetX;
-                const cy = player.y + 10;
-                ctx.fillStyle = '#00ff88';
-                ctx.shadowColor = '#00ff88';
-                ctx.shadowBlur = 8;
-                ctx.beginPath();
-                ctx.moveTo(cx, cy - 7);
-                ctx.lineTo(cx - 7, cy + 7);
-                ctx.lineTo(cx + 7, cy + 7);
-                ctx.closePath();
-                ctx.fill();
-                // 中央のコア
+            drones.forEach(d => {
+                const cx = d.x + d.width / 2;
+                const cy = d.y + d.height / 2;
+                const remaining = Math.max(0, d.expiresAt - now);
+                const lifeRatio = remaining / lifeMs;
+                const color = lifeRatio > 0.5 ? '#00ff88'
+                            : (lifeRatio > 0.25 ? '#ffcc44' : '#ff4466');
+                const blinkInterval = lifeRatio > 0.25 ? 0 : (lifeRatio > 0.12 ? 200 : 100);
+                const visible = blinkInterval === 0 || (Math.floor(now / blinkInterval) % 2 === 0);
+                if (visible) {
+                    ctx.fillStyle = color;
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy - 9);
+                    ctx.lineTo(cx - 9, cy + 7);
+                    ctx.lineTo(cx + 9, cy + 7);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#003322';
+                    ctx.fillRect(cx - 3, cy - 1, 6, 5);
+                }
                 ctx.shadowBlur = 0;
-                ctx.fillStyle = '#003322';
-                ctx.fillRect(cx - 2, cy - 1, 4, 4);
+                ctx.fillStyle = '#222';
+                ctx.fillRect(d.x, d.y - 5, d.width, 3);
+                ctx.fillStyle = color;
+                ctx.fillRect(d.x, d.y - 5, d.width * lifeRatio, 3);
             });
             ctx.restore();
         }
@@ -1511,6 +1779,59 @@
         let enemies = [];
         let boss = null;
         let bossBullets = [];
+        // ボス衝撃波（Lv.5以上のボスがプレイヤー接近時に放つ範囲攻撃）
+        // 各要素: { cx, cy, radius, expandSpeed, maxRadius, thickness, chargeUntil, hit, damage }
+        let bossShockwaves = [];
+        let shockwaveFlashUntil = 0;                  // 被弾時の画面フラッシュ
+        const BOSS_SHOCKWAVE_LEVEL_THRESHOLD = 5;     // Lv.5(=2000点)以上で発動
+        const BOSS_SHOCKWAVE_TRIGGER_DIST = 220;      // この距離未満で発動
+        const BOSS_SHOCKWAVE_COOLDOWN_MS = 3000;
+        const BOSS_SHOCKWAVE_CHARGE_MS = 400;         // 予兆
+        const BOSS_SHOCKWAVE_EXPAND_SPEED = 6;
+        const BOSS_SHOCKWAVE_MAX_RADIUS = 280;
+        const BOSS_SHOCKWAVE_THICKNESS = 22;
+        const BOSS_SHOCKWAVE_DAMAGE_LIVES = 1;        // 被弾でライフ -1（明示的に 1 ライフ分）
+        const BOSS_SHOCKWAVE_FLASH_MS = 250;
+
+        // ボス吸収（Lv.7=3000点以上のボスが雑魚を引き寄せて吸収しHP回復）
+        const BOSS_ABSORB_LEVEL_THRESHOLD = 7;        // Lv.7(=3000点)以上で発動
+        const BOSS_ABSORB_RANGE = 280;
+        const BOSS_ABSORB_PULL_FORCE = 1.2;
+        const BOSS_ABSORB_COOLDOWN_MS = 1500;
+        const BOSS_ABSORB_MIN_HEAL = 4;
+        const BOSS_ABSORB_HEAL_RATIO = 0.4;          // enemy.points × 0.4 を HP に変換
+
+        // ボス狙撃（Lv.9以上は通常攻撃が狙い撃ち単発に変化）
+        const BOSS_SNIPER_LEVEL_THRESHOLD = 9;
+        const BOSS_SNIPER_CHARGE_MS = 400;            // 発射前のレーザー照準時間
+        const BOSS_SNIPER_BULLET_SPEED = 9;
+        const BOSS_SNIPER_BULLET_W = 10;
+        const BOSS_SNIPER_BULLET_H = 22;
+        const BOSS_SNIPER_MIN_INTERVAL_MS = 1100;     // 狙撃間隔の下限
+        const BOSS_SNIPER_DOUBLE_LEVEL = 10;          // このレベル以上で 2 発になる
+        const BOSS_SNIPER_DOUBLE_SPREAD = 0.15;       // 2 発時の扇開き角（rad）
+
+        // ボス部下（Lv.9でLv.1部下x2 / Lv.10でLv.2部下x2 / 8秒で吸収して全回復）
+        const BOSS_MINION_LEVEL_THRESHOLD = 9;
+        const BOSS_MINION_COUNT = 2;
+        const BOSS_MINION_ABSORB_DELAY_MS = 8000;
+        const BOSS_MINION_PULL_FORCE = 4;
+        let bossMinions = [];
+
+        // ボス機雷設置（Lv.8=4000点以上のボスが機雷を投下）
+        const BOSS_MINE_LEVEL_THRESHOLD = 8;
+        const BOSS_MINE_DROP_COOLDOWN_MS = 4000;
+        const BOSS_MINE_LIFE_MS = 8000;
+        const BOSS_MINE_BLINK_AT_MS = 5000;
+        const BOSS_MINE_FAST_BLINK_AT_MS = 7000;
+        const BOSS_MINE_FALL_SPEED = 2.6;             // 着地までの落下速度（一定）
+        const BOSS_MINE_TARGET_Y_MIN_RATIO = 0.45;    // canvas.height * 0.45（画面中央）
+        const BOSS_MINE_TARGET_Y_MAX_RATIO = 0.85;    // canvas.height * 0.85（プレイヤーの手前）
+        const BOSS_MINE_HORIZONTAL_DRIFT = 0.5;       // 横方向のランダムドリフト
+        const BOSS_MINE_SIZE = 28;
+        const BOSS_MINE_EXPLODE_RADIUS = 90;
+        const BOSS_MINE_EXPLODE_DAMAGE_LIVES = 1;
+        let bossMines = [];                            // [{ x, y, vx, vy, targetY, settled, size, spawnedAt, expiresAt, triggered }]
         let treasureBox = null; // 宝箱
         let supplyUnits = []; // 支援物資（補給型ユニット）
         let healthItems = []; // ライフ回復アイテム
@@ -1662,7 +1983,17 @@
             } else {
                 if ((weaponAmmo[currentWeapon] || 0) < weapon.ammoCost) return;
             }
-            
+
+            // ── 放出型武器（drone）: 自律ユニットをスポーンして弾薬を消費
+            if (weapon.isDeployable && weapon.id === 'drone') {
+                if (!spawnDrone()) return;
+                playSound(shootSound);
+                weaponAmmo[currentWeapon] -= weapon.ammoCost;
+                updateAmmoHud();
+                updateWeaponSelector();
+                return;
+            }
+
             // 武器に応じた弾丸を発射
             for (let i = 0; i < weapon.bulletCount; i++) {
                 const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
@@ -1710,12 +2041,135 @@
             updateWeaponSelector();
         }
 
+        // 狙撃弾発射（Lv.9+）— 当たれば即死。Lv.10+ は 2 発の扇形
+        function bossSnipeShot(tx, ty) {
+            if (!boss) return;
+            const sx = boss.x + boss.width / 2;
+            const sy = boss.y + boss.height;
+            const dx = tx - sx;
+            const dy = ty - sy;
+            const baseAngle = Math.atan2(dy, dx);
+            const count = bossLevel >= BOSS_SNIPER_DOUBLE_LEVEL ? 2 : 1;
+            for (let i = 0; i < count; i++) {
+                // 1 発: 中央 / 2 発: ±BOSS_SNIPER_DOUBLE_SPREAD/2
+                const offset = count === 1
+                    ? 0
+                    : (i === 0 ? -1 : 1) * BOSS_SNIPER_DOUBLE_SPREAD / 2;
+                const angle = baseAngle + offset;
+                bossBullets.push({
+                    x: sx - BOSS_SNIPER_BULLET_W / 2,
+                    y: sy,
+                    width: BOSS_SNIPER_BULLET_W,
+                    height: BOSS_SNIPER_BULLET_H,
+                    speedX: Math.cos(angle) * BOSS_SNIPER_BULLET_SPEED,
+                    speedY: Math.sin(angle) * BOSS_SNIPER_BULLET_SPEED,
+                    color: '#ff00ff',
+                    isSniper: true
+                });
+            }
+            playSound(bossShootSound);
+        }
+
+        // 部下更新・描画
+        function updateBossMinions() {
+            if (bossMinions.length === 0) return;
+            const now = Date.now();
+            bossMinions = bossMinions.filter(m => {
+                if (!m.beingAbsorbed) {
+                    m.x += m.vx;
+                    if (m.x < 10)                          { m.x = 10; m.vx = Math.abs(m.vx); }
+                    if (m.x + m.width > canvas.width - 10) { m.x = canvas.width - 10 - m.width; m.vx = -Math.abs(m.vx); }
+                    // 単発狙い撃ち
+                    if (now - m.lastShot > m.shotInterval) {
+                        m.lastShot = now;
+                        const dx = (player.x + player.width/2) - (m.x + m.width/2);
+                        const dy = (player.y + player.height/2) - (m.y + m.height/2);
+                        const dist = Math.hypot(dx, dy) || 1;
+                        const speed = 4;
+                        bossBullets.push({
+                            x: m.x + m.width / 2 - 3,
+                            y: m.y + m.height,
+                            width: 6, height: 12,
+                            speedX: dx / dist * speed,
+                            speedY: dy / dist * speed,
+                            color: '#ff8844'
+                        });
+                    }
+                }
+                // プレイヤー本体接触
+                if (checkCollision(m, player)) {
+                    lives--;
+                    if (lives < 0) lives = 0;
+                    livesElement.textContent = `ライフ: ${lives}`;
+                    runState.livesLost++;
+                    recomputeUnlockedSlots();
+                    if (lives <= 0) gameOver('gameover');
+                }
+                return m.health > 0;
+            });
+        }
+
+        function drawBossMinions() {
+            if (bossMinions.length === 0) return;
+            ctx.save();
+            bossMinions.forEach(m => {
+                // ボス Lv.1/Lv.2 と同じアートワーク（サイズだけ縮小）
+                drawBossArtwork(m.x, m.y, m.width, m.height, m.level);
+                // HPバー
+                const hpRatio = m.health / m.maxHealth;
+                ctx.fillStyle = '#222';
+                ctx.fillRect(m.x, m.y - 6, m.width, 4);
+                ctx.fillStyle = hpRatio > 0.5 ? '#0f0' : hpRatio > 0.2 ? '#ff0' : '#f00';
+                ctx.fillRect(m.x, m.y - 6, m.width * hpRatio, 4);
+                // ラベル
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Lv.${m.level} 部下`, m.x + m.width/2, m.y + m.height + 14);
+                // 吸収ビーム（吸引中）
+                if (m.beingAbsorbed && boss) {
+                    ctx.save();
+                    ctx.strokeStyle = '#ff66ff';
+                    ctx.shadowColor = '#ff66ff';
+                    ctx.shadowBlur = 14;
+                    ctx.lineWidth = 4;
+                    ctx.globalAlpha = 0.6 + 0.3 * Math.sin(Date.now() * 0.02);
+                    ctx.beginPath();
+                    ctx.moveTo(boss.x + boss.width/2, boss.y + boss.height/2);
+                    ctx.lineTo(m.x + m.width/2, m.y + m.height/2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            });
+            ctx.restore();
+        }
+
+        // 狙撃の照準ラインは表示しない（補助線なしの「ガチ狙撃」設計）
+        function drawSniperAim() { /* no-op */ }
+
+        // ボス吸収カウントダウン HUD（吸収開始までの残り秒数を画面上部に出す）
+        function drawMinionAbsorbWarning() {
+            if (!boss || bossMinions.length === 0) return;
+            if (boss.minionAbsorbStartAt === null) return;
+            const remaining = boss.minionAbsorbStartAt - Date.now();
+            if (remaining > 0) {
+                ctx.save();
+                ctx.fillStyle = '#ff44aa';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`部下吸収まで ${(remaining / 1000).toFixed(1)}s — 部下を倒せ！`,
+                             canvas.width / 2, 40);
+                ctx.restore();
+            }
+        }
+
         // ボス弾丸発射
         function bossShoot() {
             if (!boss) return;
             
-            // レベルに応じて弾丸数を増加
-            const bulletCount = Math.min(3 + Math.floor(bossLevel / 2), 7); // 最大7発まで
+            // レベルに応じて弾丸数を増加（Lv.6 で 6 発に到達したら以降は据え置き。
+            // それ以上の難易度上昇は「衝撃波(Lv.5+)」「雑魚吸収(Lv.7+)」で表現する）
+            const bulletCount = Math.min(3 + Math.floor(bossLevel / 2), 6);
             
             for (let i = 0; i < bulletCount; i++) {
                 const angle = (i - (bulletCount - 1) / 2) * 0.5; // 角度を計算
@@ -1757,9 +2211,25 @@
                     moveDirection: 1, // 移動方向（1:右、-1:左）
                     points: 50 + (bossLevel - 1) * 25, // レベルに応じて点数増加
                     lastShot: 0,
-                    shotInterval: Math.max(500, 2000 - (bossLevel - 1) * 200) / speedMultiplier // レベルに応じて攻撃間隔短縮
+                    shotInterval: Math.max(500, 2000 - (bossLevel - 1) * 200) / speedMultiplier, // レベルに応じて攻撃間隔短縮
+                    lastShockwaveAt: 0,
+                    sniperLocked: false,
+                    sniperTargetX: 0,
+                    sniperTargetY: 0,
+                    minionAbsorbStartAt: null
                 };
-                
+
+                // 狙撃モード(Lv.9+): 単発高精度なので最低発射間隔を確保
+                if (bossLevel >= BOSS_SNIPER_LEVEL_THRESHOLD) {
+                    boss.shotInterval = Math.max(boss.shotInterval, BOSS_SNIPER_MIN_INTERVAL_MS);
+                }
+
+                // 部下出現(Lv.9+): Lv.9 → Lv.1 部下x2 / Lv.10+ → Lv.2 部下x2
+                bossMinions = [];
+                if (bossLevel >= BOSS_MINION_LEVEL_THRESHOLD) {
+                    spawnBossMinions(bossLevel);
+                }
+
                 // ボス警告表示（レベルに応じてメッセージ変更）
                 const levelText = bossLevel > 1 ? `レベル${bossLevel} ` : '';
                 bossWarningElement.textContent = `⚠️ ${levelText}ボス出現！ ⚠️`;
@@ -1768,6 +2238,35 @@
                     bossWarningElement.style.display = 'none';
                 }, 3000);
             }
+        }
+
+        // 部下生成
+        function spawnBossMinions(currentBossLevel) {
+            const minionLevel = currentBossLevel === 9 ? 1 : 2;
+            for (let i = 0; i < BOSS_MINION_COUNT; i++) {
+                spawnSingleBossMinion(minionLevel, i);
+            }
+        }
+
+        // 単体の部下を生成（再生成にも使う）
+        function spawnSingleBossMinion(minionLevel, slotIndex) {
+            const w = 60 + (minionLevel - 1) * 10;
+            const h = 50 + (minionLevel - 1) * 8;
+            // slotIndex で左右の出現位置を決める。0=左、1=右
+            const x = slotIndex === 0 ? 60 : canvas.width - 60 - w;
+            bossMinions.push({
+                x, y: 80,
+                width: w, height: h,
+                health: 12 + (minionLevel - 1) * 6,
+                maxHealth: 12 + (minionLevel - 1) * 6,
+                vx: (slotIndex === 0 ? 1 : -1) * (1.4 + (minionLevel - 1) * 0.3),
+                level: minionLevel,
+                points: 30 + (minionLevel - 1) * 15,
+                lastShot: Date.now() + slotIndex * 600,
+                shotInterval: 1800,
+                beingAbsorbed: false,
+                slotIndex
+            });
         }
 
         // 敵生成
@@ -1976,11 +2475,31 @@
         // ボス弾丸描画
         function drawBossBullets() {
             bossBullets.forEach(bullet => {
-                ctx.fillStyle = bullet.color;
-                ctx.shadowColor = bullet.color;
-                ctx.shadowBlur = 8;
-                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
-                ctx.shadowBlur = 0;
+                if (bullet.isSniper) {
+                    // 狙撃弾は強発光 + トレイル（即死級の見た目で警告）
+                    ctx.save();
+                    ctx.fillStyle = bullet.color;
+                    ctx.shadowColor = bullet.color;
+                    ctx.shadowBlur = 20;
+                    ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                    const len = Math.hypot(bullet.speedX, bullet.speedY) || 1;
+                    const tx = bullet.x + bullet.width / 2 - bullet.speedX / len * 28;
+                    const ty = bullet.y + bullet.height / 2 - bullet.speedY / len * 28;
+                    ctx.strokeStyle = bullet.color;
+                    ctx.lineWidth = 3;
+                    ctx.globalAlpha = 0.65;
+                    ctx.beginPath();
+                    ctx.moveTo(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2);
+                    ctx.lineTo(tx, ty);
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    ctx.fillStyle = bullet.color;
+                    ctx.shadowColor = bullet.color;
+                    ctx.shadowBlur = 8;
+                    ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                    ctx.shadowBlur = 0;
+                }
             });
         }
 
@@ -2036,6 +2555,38 @@
         }
 
         // ボス描画
+        // 任意の位置・サイズ・レベル指定でボス見た目を描画する共通関数
+        // 部下も同じ見た目を採用（メインボスとの差は「サイズが小さい」だけ）
+        function drawBossArtwork(x, y, w, h, level) {
+            ctx.save();
+            ctx.shadowColor = level > 2 ? '#ff00ff' : '#ff0000';
+            ctx.shadowBlur = 10 + (level - 1) * 5;
+            // 本体（黒）
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(x + w/6, y + h/4, 2*w/3, h/2);
+            // 装甲板（灰）
+            ctx.fillStyle = '#666666';
+            ctx.fillRect(x + w/8, y + h/6, 3*w/4, h/3);
+            // 砲塔
+            ctx.fillStyle = level > 2 ? '#ff00ff' : '#cc0000';
+            ctx.fillRect(x + w/4, y, w/2, h/4);
+            // 翼
+            ctx.fillStyle = '#222222';
+            ctx.fillRect(x - w/4, y + h/3, w/4, h/3);
+            ctx.fillRect(x + w,   y + h/3, w/4, h/3);
+            // エンジン
+            ctx.fillStyle = '#ff4400';
+            ctx.fillRect(x + w/6, y + h/2, w/3, h/6);
+            // コックピット
+            ctx.fillStyle = level > 2 ? '#ff00ff' : '#ff0000';
+            ctx.fillRect(x + w/3, y + h/6, w/3, h/6);
+            // 装甲板ハイライト
+            ctx.fillStyle = '#888888';
+            ctx.fillRect(x + w/6, y + h/4, w/3, h/8);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
         function drawBoss() {
             if (!boss) return;
             
@@ -2043,41 +2594,37 @@
             const y = boss.y;
             const w = boss.width;
             const h = boss.height;
-            
-            // ボスの影効果（レベルに応じて強化）
-            ctx.shadowColor = bossLevel > 2 ? '#ff00ff' : '#ff0000';
-            ctx.shadowBlur = 10 + (bossLevel - 1) * 5;
-            
-            // ボスの本体（重厚感のある黒）
-            ctx.fillStyle = '#333333';
-            ctx.fillRect(x + w/6, y + h/4, 2*w/3, h/2);
-            
-            // ボスの装甲板（金属的な灰色）
-            ctx.fillStyle = '#666666';
-            ctx.fillRect(x + w/8, y + h/6, 3*w/4, h/3);
-            
-            // ボスの砲塔（レベルに応じて色変更）
-            ctx.fillStyle = bossLevel > 2 ? '#ff00ff' : '#cc0000';
-            ctx.fillRect(x + w/4, y, w/2, h/4);
-            
-            // ボスの翼（黒）
-            ctx.fillStyle = '#222222';
-            ctx.fillRect(x - w/4, y + h/3, w/4, h/3);
-            ctx.fillRect(x + w, y + h/3, w/4, h/3);
-            
-            // ボスのエンジン（オレンジ）
-            ctx.fillStyle = '#ff4400';
-            ctx.fillRect(x + w/6, y + h/2, w/3, h/6);
-            
-            // ボスのコックピット（レベルに応じて色変更）
-            ctx.fillStyle = bossLevel > 2 ? '#ff00ff' : '#ff0000';
-            ctx.fillRect(x + w/3, y + h/6, w/3, h/6);
-            
-            // ボスの装甲板の詳細
-            ctx.fillStyle = '#888888';
-            ctx.fillRect(x + w/6, y + h/4, w/3, h/8);
-            
-            ctx.shadowBlur = 0;
+
+            // 吸収トラクタービーム（ターゲットがいるとき）
+            if (boss._absorbTarget && enemies.includes(boss._absorbTarget)) {
+                const t = boss._absorbTarget;
+                const bcx = x + w / 2, bcy = y + h / 2;
+                const tcx = t.x + t.width / 2, tcy = t.y + t.height / 2;
+                ctx.save();
+                ctx.shadowColor = '#ff44ff';
+                ctx.shadowBlur = 14;
+                ctx.strokeStyle = '#ff66ff';
+                ctx.lineWidth = 4;
+                ctx.globalAlpha = 0.45 + 0.35 * Math.sin(Date.now() * 0.02);
+                ctx.beginPath();
+                ctx.moveTo(bcx, bcy);
+                ctx.lineTo(tcx, tcy);
+                ctx.stroke();
+                // ターゲットを囲む小さなマーカー
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 0.7;
+                ctx.strokeStyle = '#ff66ff';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.arc(tcx, tcy, Math.max(t.width, t.height) * 0.7, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            // ボス本体の描画（共通アートワークを使用）
+            drawBossArtwork(x, y, w, h, bossLevel);
             
             // ボスのHPバー
             const barWidth = w;
@@ -2148,6 +2695,9 @@
             // 随伴機の自動射撃
             updateDrones();
             updateExplosionEffects();
+            updateBossShockwaves();
+            updateBossMines();
+            updateBossMinions();
 
             // 弾丸更新（追尾・引力・シールド遮断もここで処理）
             bullets = bullets.filter(bullet => {
@@ -2187,6 +2737,36 @@
                     }
                 }
 
+                // ボス機雷を撃って早期爆破できる（爆風はその場で発生）
+                for (let mi = bossMines.length - 1; mi >= 0; mi--) {
+                    if (checkCollision(bullet, bossMines[mi])) {
+                        explodeBossMine(bossMines[mi]);
+                        bossMines.splice(mi, 1);
+                        return false;        // この弾は消費
+                    }
+                }
+
+                // ボスの部下と当たる
+                for (let mi = bossMinions.length - 1; mi >= 0; mi--) {
+                    const mn = bossMinions[mi];
+                    if (checkCollision(bullet, mn)) {
+                        mn.health -= bullet.damage;
+                        if (mn.health <= 0) {
+                            score += mn.points;
+                            scoreElement.textContent = `スコア: ${score}`;
+                            spawnExplosionEffect(mn.x + mn.width / 2, mn.y + mn.height / 2, 40);
+                            playSound(explosionSound);
+                            bossMinions.splice(mi, 1);
+                            // 全部下を倒したら吸収タイマーリセット
+                            if (bossMinions.length === 0 && boss) {
+                                boss.minionAbsorbStartAt = null;
+                            }
+                        }
+                        bullet.pierceRemaining--;
+                        if (bullet.pierceRemaining < 0) return false;
+                    }
+                }
+
                 return bullet.y > -bullet.height && bullet.traveled < bullet.range;
             });
 
@@ -2215,11 +2795,157 @@
                 
                 // ボスの攻撃
                 const now = Date.now();
-                if (now - boss.lastShot > boss.shotInterval) {
-                    bossShoot();
-                    boss.lastShot = now;
+                const isSniper = bossLevel >= BOSS_SNIPER_LEVEL_THRESHOLD;
+                if (isSniper) {
+                    const since = now - boss.lastShot;
+                    // 発射の BOSS_SNIPER_CHARGE_MS 前にターゲットをロックして照準表示
+                    if (!boss.sniperLocked && since >= boss.shotInterval - BOSS_SNIPER_CHARGE_MS) {
+                        boss.sniperLocked = true;
+                        boss.sniperTargetX = player.x + player.width / 2;
+                        boss.sniperTargetY = player.y + player.height / 2;
+                    }
+                    if (since >= boss.shotInterval) {
+                        bossSnipeShot(boss.sniperTargetX, boss.sniperTargetY);
+                        boss.sniperLocked = false;
+                        boss.lastShot = now;
+                    }
+                } else {
+                    if (now - boss.lastShot > boss.shotInterval) {
+                        bossShoot();
+                        boss.lastShot = now;
+                    }
                 }
-                
+
+                // 部下吸収(Lv.9+): 8秒経過後に最寄りの部下を引き寄せ、接触で全回復
+                if (bossLevel >= BOSS_MINION_LEVEL_THRESHOLD && bossMinions.length > 0) {
+                    if (boss.minionAbsorbStartAt === null) {
+                        boss.minionAbsorbStartAt = now + BOSS_MINION_ABSORB_DELAY_MS;
+                    }
+                    if (now >= boss.minionAbsorbStartAt) {
+                        let target = null, bestDist = Infinity;
+                        for (const m of bossMinions) {
+                            const dx2 = (m.x + m.width/2) - (boss.x + boss.width/2);
+                            const dy2 = (m.y + m.height/2) - (boss.y + boss.height/2);
+                            const d2 = dx2*dx2 + dy2*dy2;
+                            if (d2 < bestDist) { bestDist = d2; target = m; }
+                        }
+                        if (target) {
+                            target.beingAbsorbed = true;
+                            const dx = (boss.x + boss.width/2) - (target.x + target.width/2);
+                            const dy = (boss.y + boss.height/2) - (target.y + target.height/2);
+                            const len = Math.hypot(dx, dy) || 1;
+                            target.x += dx / len * BOSS_MINION_PULL_FORCE;
+                            target.y += dy / len * BOSS_MINION_PULL_FORCE;
+                            if (checkCollision(boss, target)) {
+                                // 吸収成立 → 全回復
+                                boss.health = boss.maxHealth;
+                                spawnExplosionEffect(target.x + target.width/2, target.y + target.height/2, 60);
+                                playSound(explosionSound);
+                                const consumedLevel = target.level;
+                                const consumedSlot = target.slotIndex;
+                                bossMinions = bossMinions.filter(m => m !== target);
+                                boss.minionAbsorbStartAt = null;
+                                bossWarningElement.textContent = '⚠️ 部下が吸収されてHP全回復！ 部下が再展開！ ⚠️';
+                                bossWarningElement.style.display = 'block';
+                                setTimeout(() => { bossWarningElement.style.display = 'none'; }, 2500);
+                                // 吸収で消えた部下のみ再生成（プレイヤー撃破では再生成しない）
+                                spawnSingleBossMinion(consumedLevel, consumedSlot);
+                            }
+                        }
+                    }
+                } else if (boss) {
+                    boss.minionAbsorbStartAt = null;
+                }
+
+                // 吸収: Lv.7(=3000点)以上で、最寄りの雑魚を引き寄せて HP 回復
+                if (bossLevel >= BOSS_ABSORB_LEVEL_THRESHOLD && enemies.length > 0) {
+                    const bcx = boss.x + boss.width / 2;
+                    const bcy = boss.y + boss.height / 2;
+                    // ターゲット選択（毎フレーム再選択。最寄り 1 体のみ吸引）
+                    let target = null, bestDist = BOSS_ABSORB_RANGE;
+                    for (const e of enemies) {
+                        const dist = Math.hypot(e.x + e.width/2 - bcx, e.y + e.height/2 - bcy);
+                        if (dist < bestDist) { bestDist = dist; target = e; }
+                    }
+                    if (target) {
+                        boss._absorbTarget = target;
+                        const dx = bcx - (target.x + target.width / 2);
+                        const dy = bcy - (target.y + target.height / 2);
+                        const len = Math.hypot(dx, dy) || 1;
+                        // 重力的に吸引（敵自身の移動を打ち消すレベル）
+                        target.x += (dx / len) * BOSS_ABSORB_PULL_FORCE;
+                        target.y += (dy / len) * BOSS_ABSORB_PULL_FORCE;
+                        // ボスとの衝突で吸収（クールダウンあり）
+                        if (now - (boss.lastAbsorbAt || 0) >= BOSS_ABSORB_COOLDOWN_MS &&
+                            checkCollision(boss, target)) {
+                            const heal = Math.max(BOSS_ABSORB_MIN_HEAL,
+                                                  Math.floor((target.points || 10) * BOSS_ABSORB_HEAL_RATIO));
+                            boss.health = Math.min(boss.maxHealth, boss.health + heal);
+                            boss.lastAbsorbAt = now;
+                            // 吸収エフェクト（既存の expanding ring を流用）
+                            spawnExplosionEffect(target.x + target.width / 2,
+                                                 target.y + target.height / 2, 26);
+                            // 雑魚を消滅させる
+                            const idx = enemies.indexOf(target);
+                            if (idx !== -1) enemies.splice(idx, 1);
+                            boss._absorbTarget = null;
+                            playSound(explosionSound);
+                        }
+                    } else {
+                        boss._absorbTarget = null;
+                    }
+                } else if (boss) {
+                    boss._absorbTarget = null;
+                }
+
+                // 機雷設置: Lv.8(=4000点)以上で、4秒に1個ボスから投下し画面下半分に着地
+                if (bossLevel >= BOSS_MINE_LEVEL_THRESHOLD) {
+                    if (now - (boss.lastMineDropAt || 0) >= BOSS_MINE_DROP_COOLDOWN_MS) {
+                        boss.lastMineDropAt = now;
+                        const targetY = canvas.height * (
+                            BOSS_MINE_TARGET_Y_MIN_RATIO +
+                            Math.random() * (BOSS_MINE_TARGET_Y_MAX_RATIO - BOSS_MINE_TARGET_Y_MIN_RATIO)
+                        );
+                        bossMines.push({
+                            x: boss.x + boss.width / 2 - BOSS_MINE_SIZE / 2,
+                            y: boss.y + boss.height,
+                            vx: (Math.random() - 0.5) * BOSS_MINE_HORIZONTAL_DRIFT,
+                            vy: BOSS_MINE_FALL_SPEED,
+                            targetY: targetY,
+                            settled: false,
+                            size: BOSS_MINE_SIZE,
+                            width: BOSS_MINE_SIZE,         // checkCollision 用
+                            height: BOSS_MINE_SIZE,
+                            spawnedAt: now,
+                            expiresAt: now + BOSS_MINE_LIFE_MS,
+                            triggered: false
+                        });
+                    }
+                }
+
+                // 衝撃波: Lv.5(=2000点)以上で、プレイヤーが一定距離内に入ったら発動
+                if (bossLevel >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD) {
+                    const bcx = boss.x + boss.width / 2;
+                    const bcy = boss.y + boss.height / 2;
+                    const pcx = player.x + player.width / 2;
+                    const pcy = player.y + player.height / 2;
+                    const dist = Math.hypot(pcx - bcx, pcy - bcy);
+                    if (dist < BOSS_SHOCKWAVE_TRIGGER_DIST &&
+                        now - (boss.lastShockwaveAt || 0) >= BOSS_SHOCKWAVE_COOLDOWN_MS) {
+                        boss.lastShockwaveAt = now;
+                        bossShockwaves.push({
+                            cx: bcx, cy: bcy,
+                            radius: 0,
+                            expandSpeed: BOSS_SHOCKWAVE_EXPAND_SPEED * speedMultiplier,
+                            maxRadius: BOSS_SHOCKWAVE_MAX_RADIUS,
+                            thickness: BOSS_SHOCKWAVE_THICKNESS,
+                            chargeUntil: now + BOSS_SHOCKWAVE_CHARGE_MS,
+                            hit: false,
+                            damage: BOSS_SHOCKWAVE_DAMAGE_LIVES
+                        });
+                    }
+                }
+
                 // プレイヤーとの衝突
                 if (checkCollision(boss, player)) {
                     lives--;
@@ -2328,6 +3054,9 @@
                         const defeatedLevel = bossLevel;
                         boss = null;
                         bossSpawned = false;
+                        // ボス撃破時に部下も道連れ（生き残った部下は爆散）
+                        bossMinions.forEach(m => spawnExplosionEffect(m.x + m.width / 2, m.y + m.height / 2, 35));
+                        bossMinions = [];
                         playSound(bossExplosionSound); // ボス撃破音
                         
                         // bossLevel に応じたラン内解放（＋ログイン時はメタ層も永続化）
@@ -2362,12 +3091,22 @@
             bossBullets.forEach((bullet, bulletIndex) => {
                 if (checkCollision(bullet, player)) {
                     bossBullets.splice(bulletIndex, 1);
-                    lives--;
-                    livesElement.textContent = `ライフ: ${lives}`;
-                    runState.livesLost++;
-                    recomputeUnlockedSlots();
-                    if (lives <= 0) {
+                    if (bullet.isSniper) {
+                        // 狙撃弾は 1 発で即死
+                        const lethal = lives;
+                        lives = 0;
+                        runState.livesLost += lethal;
+                        livesElement.textContent = `ライフ: 0`;
+                        playSound(explosionSound);
+                        spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
                         gameOver('gameover');
+                    } else {
+                        lives--;
+                        if (lives < 0) lives = 0;
+                        livesElement.textContent = `ライフ: ${lives}`;
+                        runState.livesLost++;
+                        recomputeUnlockedSlots();
+                        if (lives <= 0) gameOver('gameover');
                     }
                 }
             });
@@ -2462,6 +3201,10 @@
             drawBossBullets();
             drawEnemies();
             drawBoss();
+            drawBossMinions();
+            drawBossShockwaves();
+            drawBossMines();
+            drawMinionAbsorbWarning();
             drawExplosionEffects();
             
             // 宝箱の描画
@@ -2659,7 +3402,11 @@
             boss = null;
             bossSpawned = false;
             bossBullets = [];
-            droneCompanions = [];
+            bossShockwaves = [];
+            bossMines = [];
+            bossMinions = [];
+            shockwaveFlashUntil = 0;
+            drones = [];
             explosionEffects = [];
             treasureBox = null; // リスタート時に宝箱もリセット
             supplyUnits = []; // 支援物資をリセット

@@ -197,8 +197,9 @@ const weaponCatalog = {
     homing:   { id: 'homing',   name: 'ホーミング', ammoCost: 1, maxAmmo: 8,  bulletCount: 1, spread: 0,    speed: 6,
                 damage: 6, range: 900, pierce: 0, width: 6,  height: 12, color: '#ff66ff',
                 homing: true, homingForce: 0.18 },
-    drone:    { id: 'drone',    name: '随伴機',     ammoCost: 1, maxAmmo: 30, bulletCount: 1, spread: 0.05, speed: 7,
-                damage: 1, range: 600, pierce: 0, width: 4,  height: 10, color: '#00ff88' },
+    drone:    { id: 'drone',    name: '随伴機',     ammoCost: 1, maxAmmo: 5,  bulletCount: 1, spread: 0,    speed: 7,
+                damage: 1, range: 600, pierce: 0, width: 4,  height: 10, color: '#00ff88',
+                isDeployable: true, droneHealth: 1, droneLifeMs: 10000, droneFireIntervalMs: 700, droneIdealY: 110 },
     gravity:  { id: 'gravity',  name: '重力弾',     ammoCost: 1, maxAmmo: 6,  bulletCount: 1, spread: 0,    speed: 4,
                 damage: 2, range: 500, pierce: 0, width: 10, height: 10, color: '#9966ff',
                 pullRadius: 110, pullForce: 0.6 },
@@ -412,6 +413,14 @@ function shoot() {
         return;
     }
 
+    // 放出型武器（drone）: 自律ユニットをスポーンして弾薬を消費
+    if (w.isDeployable && w.id === 'drone') {
+        if (!spawnDrone()) return;
+        weaponAmmo[currentWeapon] -= w.ammoCost;
+        updateHud();
+        return;
+    }
+
     const baseAngle = 0;
     const count = w.bulletCount;
     for (let i = 0; i < count; i++) {
@@ -453,43 +462,115 @@ function shoot() {
     updateHud();
 }
 
-// ドローン
-function refreshDrones() {
-    if (currentWeapon === 'drone') {
-        if (droneCompanions.length === 0) {
-            const now = Date.now();
-            droneCompanions = [
-                { offsetX: -32, lastFireMs: now,        interval: 900 },
-                { offsetX:  32, lastFireMs: now + 450,  interval: 900 }
-            ];
-        }
-    } else {
-        droneCompanions = [];
+// 自律ドローン
+const DRONE_BODY_SIZE = 18;
+
+function spawnDrone() {
+    const w = weaponCatalog.drone;
+    if (!w) return false;
+    const now = Date.now();
+    droneCompanions.push({
+        x: player.x + player.width / 2 - DRONE_BODY_SIZE / 2,
+        y: player.y - DRONE_BODY_SIZE,
+        width: DRONE_BODY_SIZE, height: DRONE_BODY_SIZE,
+        vx: 0, vy: -2,
+        health: w.droneHealth || 1,
+        spawnedAt: now,
+        expiresAt: now + (w.droneLifeMs || 10000),
+        fireIntervalMs: w.droneFireIntervalMs || 700,
+        lastFireMs: now,
+        idealY: w.droneIdealY || 110
+    });
+    return true;
+}
+
+// 装備変更ではドローンは消去せず、放出済みは寿命まで残る
+function refreshDrones() { /* no-op */ }
+
+function findNearestTargetForDrone(x, y) {
+    let best = null, bestDist = Infinity;
+    for (const t of targets) {
+        const dx = t.x + t.width / 2 - x;
+        const dy = t.y + t.height / 2 - y;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; best = t; }
     }
+    return best;
 }
 
 function updateDrones() {
     if (droneCompanions.length === 0) return;
-    if (currentWeapon !== 'drone') { droneCompanions = []; return; }
     const w = weaponCatalog.drone;
+    if (!w) { droneCompanions = []; return; }
     const now = Date.now();
-    droneCompanions.forEach(d => {
-        if (now - d.lastFireMs < d.interval) return;
-        d.lastFireMs = now;
-        bullets.push({
-            x: player.x + player.width / 2 + d.offsetX - 2,
-            y: player.y - 2,
-            width: w.width, height: w.height,
-            speedX: 0, speedY: -w.speed,
-            maxSpeed: w.speed,
-            damage: w.damage, range: w.range, traveled: 0,
-            pierceRemaining: w.pierce, color: w.color,
-            homing: false, homingForce: 0,
-            slowOnHitMs: 0, pullRadius: 0, pullForce: 0,
-            explodeOnImpact: null, blocksBossBullets: false,
-            lifeFrames: null
-        });
-    });
+    for (let i = droneCompanions.length - 1; i >= 0; i--) {
+        const d = droneCompanions[i];
+        if (now > d.expiresAt) {
+            explosions.push({ x: d.x + d.width / 2, y: d.y + d.height / 2, radius: 32, age: 0, max: 25 });
+            droneCompanions.splice(i, 1);
+            continue;
+        }
+        const target = findNearestTargetForDrone(d.x + d.width / 2, d.y + d.height / 2);
+        if (d.y > d.idealY + 4) d.vy = -1.6;
+        else if (d.y < d.idealY - 4) d.vy = 0.6;
+        else d.vy *= 0.6;
+        if (target) {
+            const tx = target.x + target.width / 2;
+            const dx = tx - (d.x + d.width / 2);
+            d.vx = Math.sign(dx) * Math.min(Math.abs(dx) * 0.06, 2.6);
+        } else {
+            d.vx *= 0.85;
+        }
+        d.x += d.vx;
+        d.y += d.vy;
+        if (d.x < 4)                       { d.x = 4; d.vx = Math.abs(d.vx); }
+        if (d.x > W - d.width - 4)         { d.x = W - d.width - 4; d.vx = -Math.abs(d.vx); }
+        if (d.y < 30)                      { d.y = 30; d.vy = Math.abs(d.vy); }
+
+        if (target && now - d.lastFireMs >= d.fireIntervalMs) {
+            d.lastFireMs = now;
+            bullets.push({
+                x: d.x + d.width / 2 - w.width / 2,
+                y: d.y - w.height,
+                width: w.width, height: w.height,
+                speedX: 0, speedY: -w.speed,
+                maxSpeed: w.speed,
+                damage: w.damage, range: w.range, traveled: 0,
+                pierceRemaining: w.pierce, color: w.color,
+                homing: false, homingForce: 0,
+                slowOnHitMs: 0, pullRadius: 0, pullForce: 0,
+                explodeOnImpact: null, blocksBossBullets: false,
+                lifeFrames: null,
+                bulletStyle: 'rect',
+                spawnedAt: now
+            });
+        }
+
+        // 敵弾衝突 → HP-1
+        let dead = false;
+        for (let bi = bossBullets.length - 1; bi >= 0; bi--) {
+            if (checkCollision(d, bossBullets[bi])) {
+                bossBullets.splice(bi, 1);
+                d.health--;
+                if (d.health <= 0) {
+                    explosions.push({ x: d.x + d.width / 2, y: d.y + d.height / 2, radius: 32, age: 0, max: 25 });
+                    droneCompanions.splice(i, 1);
+                    dead = true;
+                    break;
+                }
+            }
+        }
+        if (dead) continue;
+
+        // 敵接触 → ドローン破壊
+        for (let ti = 0; ti < targets.length; ti++) {
+            if (checkCollision(d, targets[ti])) {
+                explosions.push({ x: d.x + d.width / 2, y: d.y + d.height / 2, radius: 32, age: 0, max: 25 });
+                droneCompanions.splice(i, 1);
+                break;
+            }
+        }
+    }
 }
 
 // =========================================================================
@@ -628,22 +709,44 @@ function draw() {
     ctx.fill();
     ctx.restore();
 
-    // ドローン
-    droneCompanions.forEach(d => {
-        const cx = player.x + player.width / 2 + d.offsetX;
-        const cy = player.y + 10;
-        ctx.save();
-        ctx.fillStyle = '#0f8';
-        ctx.shadowColor = '#0f8';
-        ctx.shadowBlur = 6;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - 6);
-        ctx.lineTo(cx - 6, cy + 6);
-        ctx.lineTo(cx + 6, cy + 6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-    });
+    // 自律ドローン
+    if (droneCompanions.length > 0) {
+        const wDrone = weaponCatalog.drone;
+        const lifeMs = (wDrone && wDrone.droneLifeMs) || 10000;
+        const now = Date.now();
+        droneCompanions.forEach(d => {
+            const cx = d.x + d.width / 2;
+            const cy = d.y + d.height / 2;
+            const remaining = Math.max(0, d.expiresAt - now);
+            const lifeRatio = remaining / lifeMs;
+            const color = lifeRatio > 0.5 ? '#00ff88'
+                        : (lifeRatio > 0.25 ? '#ffcc44' : '#ff4466');
+            const blinkInterval = lifeRatio > 0.25 ? 0 : (lifeRatio > 0.12 ? 200 : 100);
+            const visible = blinkInterval === 0 || (Math.floor(now / blinkInterval) % 2 === 0);
+            ctx.save();
+            if (visible) {
+                ctx.fillStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 9);
+                ctx.lineTo(cx - 9, cy + 7);
+                ctx.lineTo(cx + 9, cy + 7);
+                ctx.closePath();
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#003322';
+                ctx.fillRect(cx - 3, cy - 1, 6, 5);
+            }
+            // 残量バー
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#222';
+            ctx.fillRect(d.x, d.y - 5, d.width, 3);
+            ctx.fillStyle = color;
+            ctx.fillRect(d.x, d.y - 5, d.width * lifeRatio, 3);
+            ctx.restore();
+        });
+    }
 
     // ターゲット
     targets.forEach(t => {
