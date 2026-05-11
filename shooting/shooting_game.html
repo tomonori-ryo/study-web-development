@@ -1699,7 +1699,8 @@
         };
 
         // ボス撃破イベント。ラン層の進捗を更新し、ログイン時はメタ層も永続化する。
-        // 戻り値は「このレベルで解放対象になっている武器」のリスト（既に解放済みも含む）。
+        // 戻り値は「このレベルで初めて通知すべき武器」のリスト（過去に通知済みのものは除外）。
+        // 通知済みフラグは localStorage に保存し、次回以降は同じ武器の解放通知を出さない。
         function handleBossDefeated(level) {
             // ラン層: トリガー評価のための状態更新（両モード共通）
             runState.defeatedBossLevels.add(level);
@@ -1708,10 +1709,26 @@
             const entries = BOSS_LEVEL_META_UNLOCKS[level] || [];
             const unlockedWeapons = [];
 
+            // 通知済みフラグの読み込み（ゲスト・ログイン共通）。読み書きに失敗しても通知は1回出す方向に倒す。
+            let notified = {};
+            try {
+                notified = JSON.parse(localStorage.getItem('weaponUnlockNotified') || '{}') || {};
+            } catch (e) {
+                notified = {};
+            }
+            let notifiedChanged = false;
+
             entries.forEach(entry => {
                 const weapon = weaponCatalog[entry.weaponId];
                 if (!weapon) return;
-                unlockedWeapons.push(weapon);
+
+                // 過去に通知していなければ今回の通知対象に積む。それ以外（既通知）は黙って素通し。
+                const notifyKey = entry.persistKey || entry.weaponId;
+                if (!notified[notifyKey]) {
+                    unlockedWeapons.push(weapon);
+                    notified[notifyKey] = true;
+                    notifiedChanged = true;
+                }
 
                 if (loadoutMode === 'login') {
                     // メタ層: ログイン時のみ永続化（次回プレイから装備候補に入る）
@@ -1736,6 +1753,15 @@
                     }
                 }
             });
+
+            // 通知済みフラグの保存（読み込めなかった場合でも書き込みは試みる）
+            if (notifiedChanged) {
+                try {
+                    localStorage.setItem('weaponUnlockNotified', JSON.stringify(notified));
+                } catch (e) {
+                    // localStorage 容量超過などは無視（次回再通知になるだけ）
+                }
+            }
 
             return unlockedWeapons;
         }
