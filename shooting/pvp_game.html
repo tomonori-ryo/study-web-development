@@ -160,18 +160,20 @@
             font-size: clamp(8px, 1.8vw, 10px);
         }
         
-        /* 武器選択UI */
+        /* 武器選択UI（左下配置） */
         #weaponSelector {
             position: absolute;
             left: 10px;
-            top: 50%;
-            transform: translateY(-50%);
+            bottom: 10px;
+            transform: translateY(calc(-100% - 8px));
             background: rgba(0, 0, 0, 0.7);
             border-radius: 10px;
             padding: 10px;
             backdrop-filter: blur(10px);
             z-index: 100;
             transition: all 0.3s ease;
+            max-height: min(45vh, 320px);
+            overflow-y: auto;
         }
         
         .weapon-display {
@@ -227,8 +229,8 @@
         .weapon-selector-toggle {
             position: absolute;
             left: 10px;
-            top: 50%;
-            transform: translateY(-50%);
+            bottom: 10px;
+            transform: translateY(calc(-100% - 8px));
             background: rgba(0, 0, 0, 0.8);
             color: white;
             border: none;
@@ -243,7 +245,7 @@
         
         .weapon-selector-toggle:hover {
             background: rgba(0, 0, 0, 0.9);
-            transform: translateY(-50%) scale(1.1);
+            transform: translateY(calc(-100% - 8px)) scale(1.1);
         }
         
         /* レスポンシブ対応 */
@@ -336,63 +338,147 @@
             }
         }
 
-        /* PvPモード選択UI用のアニメーション */
-        @keyframes glow {
-            from { text-shadow: 0 0 20px #00ffff; }
-            to { text-shadow: 0 0 30px #00ffff, 0 0 40px #00ffff; }
+        /* PvPモード選択 */
+        #modeSelect {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(0, 50, 100, 0.8));
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+            padding: 16px;
+            box-sizing: border-box;
         }
 
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
+        .mode-panel {
+            width: min(92vw, 560px);
+            background: rgba(0, 0, 0, 0.68);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 16px;
+            padding: 20px;
+            box-sizing: border-box;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .mode-title {
+            margin: 0 0 8px;
+            color: #ffffff;
+            font-size: clamp(1.5rem, 4vw, 2rem);
+            text-align: center;
+        }
+
+        .mode-subtitle {
+            margin: 0 0 14px;
+            color: #cdd7e6;
+            text-align: center;
+            font-size: 0.95rem;
+            line-height: 1.45;
+        }
+
+        .mode-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .mode-option-btn {
+            border: none;
+            border-radius: 12px;
+            text-align: left;
+            padding: 14px;
+            cursor: pointer;
+            color: #fff;
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
+        }
+
+        .mode-option-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .mode-option-btn.ai {
+            background: linear-gradient(145deg, #ff7f50, #ff6347);
+            box-shadow: 0 4px 14px rgba(255, 127, 80, 0.35);
+        }
+
+        .mode-option-btn.online {
+            background: linear-gradient(145deg, #00c3ff, #0099cc);
+            box-shadow: 0 4px 14px rgba(0, 195, 255, 0.35);
+        }
+
+        .mode-option-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1.05rem;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .mode-option-desc {
+            font-size: 0.88rem;
+            opacity: 0.95;
+        }
+
+        .mode-help {
+            margin-top: 12px;
+            color: #a9bdd3;
+            font-size: 0.82rem;
+            text-align: center;
+        }
+
+        .ai-difficulty-row {
+            margin-top: 14px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 200, 180, 0.25);
+        }
+
+        .ai-difficulty-row label {
+            display: block;
+            color: #ffe8e0;
+            font-size: 0.88rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .ai-difficulty-row select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            font-size: 0.95rem;
+            box-sizing: border-box;
         }
     </style>
 </head>
 <body>
-    <!-- モード選択UI -->
-    <div id="modeSelect" style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(0,50,100,0.8)); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px);">
-        <div style="text-align: center; max-width: 600px; padding: 40px;">
-            <h1 style="color: #fff; margin-bottom: 20px; font-size: 3rem; text-shadow: 0 0 20px #00ffff; animation: glow 2s ease-in-out infinite alternate;">PvP対戦</h1>
-            <h2 style="color: #fff; margin-bottom: 40px; font-size: 2rem;">対戦モードを選択</h2>
-            
-            <div style="display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; margin-bottom: 30px;">
-                <!-- AI対戦カード -->
-                <div id="aiCard" style="background: linear-gradient(145deg, #ff7f50, #ff6347); border-radius: 20px; padding: 30px; width: 250px; text-align: center; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 10px 30px rgba(255,127,80,0.3); border: 3px solid transparent;">
-                    <div style="font-size: 4rem; margin-bottom: 15px;">🤖</div>
-                    <h3 style="color: #fff; margin-bottom: 10px; font-size: 1.5rem;">AI対戦</h3>
-                    <p style="color: #fff; margin-bottom: 15px; font-size: 0.9rem; opacity: 0.9;">CPUと対戦</p>
-                    <div style="background: rgba(255,255,255,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
-                        <p style="color: #fff; font-size: 0.8rem; margin: 5px 0;">✅ 安定動作</p>
-                        <p style="color: #fff; font-size: 0.8rem; margin: 5px 0;">✅ 即座開始</p>
-                        <p style="color: #fff; font-size: 0.8rem; margin: 5px 0;">✅ オフライン対応</p>
-                    </div>
-                    <div style="background: #ff4500; color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: bold;">推奨</div>
-                </div>
-                
-                <!-- オンライン対戦カード -->
-                <div id="onlineCard" style="background: linear-gradient(145deg, #00c3ff, #0099cc); border-radius: 20px; padding: 30px; width: 250px; text-align: center; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 10px 30px rgba(0,195,255,0.3); border: 3px solid transparent;">
-                    <div style="font-size: 4rem; margin-bottom: 15px;">🌐</div>
-                    <h3 style="color: #fff; margin-bottom: 10px; font-size: 1.5rem;">オンライン対戦</h3>
-                    <p style="color: #fff; margin-bottom: 15px; font-size: 0.9rem; opacity: 0.9;">他プレイヤーと対戦</p>
-                    <div style="background: rgba(255,255,255,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
-                        <p style="color: #fff; font-size: 0.8rem; margin: 5px 0;">🌐 リアルタイム対戦</p>
-                        <p style="color: #fff; font-size: 0.8rem; margin: 5px 0;">👥 他プレイヤー</p>
-                        <p style="color: #fff; font-size: 0.8rem; margin: 5px 0;">📊 ランキング</p>
-                    </div>
-                    <div style="background: #0066cc; color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: bold;">オンライン</div>
-                </div>
+    <div id="modeSelect">
+        <div class="mode-panel">
+            <h1 class="mode-title">対戦モードを選択</h1>
+            <p class="mode-subtitle">迷ったらAI対戦がおすすめです。オンラインは対戦相手の参加待ちが発生する場合があります。</p>
+            <div class="mode-list">
+                <button id="aiBtn" class="mode-option-btn ai" type="button">
+                    <div class="mode-option-main"><span>🤖 AI対戦（おすすめ）</span><span>→</span></div>
+                    <div class="mode-option-desc">すぐ開始 / 安定動作 / 1人で練習可能</div>
+                </button>
+                <button id="onlineBtn" class="mode-option-btn online" type="button">
+                    <div class="mode-option-main"><span>🌐 オンライン対戦</span><span>→</span></div>
+                    <div class="mode-option-desc">他プレイヤーとリアルタイム対戦</div>
+                </button>
             </div>
-            
-            <div style="text-align: center;">
-                <button id="aiBtn" style="font-size: 1.5rem; padding: 15px 40px; margin: 10px; background: linear-gradient(145deg, #ff7f50, #ff6347); color: #fff; border: none; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 5px 15px rgba(255,127,80,0.4);">AI対戦を開始</button>
-                <button id="onlineBtn" style="font-size: 1.5rem; padding: 15px 40px; margin: 10px; background: linear-gradient(145deg, #00c3ff, #0099cc); color: #fff; border: none; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 5px 15px rgba(0,195,255,0.4);">オンライン対戦を開始</button>
+            <div class="ai-difficulty-row">
+                <label for="aiDifficultySelect">🤖 AIの強さ（AI対戦のみ）</label>
+                <select id="aiDifficultySelect" aria-label="AIの強さ">
+                    <option value="easy">やさしい</option>
+                    <option value="medium">ふつう</option>
+                    <option value="hard" selected>むずかしい（初期）</option>
+                    <option value="expert">エキスパート</option>
+                </select>
             </div>
+            <div class="mode-help">※ ホームへ戻る場合はブラウザの戻るかURLバーから戻れます。URLに <code style="color:#8cf;">?ai=hard</code> があると強さが優先されます。</div>
         </div>
     </div>
     <canvas id="gameCanvas"></canvas>
@@ -432,13 +518,8 @@
             <button class="status-btn home" onclick="goHome()">ホームに戻る</button>
         </div>
     </div>
-    
-    <div id="controls">
-        <h3>🎮 操作方法</h3>
-        <p><strong>PC:</strong> 矢印キー/WASDで移動、スペースで攻撃</p>
-        <p><strong>スマホ:</strong> タップで攻撃、ドラッグで移動</p>
-        <p><strong>武器選択:</strong> 数字キー1-4</p>
-    </div>
+
+    <div id="weapon" style="display: none;">武器: 通常弾</div>
     
     <!-- 武器選択UI -->
     <button id="weaponSelectorToggle" class="weapon-selector-toggle">🔫</button>
@@ -494,6 +575,7 @@
         const statusMessageElement = document.getElementById('statusMessage');
         const weaponSelectorToggle = document.getElementById('weaponSelectorToggle');
         const weaponSelector = document.getElementById('weaponSelector');
+        const weaponElement = document.getElementById('weapon');
 
         // キャンバスサイズを画面サイズに設定
         function resizeCanvas() {
@@ -535,12 +617,7 @@
                 display.addEventListener('click', () => {
                     const weaponNum = parseInt(display.dataset.weapon);
                     if (unlockedWeapons.includes(weaponNum)) {
-                        // アクティブクラスを更新
-                        weaponDisplays.forEach(d => d.classList.remove('active'));
-                        display.classList.add('active');
-                        
-                        // 武器を変更
-                        currentWeapon = weaponNum;
+                        setWeapon(weaponNum);
                         
                         // スマホの場合は選択後にパネルを閉じる
                         if (isMobile) {
@@ -901,6 +978,9 @@
         
         // ライフ回復アイテム
         let healthItems = [];
+
+        // AI用の弾薬自然回復タイマー
+        let lastAiAmmoRegenAt = Date.now();
         
         // 武器の定義
         const weapons = {
@@ -913,11 +993,32 @@
         let currentWeapon = 1;
         let unlockedWeapons = [1];
 
+        function setWeapon(weaponNum) {
+            if (!unlockedWeapons.includes(weaponNum) || !weapons[weaponNum]) return;
+            if (currentWeapon === weaponNum) return;
+            currentWeapon = weaponNum;
+            weaponElement.textContent = `武器: ${weapons[weaponNum].name}`;
+            updateWeaponSelector();
+        }
+
+        function cycleWeapon(direction) {
+            if (unlockedWeapons.length <= 1) return;
+            const idx = unlockedWeapons.indexOf(currentWeapon);
+            const start = idx >= 0 ? idx : 0;
+            let next = start;
+            for (let i = 0; i < unlockedWeapons.length; i++) {
+                next = (next + direction + unlockedWeapons.length) % unlockedWeapons.length;
+                if (unlockedWeapons[next] !== currentWeapon) {
+                    setWeapon(unlockedWeapons[next]);
+                    return;
+                }
+            }
+        }
+
         // キー入力
         const keys = {};
         document.addEventListener('keydown', (e) => {
             keys[e.key] = true;
-            console.log('キー押下:', e.key); // デバッグログ追加
             
             if (e.key === ' ') {
                 e.preventDefault();
@@ -928,19 +1029,22 @@
                     player.lastShootTime = now;
                 }
             }
+
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                cycleWeapon(e.shiftKey ? -1 : 1);
+                return;
+            }
             
             // 武器選択（数字キー1-4）
             if (e.key >= '1' && e.key <= '4') {
                 const weaponNum = parseInt(e.key);
-                if (unlockedWeapons.includes(weaponNum) && currentWeapon !== weaponNum) {
-                    currentWeapon = weaponNum;
-                }
+                setWeapon(weaponNum);
             }
         });
         
         document.addEventListener('keyup', (e) => {
             keys[e.key] = false;
-            console.log('キー離上:', e.key); // デバッグログ追加
         });
 
         // タッチ操作の変数
@@ -1025,19 +1129,20 @@
         function shoot() {
             const player = isPlayer1 ? player1 : player2;
             const weapon = weapons[currentWeapon];
+            const bottomShooter = (player === player1 && isPlayer1) || (player === player2 && !isPlayer1);
             
             if (player.ammo >= weapon.ammoCost) {
                 for (let i = 0; i < weapon.bulletCount; i++) {
                     const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
                     const bullet = {
                         x: player.x + player.width / 2,
-                        y: isPlayer1 ? player.y : player.y + player.height,
+                        y: bottomShooter ? player.y : player.y + player.height,
                         width: 4,
                         height: 8,
                         speedX: spread,
-                        speedY: isPlayer1 ? -weapon.speed : weapon.speed,
+                        speedY: bottomShooter ? -weapon.speed : weapon.speed,
                         color: weapon.color,
-                        playerId: isPlayer1 ? 1 : 2
+                        playerId: player === player1 ? 1 : 2
                     };
                     
                     player.bullets.push(bullet);
@@ -1048,42 +1153,68 @@
             }
         }
 
-        // 障害物生成（固定位置）
+        // 障害物生成（偏りを抑えたバランス配置）
         function generateObstacles() {
             obstacles = [];
-            
-            // 固定の障害物配置（赤青側に半々に配置）
-            const fixedObstacles = [
-                // 上部エリア（プレイヤー2エリア）- 青側に配置
-                { x: 200, y: 120, width: 60, height: 50, color: '#8B0000' },
-                { x: 400, y: 100, width: 45, height: 60, color: '#8B0000' },
-                { x: 600, y: 150, width: 55, height: 45, color: '#8B0000' },
-                { x: 300, y: 180, width: 50, height: 55, color: '#8B0000' },
-                { x: 500, y: 130, width: 40, height: 65, color: '#8B0000' },
-                { x: 700, y: 110, width: 65, height: 40, color: '#8B0000' },
-                { x: 100, y: 140, width: 45, height: 50, color: '#8B0000' },
-                { x: 350, y: 160, width: 55, height: 45, color: '#8B0000' },
-                
-                // 下部エリア（プレイヤー1エリア）- 赤側に配置
-                { x: 150, y: 450, width: 55, height: 45, color: '#8B0000' },
-                { x: 400, y: 480, width: 50, height: 60, color: '#8B0000' },
-                { x: 600, y: 460, width: 60, height: 50, color: '#8B0000' },
-                { x: 250, y: 420, width: 45, height: 55, color: '#8B0000' },
-                { x: 500, y: 440, width: 55, height: 45, color: '#8B0000' },
-                { x: 700, y: 470, width: 50, height: 60, color: '#8B0000' },
-                { x: 100, y: 480, width: 60, height: 50, color: '#8B0000' },
-                { x: 350, y: 460, width: 45, height: 55, color: '#8B0000' }
-            ];
-            
-            // 固定障害物を追加
-            fixedObstacles.forEach(obstacle => {
-                obstacles.push({
-                    ...obstacle,
-                    isFixed: true
-                });
-            });
-            
-            console.log(`固定障害物を${obstacles.length}個配置しました（赤青側半々配置）`);
+            const halfHeight = canvas.height / 2;
+            const horizontalPadding = Math.max(40, Math.floor(canvas.width * 0.08));
+            const obstacleGap = 18;
+            const obstaclesPerSide = 8;
+
+            function overlapsWithGap(a, b, gap = obstacleGap) {
+                return (
+                    a.x < b.x + b.width + gap &&
+                    a.x + a.width + gap > b.x &&
+                    a.y < b.y + b.height + gap &&
+                    a.y + a.height + gap > b.y
+                );
+            }
+
+            function placeBand(startY, endY, avoidRect) {
+                const placed = [];
+                let attempts = 0;
+                const maxAttempts = 900;
+
+                while (placed.length < obstaclesPerSide && attempts < maxAttempts) {
+                    attempts++;
+                    const width = 40 + Math.floor(Math.random() * 26);
+                    const height = 40 + Math.floor(Math.random() * 26);
+                    const laneWidth = Math.floor(canvas.width * 0.28);
+                    const laneXStart = Math.floor((canvas.width - laneWidth) / 2);
+                    const laneXEnd = laneXStart + laneWidth;
+
+                    const leftZone = {
+                        minX: horizontalPadding,
+                        maxX: Math.max(horizontalPadding, laneXStart - width - horizontalPadding / 2)
+                    };
+                    const rightZone = {
+                        minX: Math.min(canvas.width - horizontalPadding - width, laneXEnd + horizontalPadding / 2),
+                        maxX: canvas.width - horizontalPadding - width
+                    };
+
+                    const zone = Math.random() < 0.5 ? leftZone : rightZone;
+                    if (zone.maxX <= zone.minX) continue;
+
+                    const x = zone.minX + Math.random() * (zone.maxX - zone.minX);
+                    const y = startY + Math.random() * Math.max(1, (endY - startY - height));
+                    const candidate = { x, y, width, height, color: '#8B0000', isFixed: true };
+
+                    if (overlapsWithGap(candidate, avoidRect, 28)) continue;
+                    if (placed.some(p => overlapsWithGap(candidate, p))) continue;
+
+                    placed.push(candidate);
+                }
+                return placed;
+            }
+
+            const topAvoid = { x: canvas.width * 0.5 - 90, y: 56, width: 180, height: 90 };
+            const bottomAvoid = { x: canvas.width * 0.5 - 90, y: canvas.height - 146, width: 180, height: 90 };
+
+            const topObstacles = placeBand(70, halfHeight - 55, topAvoid);
+            const bottomObstacles = placeBand(halfHeight + 35, canvas.height - 60, bottomAvoid);
+            obstacles = [...topObstacles, ...bottomObstacles];
+
+            console.log(`障害物を${obstacles.length}個配置しました（上下左右バランス配置）`);
         }
 
         // 補給ユニット生成
@@ -1126,23 +1257,57 @@
                    rect1.y + rect1.height > rect2.y;
         }
 
+        /** 障害物と重なったら最小めり込み方向に押し出す（キー推測に依存しない） */
+        function resolvePlayerObstacleOverlap(player) {
+            for (let iter = 0; iter < 8; iter++) {
+                let any = false;
+                for (let oi = 0; oi < obstacles.length; oi++) {
+                    const obstacle = obstacles[oi];
+                    if (!checkCollision(player, obstacle)) continue;
+                    any = true;
+                    const overlapLeft = (player.x + player.width) - obstacle.x;
+                    const overlapRight = (obstacle.x + obstacle.width) - player.x;
+                    const overlapTop = (player.y + player.height) - obstacle.y;
+                    const overlapBottom = (obstacle.y + obstacle.height) - player.y;
+                    const m = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+                    if (m === overlapLeft) player.x -= m;
+                    else if (m === overlapRight) player.x += m;
+                    else if (m === overlapTop) player.y -= m;
+                    else player.y += m;
+                }
+                if (!any) break;
+            }
+        }
+
+        /** 陣営どおりにプレイヤーを自陣ハーフ内へ収める */
+        function clampPlayersToHalfCourt() {
+            player1.x = Math.max(0, Math.min(canvas.width - player1.width, player1.x));
+            player2.x = Math.max(0, Math.min(canvas.width - player2.width, player2.x));
+            if (isPlayer1) {
+                player1.y = Math.max(canvas.height / 2, Math.min(canvas.height - player1.height, player1.y));
+                player2.y = Math.max(0, Math.min(canvas.height / 2 - player2.height, player2.y));
+            } else {
+                player1.y = Math.max(0, Math.min(canvas.height / 2 - player1.height, player1.y));
+                player2.y = Math.max(canvas.height / 2, Math.min(canvas.height - player2.height, player2.y));
+            }
+        }
+
         // プレイヤー描画
-        function drawPlayer(player, isPlayer1) {
+        function drawPlayer(player, isPlayerUnit) {
             const x = player.x;
             const y = player.y;
             const w = player.width;
             const h = player.height;
             
-            // デバッグログ追加
-            console.log(`プレイヤー${isPlayer1 ? '1' : '2'}描画: x=${x}, y=${y}, w=${w}, h=${h}`);
-            
             // プレイヤーの色
-            const color = isPlayer1 ? '#0066cc' : '#cc0000';
+            const color = isPlayerUnit ? '#0066cc' : '#cc0000';
             
-            // プレイヤーの位置に基づいて向きを決定
-            const isAtBottom = y > canvas.height / 2;
+            // 向きは中央線の位置ではなく、陣営（自分側/相手側）で固定する
+            // isPlayer1(グローバル): 自分がplayer1かどうか
+            // isPlayerUnit(引数): 描画対象がplayer1かどうか
+            const isBottomSidePlayer = (isPlayer1 && isPlayerUnit) || (!isPlayer1 && !isPlayerUnit);
             
-            if (isAtBottom) {
+            if (isBottomSidePlayer) {
                 // 下側にいるプレイヤー（上向き）
                 // 戦闘機の本体
                 ctx.fillStyle = color;
@@ -1166,7 +1331,7 @@
                 ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
                 
                 // コックピット
-                ctx.fillStyle = isPlayer1 ? '#00ccff' : '#ff0000';
+                ctx.fillStyle = isPlayerUnit ? '#00ccff' : '#ff0000';
                 ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
             } else {
                 // 上側にいるプレイヤー（下向き）
@@ -1192,7 +1357,7 @@
                 ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
                 
                 // コックピット
-                ctx.fillStyle = isPlayer1 ? '#00ccff' : '#ff0000';
+                ctx.fillStyle = isPlayerUnit ? '#00ccff' : '#ff0000';
                 ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
             }
         }
@@ -1270,27 +1435,30 @@
             // プレイヤー移動
             updatePlayerMovement();
 
-            // 障害物との衝突チェック（障害物は固定位置）
-            obstacles.forEach(obstacle => {
-                if (checkCollision(player1, obstacle)) {
-                    // 障害物に衝突した場合、元の位置に戻す
-                    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player1.x += player1.speed;
-                    if (keys['ArrowRight'] || keys['d'] || keys['D']) player1.x -= player1.speed;
-                    if (keys['ArrowUp'] || keys['w'] || keys['W']) player1.y += player1.speed;
-                    if (keys['ArrowDown'] || keys['s'] || keys['S']) player1.y -= player1.speed;
-                }
-                if (checkCollision(player2, obstacle)) {
-                    // 障害物に衝突した場合、元の位置に戻す
-                    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player2.x += player2.speed;
-                    if (keys['ArrowRight'] || keys['d'] || keys['D']) player2.x -= player2.speed;
-                    if (keys['ArrowUp'] || keys['w'] || keys['W']) player2.y += player2.speed;
-                    if (keys['ArrowDown'] || keys['s'] || keys['S']) player2.y -= player2.speed;
-                }
-            });
+            // AI対戦時はメインループ内で確実にAIを更新する
+            if (gameMode === 'ai' && aiOpponent) {
+                aiOpponent.execute();
+            }
+
+            // 障害物との重なり解消（ローカルキーは相手機体に使えないため幾何押し出しのみ）
+            resolvePlayerObstacleOverlap(player1);
+            resolvePlayerObstacleOverlap(player2);
+            clampPlayersToHalfCourt();
 
             // 弾丸更新
             updateBullets(player1.bullets);
             updateBullets(player2.bullets);
+
+            // AI対戦では弾薬が枯渇しすぎないよう自然回復を入れる
+            if (gameMode === 'ai') {
+                const now = Date.now();
+                const regenInterval = 850; // 約0.85秒ごとに回復
+                if (now - lastAiAmmoRegenAt >= regenInterval) {
+                    const regenAmount = player2.ammo <= 6 ? 3 : 1;
+                    player2.ammo = Math.min(player2.maxAmmo, player2.ammo + regenAmount);
+                    lastAiAmmoRegenAt = now;
+                }
+            }
 
             // 補給ユニット更新
             supplyUnits = supplyUnits.filter(unit => {
@@ -1299,13 +1467,17 @@
                     return false; // 画面外に出たら消去
                 }
                 // プレイヤーとの衝突判定
-                const player = isPlayer1 ? player1 : player2;
-                if (checkCollision(unit, player)) {
-                    unit.isCollected = true;
-                    player.ammo = Math.min(player.maxAmmo, player.ammo + 20); // 20発補給
-                    playSound(explosionSound); // 補給取得音
-                    sendImportantGameState(); // 重要な状態変更を即座に送信
-                    return false; // 取得されたら消去
+                const collectors = gameMode === 'ai'
+                    ? [player1, player2]
+                    : [isPlayer1 ? player1 : player2];
+                for (const collector of collectors) {
+                    if (checkCollision(unit, collector)) {
+                        unit.isCollected = true;
+                        collector.ammo = Math.min(collector.maxAmmo, collector.ammo + 20); // 20発補給
+                        playSound(explosionSound); // 補給取得音
+                        sendImportantGameState(); // 重要な状態変更を即座に送信
+                        return false; // 取得されたら消去
+                    }
                 }
                 return true;
             });
@@ -1317,15 +1489,19 @@
                     return false; // 画面外に出たら消去
                 }
                 // プレイヤーとの衝突判定
-                const player = isPlayer1 ? player1 : player2;
-                if (checkCollision(item, player)) {
-                    item.isCollected = true;
-                    if (player.hp < player.maxHp) { // 最大HPは100
-                        player.hp = Math.min(player.maxHp, player.hp + 20); // 20HP回復
+                const collectors = gameMode === 'ai'
+                    ? [player1, player2]
+                    : [isPlayer1 ? player1 : player2];
+                for (const collector of collectors) {
+                    if (checkCollision(item, collector)) {
+                        item.isCollected = true;
+                        if (collector.hp < collector.maxHp) { // 最大HPは100
+                            collector.hp = Math.min(collector.maxHp, collector.hp + 20); // 20HP回復
+                        }
+                        playSound(explosionSound); // ライフ回復取得音
+                        sendImportantGameState(); // 重要な状態変更を即座に送信
+                        return false; // 取得されたら消去
                     }
-                    playSound(explosionSound); // ライフ回復取得音
-                    sendImportantGameState(); // 重要な状態変更を即座に送信
-                    return false; // 取得されたら消去
                 }
                 return true;
             });
@@ -1477,30 +1653,11 @@
             }
         }
 
-        // プレイヤー移動
+        // プレイヤー移動（自分は常に画面下ハーフ＝updatePlayerPositions と一致させる）
         function updatePlayerMovement() {
             const player = isPlayer1 ? player1 : player2;
-            
-            // 移動制限を動的に設定
-            let minY, maxY;
-            
-            if (isPlayer1) {
-                // プレイヤー1（下側）: 中央線より下で移動可能
-                minY = canvas.height / 2;
-                maxY = canvas.height - player.height;
-            } else {
-                // プレイヤー2（上側）: 中央線より上で移動可能
-                minY = 0;
-                maxY = canvas.height / 2 - player.height;
-            }
-            
-            // デバッグログ追加
-            if (keys['ArrowUp'] || keys['w'] || keys['W']) {
-                console.log('上移動キー検出:', player.y, '>', minY);
-            }
-            if (keys['ArrowDown'] || keys['s'] || keys['S']) {
-                console.log('下移動キー検出:', player.y, '<', maxY);
-            }
+            const minY = canvas.height / 2;
+            const maxY = canvas.height - player.height;
             
             // 左右移動
             if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
@@ -1510,14 +1667,12 @@
                 player.x += player.speed;
             }
             
-            // 上下移動（制限内で）
+            // 上下移動（下ハーフのみ）
             if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > minY) {
                 player.y -= player.speed;
-                console.log('上移動実行:', player.y, '制限:', minY);
             }
             if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < maxY) {
                 player.y += player.speed;
-                console.log('下移動実行:', player.y, '制限:', maxY);
             }
         }
 
@@ -1703,7 +1858,11 @@
             initWeaponSelector(); // ゲーム開始時に武器選択UIを初期化
             updateWeaponSelector(); // ゲーム開始時に武器選択UIを更新
             updateUILabels(); // ゲーム開始時にUIラベルを更新
-            startBulletsListener(); // ゲーム開始時に弾丸監視を開始
+
+            // オンライン対戦時のみ弾丸監視を開始
+            if (gameMode !== 'ai' && roomId) {
+                startBulletsListener();
+            }
             console.log('ゲーム開始処理が完了しました');
         }
 
@@ -1787,26 +1946,18 @@
         function startAIMatch() {
             isPlayer1 = true;
             waitingForOpponent = false;
+            lastAiAmmoRegenAt = Date.now();
             // AI用のplayer2を初期化（既存のplayer2をそのまま使う）
             // ルームIDやFirebaseは使わない
             startGame();
             
-            // AIオポーネントを初期化
-            aiOpponent = new AIOpponent(player2, player1, canvas, obstacles, weapons);
-            
-            // AIの行動ループを開始
-            setTimeout(aiLoop, 500);
-        }
-
-        // AIの行動ループ
-        function aiLoop() {
-            if (!gameRunning || gameMode !== 'ai' || !aiOpponent) return;
-            
-            // AIの実行
-            aiOpponent.execute();
-            
-            // 次のループをスケジュール
-            setTimeout(aiLoop, 50 + Math.random() * 100); // より頻繁な更新
+            // AIオポーネント: URL ?ai= > localStorage pvpAiDifficulty > hard
+            const aiParam = new URLSearchParams(window.location.search).get('ai');
+            const stored = localStorage.getItem('pvpAiDifficulty');
+            const aiLevel = ['easy', 'medium', 'hard', 'expert'].includes(aiParam)
+                ? aiParam
+                : (['easy', 'medium', 'hard', 'expert'].includes(stored) ? stored : 'hard');
+            aiOpponent = new AIOpponent(player2, player1, canvas, obstacles, weapons, aiLevel);
         }
 
         // オフライン専用のマッチングを開始
@@ -1874,63 +2025,17 @@
         const modeSelect = document.getElementById('modeSelect');
         const onlineBtn = document.getElementById('onlineBtn');
         const aiBtn = document.getElementById('aiBtn');
+        const aiDifficultySelect = document.getElementById('aiDifficultySelect');
+        const PVP_AI_LEVELS = ['easy', 'medium', 'hard', 'expert'];
 
-        // ホバー効果とアニメーションを追加
-        function addHoverEffects() {
-            const aiCard = document.getElementById('aiCard');
-            const onlineCard = document.getElementById('onlineCard');
-            
-            // AIカードのホバー効果
-            aiCard.addEventListener('mouseenter', () => {
-                aiCard.style.transform = 'scale(1.05)';
-                aiCard.style.boxShadow = '0 15px 40px rgba(255,127,80,0.5)';
-                aiCard.style.border = '3px solid #ff4500';
-            });
-            
-            aiCard.addEventListener('mouseleave', () => {
-                aiCard.style.transform = 'scale(1)';
-                aiCard.style.boxShadow = '0 10px 30px rgba(255,127,80,0.3)';
-                aiCard.style.border = '3px solid transparent';
-            });
-            
-            // オンラインカードのホバー効果
-            onlineCard.addEventListener('mouseenter', () => {
-                onlineCard.style.transform = 'scale(1.05)';
-                onlineCard.style.boxShadow = '0 15px 40px rgba(0,195,255,0.5)';
-                onlineCard.style.border = '3px solid #0066cc';
-            });
-            
-            onlineCard.addEventListener('mouseleave', () => {
-                onlineCard.style.transform = 'scale(1)';
-                onlineCard.style.boxShadow = '0 10px 30px rgba(0,195,255,0.3)';
-                onlineCard.style.border = '3px solid transparent';
-            });
-            
-            // ボタンのホバー効果
-            aiBtn.addEventListener('mouseenter', () => {
-                aiBtn.style.transform = 'translateY(-2px)';
-                aiBtn.style.boxShadow = '0 8px 20px rgba(255,127,80,0.6)';
-            });
-            
-            aiBtn.addEventListener('mouseleave', () => {
-                aiBtn.style.transform = 'translateY(0)';
-                aiBtn.style.boxShadow = '0 5px 15px rgba(255,127,80,0.4)';
-            });
-            
-            onlineBtn.addEventListener('mouseenter', () => {
-                onlineBtn.style.transform = 'translateY(-2px)';
-                onlineBtn.style.boxShadow = '0 8px 20px rgba(0,195,255,0.6)';
-            });
-            
-            onlineBtn.addEventListener('mouseleave', () => {
-                onlineBtn.style.transform = 'translateY(0)';
-                onlineBtn.style.boxShadow = '0 5px 15px rgba(0,195,255,0.4)';
-            });
-            
-            // カードクリックでボタンもクリック
-            aiCard.addEventListener('click', () => aiBtn.click());
-            onlineCard.addEventListener('click', () => onlineBtn.click());
+        function syncAiDifficultySelectFromStorage() {
+            const v = localStorage.getItem('pvpAiDifficulty');
+            aiDifficultySelect.value = PVP_AI_LEVELS.includes(v) ? v : 'hard';
         }
+        syncAiDifficultySelectFromStorage();
+        aiDifficultySelect.addEventListener('change', () => {
+            localStorage.setItem('pvpAiDifficulty', aiDifficultySelect.value);
+        });
 
         // URLパラメータからモードを取得
         function getModeFromURL() {
@@ -1949,10 +2054,7 @@
             } else {
                 // URLパラメータがない場合はモード選択UIを表示
                 console.log('モード選択UIを表示');
-                // フェードインアニメーション
-                modeSelect.style.opacity = '0';
-                modeSelect.style.animation = 'fadeIn 0.5s ease-out forwards';
-                addHoverEffects();
+                modeSelect.style.display = 'flex';
             }
         }
 

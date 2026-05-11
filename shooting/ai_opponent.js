@@ -1,14 +1,91 @@
 // AI対戦用の高度なAIシステム
+// 難易度: 認知(decision) / 判断(evade) / 運動(aim) / 射撃(fire) を分離
+const AI_DIFFICULTY_PROFILES = {
+    easy: {
+        decisionMinMs: 620,
+        decisionMaxMs: 1500,
+        threatLaneHalfWidth: 12,
+        maxThreatsConsidered: 1,
+        evadeAwareness: 0.12,
+        evadeCommitMinMs: 140,
+        evadeCommitMaxMs: 280,
+        aimOffsetRange: 140,
+        fireIntentProbability: 0.18,
+        predictionBlend: 0.08,
+        idleDriftAmplitude: 95,
+        fireCooldownMult: 2.25,
+        confidenceCap: 0.32,
+        attackPickProbability: 0.18,
+        lowHpEvadeChance: 0.15,
+        simpleWeaponBias: 0.78,
+    },
+    medium: {
+        decisionMinMs: 260,
+        decisionMaxMs: 520,
+        threatLaneHalfWidth: 34,
+        maxThreatsConsidered: 2,
+        evadeAwareness: 0.58,
+        evadeCommitMinMs: 180,
+        evadeCommitMaxMs: 400,
+        aimOffsetRange: 48,
+        fireIntentProbability: 0.62,
+        predictionBlend: 0.55,
+        idleDriftAmplitude: 40,
+        fireCooldownMult: 1.1,
+    },
+    hard: {
+        decisionMinMs: 180,
+        decisionMaxMs: 380,
+        threatLaneHalfWidth: 48,
+        maxThreatsConsidered: 3,
+        evadeAwareness: 0.72,
+        evadeCommitMinMs: 140,
+        evadeCommitMaxMs: 320,
+        aimOffsetRange: 32,
+        fireIntentProbability: 0.78,
+        predictionBlend: 0.72,
+        idleDriftAmplitude: 28,
+        fireCooldownMult: 0.92,
+    },
+    expert: {
+        decisionMinMs: 120,
+        decisionMaxMs: 260,
+        threatLaneHalfWidth: 58,
+        maxThreatsConsidered: 4,
+        evadeAwareness: 0.88,
+        evadeCommitMinMs: 100,
+        evadeCommitMaxMs: 240,
+        aimOffsetRange: 18,
+        fireIntentProbability: 0.9,
+        predictionBlend: 0.88,
+        idleDriftAmplitude: 16,
+        fireCooldownMult: 0.78,
+    },
+};
+
 class AIOpponent {
-    constructor(player2, player1, canvas, obstacles, weapons) {
+    constructor(player2, player1, canvas, obstacles, weapons, difficulty) {
         this.player2 = player2;
         this.player1 = player1;
         this.canvas = canvas;
         this.obstacles = obstacles;
         this.weapons = weapons;
+
+        const diffKey = ['easy', 'medium', 'hard', 'expert'].includes(difficulty)
+            ? difficulty
+            : 'hard';
+        this.difficulty = diffKey;
+        this.profile = AI_DIFFICULTY_PROFILES[diffKey] || AI_DIFFICULTY_PROFILES.hard;
         
-        // AIの状態管理
-        this.state = 'hunting'; // hunting, evading, attacking, repositioning, flanking, ambush
+        // FSM: idle | attack | evade（割り込みは evade 優先）
+        this.fsmState = 'idle';
+        this.lastDecisionTime = 0;
+        this.decisionInterval = this._rollDecisionInterval();
+        this.evadeCommitUntil = 0;
+        this.aimOffsetX = 0;
+        
+        // AIの状態管理（学習・ログ用レガシー名を同期）
+        this.state = 'hunting';
         this.lastStateChange = Date.now();
         this.targetX = player1.x;
         this.targetY = player1.y;
@@ -18,9 +95,8 @@ class AIOpponent {
         this.verticalMovementTimer = 0;
         this.verticalDirection = 1; // 1: 上向き, -1: 下向き
         
-        // 高度なAI機能
-        this.difficulty = 'hard'; // easy, medium, hard, expert
-        this.predictionAccuracy = 0.8; // 予測精度
+        // 高度なAI機能（easy は上で上書き）
+        this.predictionAccuracy = this.predictionAccuracy != null ? this.predictionAccuracy : 0.8;
         this.learningRate = 0.1; // 学習率
         this.patternMemory = []; // パターン記憶
         this.playerPatterns = []; // プレイヤーの行動パターン
@@ -44,6 +120,9 @@ class AIOpponent {
             averageReactionTime: 0,
             reactionTimes: []
         };
+        if (diffKey === 'easy') {
+            this.accuracyStats.predictionAccuracy = 0.26;
+        }
         // 高度な予測システム
         this.advancedPrediction = {
             velocityHistory: [],
@@ -59,6 +138,35 @@ class AIOpponent {
             counterStrategy: new Map(),
             successThreshold: 0.6
         };
+    }
+
+    _rollDecisionInterval() {
+        const p = this.profile;
+        const span = Math.max(40, p.decisionMaxMs - p.decisionMinMs);
+        return p.decisionMinMs + Math.random() * span;
+    }
+
+    _syncLegacyStateFromFsm() {
+        if (this.fsmState === 'attack') this.state = 'attacking';
+        else if (this.fsmState === 'evade') this.state = 'evading';
+        else this.state = 'hunting';
+    }
+
+    /** 自陣に向かう player1 の弾（上向き）を脅威として列挙（上から近い順） */
+    getThreateningBullets() {
+        const lane = this.profile.threatLaneHalfWidth;
+        const mid = this.player2.x + this.player2.width / 2;
+        const myBottom = this.player2.y + this.player2.height;
+        const bullets = this.player1.bullets || [];
+        return bullets
+            .filter(bullet => {
+                if (bullet.y >= this.canvas.height / 2) return false;
+                if (bullet.y > myBottom + 30) return false;
+                if (typeof bullet.speedY === 'number' && bullet.speedY >= 0) return false;
+                const bx = bullet.x + (bullet.width || 4) / 2;
+                return Math.abs(bx - mid) < lane + (bullet.width || 4);
+            })
+            .sort((a, b) => a.y - b.y);
     }
     
     // 武器選択の初期化
@@ -365,16 +473,25 @@ class AIOpponent {
     attack() {
         const now = Date.now();
         if (now - this.lastAttackTime < this.attackCooldown) return;
+        if (this.profile && this.fsmState === 'attack' && Math.random() > this.profile.fireIntentProbability) {
+            return;
+        }
+        const blend = this.profile ? this.profile.predictionBlend : 1;
+        const ppx = this.predictedPosition.x * blend + this.player1.x * (1 - blend);
+        const ppy = this.predictedPosition.y * blend + this.player1.y * (1 - blend);
         // プレイヤーとの距離を計算
         const dx = this.player1.x - this.player2.x;
         const dy = this.player1.y - this.player2.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        // 予測位置での攻撃
-        const predictedDx = this.predictedPosition.x - this.player2.x;
-        const predictedDy = this.predictedPosition.y - this.player2.y;
+        // 予測位置での攻撃（難易度ブレンド）
+        const predictedDx = ppx - this.player2.x;
+        const predictedDy = ppy - this.player2.y;
         const predictedDistance = Math.sqrt(predictedDx * predictedDx + predictedDy * predictedDy);
-        // 精度に基づく攻撃条件の調整
-        const confidence = this.accuracyStats.predictionAccuracy || 0.5;
+        // 精度に基づく攻撃条件の調整（やさしいは上限で頭打ち）
+        let confidence = this.accuracyStats.predictionAccuracy || 0.5;
+        if (this.profile && typeof this.profile.confidenceCap === 'number') {
+            confidence = Math.min(confidence, this.profile.confidenceCap);
+        }
         const baseAttackRange = 400;
         const adjustedAttackRange = baseAttackRange * (0.8 + confidence * 0.4); // 精度に応じて攻撃範囲を調整
         // 攻撃条件を精度に応じて調整
@@ -382,7 +499,11 @@ class AIOpponent {
                          (distance < 350 && Math.abs(dx) < 120);
         if (canAttack) {
             // 高度な武器選択（精度を考慮）
-            const weaponChoice = this.selectOptimalWeaponWithAccuracy(Math.min(predictedDistance, distance), confidence);
+            let weaponChoice = this.selectOptimalWeaponWithAccuracy(Math.min(predictedDistance, distance), confidence);
+            const bias = this.profile && this.profile.simpleWeaponBias;
+            if (typeof bias === 'number' && weaponChoice > 2 && Math.random() < bias) {
+                weaponChoice = 1;
+            }
             const weapon = this.weapons[weaponChoice];
             if (this.player2.ammo >= weapon.ammoCost) {
                 // 精度に基づく予測攻撃
@@ -502,7 +623,8 @@ class AIOpponent {
         const baseCooldown = 200; // 基本クールダウンを短縮
         const difficultyMultiplier = this.difficulty === 'expert' ? 0.5 : 
                                    this.difficulty === 'hard' ? 0.6 : 
-                                   this.difficulty === 'medium' ? 0.8 : 1.0;
+                                   this.difficulty === 'medium' ? 0.8 : 
+                                   this.difficulty === 'easy' ? 1.55 : 1.0;
         
         // 成功した戦術が多いほど攻撃頻度を上げる
         const successRate = this.successfulMoves.length / Math.max(1, this.successfulMoves.length + this.failedMoves.length);
@@ -515,7 +637,8 @@ class AIOpponent {
         );
         const distanceMultiplier = distance < 150 ? 0.5 : 1.0; // 近距離では攻撃頻度を上げる
         
-        return baseCooldown * difficultyMultiplier * successMultiplier * distanceMultiplier + Math.random() * 100;
+        const profileMult = this.profile && this.profile.fireCooldownMult != null ? this.profile.fireCooldownMult : 1;
+        return (baseCooldown * difficultyMultiplier * successMultiplier * distanceMultiplier + Math.random() * 100) * profileMult;
     }
     
     // 回避行動
@@ -606,63 +729,124 @@ class AIOpponent {
         if (isColliding) {
             // 衝突している場合は即座に回避
             this.avoidObstacle();
-            // 回避状態に切り替え
+            const now = Date.now();
+            this.fsmState = 'evade';
+            this.evadeCommitUntil = now + 700;
+            this.evadeSteerSign = Math.random() < 0.5 ? 1 : -1;
             this.state = 'evading';
-            this.evasionTimer = Date.now() + 2000; // 2秒間回避モード
+            this.evasionTimer = now + 2000;
+            this._syncLegacyStateFromFsm();
         }
     }
-    
-    // 高度な戦略的思考システム
-    think() {
-        const now = Date.now();
-        
-        // プレイヤー予測と学習
-        this.predictPlayerMovement();
+
+    /**
+     * FSM の状態遷移（間欠思考 + 弾脅威の割り込み）
+     * Priority: EVADE（脅威・コミット） > 意思決定インターバルでの ATTACK / IDLE
+     */
+    thinkFSM(now) {
+        const threats = this.getThreateningBullets();
+        const p = this.profile;
+
+        if (threats.length > 0) {
+            let n = 0;
+            for (let i = 0; i < threats.length; i++) {
+                if (n >= p.maxThreatsConsidered) break;
+                n++;
+                if (Math.random() < p.evadeAwareness) {
+                    this.fsmState = 'evade';
+                    const bx = threats[i].x + (threats[i].width || 4) / 2;
+                    const mid = this.player2.x + this.player2.width / 2;
+                    this.evadeSteerSign = bx < mid ? 1 : -1;
+                    const span = Math.max(40, p.evadeCommitMaxMs - p.evadeCommitMinMs);
+                    this.evadeCommitUntil = now + p.evadeCommitMinMs + Math.random() * span;
+                    this._syncLegacyStateFromFsm();
+                    return;
+                }
+            }
+        }
+
+        if (now < this.evadeCommitUntil) {
+            this.fsmState = 'evade';
+            this._syncLegacyStateFromFsm();
+            return;
+        }
+
+        if (now - this.lastDecisionTime < this.decisionInterval) {
+            this._syncLegacyStateFromFsm();
+            return;
+        }
+
+        this.lastDecisionTime = now;
+        this.decisionInterval = this._rollDecisionInterval();
         this.learnFromPatterns();
-        
-        // 状態変更の判定（より頻繁に）
-        if (now - this.lastStateChange > 2000) { // 2秒ごとに状態を再評価
-            this.lastStateChange = now;
-            this.state = this.selectOptimalStrategy();
+
+        const lowHpEvadeChance = p.lowHpEvadeChance != null ? p.lowHpEvadeChance : 0.45;
+        if (this.player2.hp < 22 && threats.length > 0 && Math.random() < lowHpEvadeChance) {
+            this.fsmState = 'evade';
+            const span = Math.max(40, p.evadeCommitMaxMs - p.evadeCommitMinMs);
+            this.evadeCommitUntil = now + p.evadeCommitMinMs + Math.random() * span;
+            this.evadeSteerSign = Math.random() < 0.5 ? 1 : -1;
+            this._syncLegacyStateFromFsm();
+            return;
         }
-        
-        // 回避タイマーが有効な場合
-        if (now < this.evasionTimer) {
-            this.state = 'evading';
+
+        this.aimOffsetX = (Math.random() * 2 - 1) * p.aimOffsetRange;
+
+        let minWeaponCost = 1;
+        Object.keys(this.weapons).forEach(k => {
+            const w = this.weapons[k];
+            if (w && typeof w.ammoCost === 'number') {
+                minWeaponCost = Math.min(minWeaponCost, w.ammoCost);
+            }
+        });
+        const hasAmmo = this.player2.ammo >= minWeaponCost;
+        const dxAlign = Math.abs(this.player1.x - this.player2.x);
+
+        const attackPickProbability = p.attackPickProbability != null ? p.attackPickProbability : 0.38;
+        if (hasAmmo && (dxAlign < 95 + p.threatLaneHalfWidth || Math.random() < attackPickProbability)) {
+            this.fsmState = 'attack';
+        } else {
+            this.fsmState = 'idle';
         }
-        
-        // 心理戦術の実行
-        this.executePsychologicalTactics();
-        
-        // 状態に基づく行動
-        switch (this.state) {
-            case 'hunting':
-                this.executeHuntingStrategy();
+        this.lastStateChange = now;
+        this._syncLegacyStateFromFsm();
+    }
+
+    /** 現在の FSM 状態に応じた毎フレームの移動・攻撃 */
+    executeFSMState() {
+        const p = this.profile;
+        switch (this.fsmState) {
+            case 'evade': {
+                const threats = this.getThreateningBullets();
+                let sign = this.evadeSteerSign || 1;
+                if (threats.length > 0) {
+                    const bx = threats[0].x + (threats[0].width || 4) / 2;
+                    const mid = this.player2.x + this.player2.width / 2;
+                    sign = bx < mid ? 1 : -1;
+                }
+                this.targetX = this.player2.x + sign * this.player2.speed * 3;
+                const minY = 0;
+                const maxY = this.canvas.height / 2 - this.player2.height;
+                this.targetY = Math.max(minY + 8, Math.min(maxY, this.player2.y + (Math.random() - 0.5) * this.player2.speed));
+                this.move();
                 break;
-                
-            case 'evading':
-                this.executeEvasionStrategy();
+            }
+            case 'attack': {
+                const b = p.predictionBlend;
+                this.targetX = this.predictedPosition.x * b + this.player1.x * (1 - b) + this.aimOffsetX;
+                this.targetY = Math.max(50, this.predictedPosition.y * b + this.player1.y * (1 - b) - 80);
+                this.move();
+                this.attack();
                 break;
-                
-            case 'attacking':
-                this.executeAttackingStrategy();
+            }
+            default: {
+                const t = Date.now() * 0.002;
+                this.targetX = this.canvas.width / 2 + Math.sin(t) * p.idleDriftAmplitude;
+                this.targetY = Math.max(45, this.predictedPosition.y - 90);
+                this.move();
                 break;
-                
-            case 'repositioning':
-                this.executeRepositioningStrategy();
-                break;
-                
-            case 'flanking':
-                this.executeFlankingStrategy();
-                break;
-                
-            case 'ambush':
-                this.executeAmbushStrategy();
-                break;
+            }
         }
-        
-        // 障害物回避の優先チェック（全状態で実行）
-        this.checkAndAvoidObstacles();
     }
     
     // 最適戦略選択（精度向上版）
@@ -798,9 +982,13 @@ class AIOpponent {
                rect1.y + rect1.height > rect2.y;
     }
     
-    // AIの実行
+    // AIの実行（予測は毎フレーム、状態遷移は間欠 + 脅威割り込み）
     execute() {
-        this.think();
+        const now = Date.now();
+        this.predictPlayerMovement();
+        this.thinkFSM(now);
+        this.executeFSMState();
+        this.checkAndAvoidObstacles();
     }
 
     // --- 高度な予測システム ---
@@ -883,7 +1071,7 @@ class AIOpponent {
         });
         this.realTimeLearning.patternRecognition.get(patternKey).bestCounter = bestTactic;
     }
-    // --- 攻撃・戦略選択の精度向上版は既存attack, selectOptimalStrategyの内容を上書きしてください ---
+    
 }
 
 // グローバルにエクスポート

@@ -32,6 +32,13 @@ console.log('Firebase認証初期化完了');
 const analytics = firebase.analytics();
 console.log('Analytics初期化完了');
 
+// 固定称号の定義
+const FIXED_TITLES = {
+  rookie: 'ルーキー',
+  score100: 'スコア100突破',
+  weaponMaster: 'ウェポンマスター'
+};
+
 // データ管理クラス
 class FirebaseDataManager {
   constructor() {
@@ -57,7 +64,17 @@ class FirebaseDataManager {
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         highScore: 0,
         totalGames: 0,
-        totalScore: 0
+        totalScore: 0,
+        titles: [],
+        activeTitle: '',
+        settings: {
+          difficulty: 'normal',
+          pvpAiDifficulty: 'hard',
+          weaponLoadout: ['normal', 'rapid', 'shotgun', 'laser']
+        },
+        progress: {
+          allWeaponsUnlocked: false
+        }
       });
       
       console.log('Firestore保存成功');
@@ -89,6 +106,19 @@ class FirebaseDataManager {
     }
   }
 
+  // パスワードリセットメール送信
+  async sendPasswordResetEmail(email) {
+    try {
+      const actionCodeSettings = {
+        // リセット完了後の戻り先を専用ページにする
+        url: new URL('reset-password.html', window.location.href).href
+      };
+      await this.auth.sendPasswordResetEmail(email, actionCodeSettings);
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // スコア保存
   async saveScore(score) {
     try {
@@ -103,16 +133,78 @@ class FirebaseDataManager {
         const newHighScore = Math.max(userData.highScore || 0, score);
         const newTotalGames = (userData.totalGames || 0) + 1;
         const newTotalScore = (userData.totalScore || 0) + score;
+        const currentTitles = Array.isArray(userData.titles) ? [...userData.titles] : [];
+        const progress = { ...(userData.progress || {}) };
+        const unlockedTitleSet = new Set(currentTitles);
+
+        if (newTotalGames >= 1) {
+          unlockedTitleSet.add(FIXED_TITLES.rookie);
+        }
+        if (newHighScore >= 100) {
+          unlockedTitleSet.add(FIXED_TITLES.score100);
+        }
+        if (progress.rapidUnlocked && progress.shotgunUnlocked && progress.laserUnlocked) {
+          progress.allWeaponsUnlocked = true;
+        }
+        if (progress.allWeaponsUnlocked) {
+          unlockedTitleSet.add(FIXED_TITLES.weaponMaster);
+        }
+
+        const nextTitles = Array.from(unlockedTitleSet);
+        const activeTitle = userData.activeTitle || nextTitles[0] || '';
         
         await userRef.update({
           highScore: newHighScore,
           totalGames: newTotalGames,
           totalScore: newTotalScore,
+          titles: nextTitles,
+          activeTitle: activeTitle,
+          progress: progress,
           lastPlayed: firebase.firestore.FieldValue.serverTimestamp()
         });
         
-        return { highScore: newHighScore, totalGames: newTotalGames, totalScore: newTotalScore };
+        return { highScore: newHighScore, totalGames: newTotalGames, totalScore: newTotalScore, titles: nextTitles, activeTitle, progress };
       }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // 進捗更新（称号条件用）
+  async updateProgress(progressPatch) {
+    try {
+      const user = this.auth.currentUser;
+      if (!user) throw new Error('ユーザーがログインしていません');
+
+      const userRef = this.db.collection('users').doc(user.uid);
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) throw new Error('ユーザーデータが見つかりません');
+
+      const userData = userDoc.data();
+      const currentProgress = userData.progress || {};
+      const nextProgress = { ...currentProgress, ...progressPatch };
+
+      // 個別の武器解放フラグが揃ったら allWeaponsUnlocked を立てる
+      if (nextProgress.rapidUnlocked && nextProgress.shotgunUnlocked && nextProgress.laserUnlocked) {
+        nextProgress.allWeaponsUnlocked = true;
+      }
+
+      const currentTitles = Array.isArray(userData.titles) ? [...userData.titles] : [];
+      const unlockedTitleSet = new Set(currentTitles);
+      if (nextProgress.allWeaponsUnlocked) {
+        unlockedTitleSet.add(FIXED_TITLES.weaponMaster);
+      }
+      const nextTitles = Array.from(unlockedTitleSet);
+      const activeTitle = userData.activeTitle || nextTitles[0] || '';
+
+      await userRef.update({
+        progress: nextProgress,
+        titles: nextTitles,
+        activeTitle: activeTitle,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      return { progress: nextProgress, titles: nextTitles, activeTitle };
     } catch (error) {
       throw error;
     }
@@ -148,7 +240,8 @@ class FirebaseDataManager {
         ranking.push({
           id: doc.id,
           username: data.username,
-          highScore: data.highScore || 0
+          highScore: data.highScore || 0,
+          activeTitle: data.activeTitle || ''
         });
       });
       

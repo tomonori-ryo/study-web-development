@@ -591,11 +591,13 @@
                 </div>
                 <div class="modal-buttons">
                     <button class="modal-button forgot-btn" onclick="sendResetEmail()">リセットメール送信</button>
+                    <button class="modal-button" onclick="goToGameFromForgot()" style="background: linear-gradient(45deg, #00aa00, #00cc00); color: white; box-shadow: 0 0 20px rgba(0, 170, 0, 0.5);">ゲームへ戻る</button>
                 </div>
                 <div style="margin-top: 1rem; padding: 1rem; background: rgba(255, 255, 255, 0.1); border-radius: 8px; font-size: 0.9rem; color: #cccccc;">
                     <strong>📧 パスワードリセットについて</strong><br>
                     登録済みのメールアドレスにパスワードリセット用のリンクを送信します。<br>
-                    メールが届かない場合は、迷惑メールフォルダもご確認ください。
+                    メールが届かない場合は、迷惑メールフォルダもご確認ください。<br>
+                    リセット完了後の画面からホームへ戻れる案内が表示されます。
                 </div>
             </div>
         </div>
@@ -619,16 +621,11 @@
                 <div class="instructions">
                     <h3>ゲームの遊び方</h3>
                     <ul>
-                        <li><strong>矢印キー/WASD</strong>で戦闘機を操作（PC）</li>
-                        <li><strong>ドラッグ</strong>で戦闘機を操作（スマホ）</li>
-                        <li><strong>スペースキー/タップ</strong>で弾を発射</li>
-                        <li>敵を倒してスコアを稼ごう</li>
-                        <li>宝箱で弾薬回復、ピンクアイテムでライフ回復</li>
-                        <li>ボスを倒して新武器を解禁（通常弾→連射弾→散弾→レーザー）</li>
-                        <li>制限時間は100秒、スコア100点ごとに+30秒ボーナス</li>
-                        <li>3つの難易度（簡単/通常/難しい）から選択可能</li>
-                        <li>スコアはFirebaseに自動保存、ランキング機能付き</li>
-                        <li>アカウント登録でマイページ機能が利用可能</li>
+                        <li>敵を倒してスコアを稼ぐシンプルなシューティングです。</li>
+                        <li>制限時間は100秒。スコア100点ごとに +30秒されます。</li>
+                        <li>ボスを倒すと新武器を解禁（通常弾→連射弾→散弾→レーザー）。</li>
+                        <li>宝箱で弾薬回復、ピンクアイテムでライフ回復ができます。</li>
+                        <li>スコアはログイン時に自動保存され、ランキングに反映されます。</li>
                     </ul>
                 </div>
             </div>
@@ -637,36 +634,16 @@
                     <h3>操作方法</h3>
                     <div class="controls">
                         <div class="control-item">
-                            <span>移動（PC）</span>
-                            <span><span class="key">↑↓←→</span> または <span class="key">WASD</span></span>
+                            <span>移動</span>
+                            <span><span class="key">↑↓←→</span> / <span class="key">WASD</span></span>
                         </div>
                         <div class="control-item">
-                            <span>移動（スマホ）</span>
-                            <span>画面をドラッグ</span>
+                            <span>攻撃</span>
+                            <span><span class="key">Space</span>（スマホはタップ）</span>
                         </div>
                         <div class="control-item">
-                            <span>攻撃（PC）</span>
-                            <span><span class="key">Space</span></span>
-                        </div>
-                        <div class="control-item">
-                            <span>攻撃（スマホ）</span>
-                            <span>画面をタップ</span>
-                        </div>
-                        <div class="control-item">
-                            <span>武器選択（PC）</span>
-                            <span><span class="key">1</span><span class="key">2</span><span class="key">3</span><span class="key">4</span></span>
-                        </div>
-                        <div class="control-item">
-                            <span>武器選択（スマホ）</span>
-                            <span>左側の🔫ボタンをタップ</span>
-                        </div>
-                        <div class="control-item">
-                            <span>難易度設定</span>
-                            <span>マイページで変更可能</span>
-                        </div>
-                        <div class="control-item">
-                            <span>スコア保存</span>
-                            <span>Firebaseに自動保存</span>
+                            <span>武器切替</span>
+                            <span><span class="key">1</span>〜<span class="key">4</span> / <span class="key">Tab</span>（<span class="key">Shift</span>+<span class="key">Tab</span>で戻る）</span>
                         </div>
                     </div>
                 </div>
@@ -697,8 +674,8 @@
         function startPvP() {
             try {
                 console.log('PvP対戦ボタンがクリックされました');
-                // モード選択モーダルを表示
-                showModeSelectModal();
+                // マイページと同じ遷移に統一（pvp_game.html側でモード選択）
+                window.location.href = 'pvp_game.html';
             } catch (error) {
                 console.error('PvP対戦開始エラー:', error);
                 alert('PvP対戦の開始に失敗しました: ' + error.message);
@@ -851,6 +828,7 @@
             document.getElementById('loginUsername').value = '';
             document.getElementById('loginPassword').value = '';
             document.getElementById('registerUsername').value = '';
+            document.getElementById('registerEmail').value = '';
             document.getElementById('registerPassword').value = '';
             document.getElementById('confirmPassword').value = '';
             document.getElementById('forgotUsername').value = '';
@@ -952,6 +930,13 @@
                 alert('ユーザーネームは3文字以上で入力してください。');
                 return;
             }
+
+            // メールアドレスの形式チェック
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                alert('正しいメールアドレスの形式で入力してください。');
+                return;
+            }
             
             if (password !== confirmPassword) {
                 alert('パスワードが一致しません。');
@@ -1015,12 +1000,11 @@
         }
         
         // パスワードリセットメール送信処理
-        function sendResetEmail() {
-            const username = document.getElementById('forgotUsername').value;
-            const email = document.getElementById('forgotEmail').value;
+        async function sendResetEmail() {
+            const email = document.getElementById('forgotEmail').value.trim();
             
-            if (!username || !email) {
-                alert('ユーザーネームとメールアドレスを入力してください。');
+            if (!email) {
+                alert('メールアドレスを入力してください。');
                 return;
             }
             
@@ -1030,29 +1014,35 @@
                 alert('正しいメールアドレスの形式で入力してください。');
                 return;
             }
-            
-            const storedUsername = localStorage.getItem('playerName');
-            const storedEmail = localStorage.getItem('playerEmail');
-            
-            if (storedUsername !== username) {
-                alert('ユーザーネームが見つかりません。');
-                return;
+
+            try {
+                await firebaseDataManager.sendPasswordResetEmail(email);
+                alert(`パスワードリセット用のメールを ${email} に送信しました。\nメール内のリンクから新しいパスワードを設定してください。\n\nメールが見つからない場合は、迷惑メールフォルダもご確認ください。\nリセット完了画面では、ホームへ戻る案内（Continue）が表示されます。`);
+                closeModal();
+            } catch (error) {
+                console.error('パスワードリセットエラー:', error);
+                let errorMessage = 'パスワードリセットメールの送信に失敗しました。';
+
+                switch (error.code) {
+                    case 'auth/invalid-email':
+                        errorMessage = 'メールアドレスの形式が正しくありません。';
+                        break;
+                    case 'auth/user-not-found':
+                        errorMessage = 'このメールアドレスのユーザーが見つかりません。';
+                        break;
+                    case 'auth/too-many-requests':
+                        errorMessage = 'リクエストが多すぎます。しばらく待ってから再試行してください。';
+                        break;
+                }
+
+                alert(errorMessage);
             }
-            
-            if (storedEmail !== email) {
-                alert('登録されているメールアドレスと一致しません。');
-                return;
-            }
-            
-            // リセットトークンを生成（簡易的な実装）
-            const resetToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-            localStorage.setItem('resetToken', resetToken);
-            localStorage.setItem('resetTokenExpiry', Date.now() + 3600000); // 1時間有効
-            
-            // メール送信のシミュレーション
-            alert(`パスワードリセット用のメールを ${email} に送信しました。\n\n※ このデモでは実際のメール送信は行われません。\n実際の実装では、サーバーサイドでメール送信機能を実装してください。`);
-            
+        }
+
+        // パスワード再設定画面からゲームへ戻る
+        function goToGameFromForgot() {
             closeModal();
+            startGame();
         }
         
         // モーダル外クリックで閉じる

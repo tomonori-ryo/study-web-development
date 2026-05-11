@@ -53,8 +53,7 @@
             font-size: clamp(2rem, 6vw, 3rem);
             font-weight: bold;
             margin-bottom: 1rem;
-            text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff;
-            animation: glow 2s ease-in-out infinite alternate;
+            text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
         }
         
         @keyframes glow {
@@ -80,36 +79,61 @@
             border-radius: 50px;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 0 20px rgba(68, 68, 255, 0.5);
+            box-shadow: 0 0 10px rgba(68, 68, 255, 0.4);
         }
         
         .nav-button.game-start {
             background: linear-gradient(45deg, #ff4444, #ff6666);
-            box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
         }
         
         .nav-button:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 25px rgba(68, 68, 255, 0.7);
+            transform: scale(1.03);
+            box-shadow: 0 0 14px rgba(68, 68, 255, 0.55);
         }
         
         .nav-button.game-start:hover {
-            box-shadow: 0 0 30px rgba(255, 68, 68, 0.8);
+            box-shadow: 0 0 14px rgba(255, 68, 68, 0.6);
         }
         
         .content-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
+            grid-template-columns: repeat(2, minmax(280px, 1fr));
+            gap: 1.2rem;
             margin-bottom: 2rem;
         }
         
         .card {
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.62);
             border-radius: 15px;
-            padding: 2rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.4rem;
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .account-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.8rem;
+        }
+
+        .account-form-grid .form-group {
+            margin-bottom: 0.8rem;
+        }
+
+        .password-panel {
+            margin-top: 0.6rem;
+            padding: 0.8rem;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .password-panel summary {
+            cursor: pointer;
+            color: #00ffff;
+            font-weight: bold;
+            margin-bottom: 0.6rem;
         }
         
         .card h2 {
@@ -256,6 +280,133 @@
             color: #cccccc;
             margin-top: 0.3rem;
         }
+
+        .titles-card .title-note {
+            color: #cccccc;
+            font-size: 0.85rem;
+            margin-top: -0.4rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .titles-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .title-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.88rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .title-badge .icon {
+            margin-right: 0.35rem;
+            font-size: 1rem;
+        }
+
+        .title-badge.legendary {
+            border-color: rgba(255, 220, 120, 0.95);
+            background: linear-gradient(45deg, rgba(255, 215, 0, 0.28), rgba(255, 140, 0, 0.22));
+            color: #ffefb0;
+        }
+
+        .title-badge.rank {
+            border-color: rgba(255, 215, 0, 0.7);
+            background: rgba(255, 215, 0, 0.16);
+            color: #ffe88a;
+        }
+
+        .title-badge.empty {
+            color: #cccccc;
+            border-style: dashed;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .title-toast {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            max-width: min(90vw, 360px);
+            padding: 12px 14px;
+            border-radius: 10px;
+            z-index: 3000;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            background: rgba(0, 0, 0, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+            display: none;
+        }
+
+        .title-toast.show {
+            display: block;
+        }
+
+        .title-toast.gain {
+            border-color: rgba(0, 255, 170, 0.9);
+        }
+
+        .title-toast.lose {
+            border-color: rgba(255, 90, 90, 0.9);
+        }
+
+        .title-badge.stage2-gain {
+            animation: badgePop 500ms ease, badgeGlow 1200ms ease-in-out;
+        }
+
+        .title-badge.stage2-lose {
+            animation: badgeShake 450ms ease;
+        }
+
+        .title-fx {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2999;
+            overflow: hidden;
+        }
+
+        .sparkle {
+            position: absolute;
+            font-size: 1.2rem;
+            animation: sparkleBurst 900ms ease forwards;
+            opacity: 0;
+        }
+
+        @keyframes badgePop {
+            0% { transform: scale(1); }
+            45% { transform: scale(1.12); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes badgeGlow {
+            0% { box-shadow: 0 0 0 rgba(255, 230, 120, 0); }
+            50% { box-shadow: 0 0 16px rgba(255, 230, 120, 0.65); }
+            100% { box-shadow: 0 0 0 rgba(255, 230, 120, 0); }
+        }
+
+        @keyframes badgeShake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            50% { transform: translateX(4px); }
+            75% { transform: translateX(-3px); }
+            100% { transform: translateX(0); }
+        }
+
+        @keyframes sparkleBurst {
+            0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+            20% { opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+        }
         
         @media (max-width: 768px) {
             .container {
@@ -265,6 +416,10 @@
             .content-grid {
                 grid-template-columns: 1fr;
                 gap: 1.5rem;
+            }
+            
+            .account-form-grid {
+                grid-template-columns: 1fr;
             }
             
             .nav-buttons {
@@ -297,10 +452,10 @@
         </div>
         
         <div class="nav-buttons">
-            <button class="nav-button" onclick="window.location.href='index.html'">ホーム</button>
             <button class="nav-button game-start" onclick="window.location.href='shooting_game.html'">ゲーム開始</button>
-            <button class="nav-button pvp-button" onclick="window.location.href='pvp_game.html'" style="background: linear-gradient(45deg, #ff8800, #ffaa00); box-shadow: 0 0 20px rgba(255, 136, 0, 0.5);">PvP対戦</button>
-            <button class="nav-button" onclick="logout()" style="background: linear-gradient(45deg, #ff4444, #ff6666); box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);">ログアウト</button>
+            <button class="nav-button pvp-button" onclick="window.location.href='pvp_game.html'" style="background: linear-gradient(45deg, #ff8800, #ffaa00); box-shadow: 0 0 10px rgba(255, 136, 0, 0.4);">PvP対戦</button>
+            <button class="nav-button" onclick="window.location.href='index.html'">ホーム</button>
+            <button class="nav-button" onclick="logout()" style="background: linear-gradient(45deg, #ff4444, #ff6666); box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);">ログアウト</button>
         </div>
         
         <div class="content-grid">
@@ -332,6 +487,35 @@
                         </small>
                     </div>
                     
+                    <div class="form-group" style="margin-top: 1.2rem;">
+                        <label for="pvpAiDifficulty">🤖 PvP・AI対戦の強さ</label>
+                        <select id="pvpAiDifficulty" style="width: 100%; padding: 0.8rem; border: none; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: white; font-size: 1rem;">
+                            <option value="easy">やさしい</option>
+                            <option value="medium">ふつう</option>
+                            <option value="hard" selected>むずかしい</option>
+                            <option value="expert">エキスパート</option>
+                        </select>
+                        <small style="color: #cccccc; font-size: 0.8rem; margin-top: 0.5rem; display: block;">
+                            PvPの「AI対戦」で使われます。マイページと対戦画面のどちらかで選ぶと保存されます。
+                        </small>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 1.2rem;">
+                        <label>🔫 通常ゲームの武器編成</label>
+                        <small style="color: #cccccc; font-size: 0.8rem; margin: 0.2rem 0 0.7rem; display: block;">
+                            1枠目は通常弾固定です。2〜4枠目は称号で解放された武器から選べます。
+                        </small>
+                        <div style="display: grid; gap: 0.7rem;">
+                            <div style="padding: 0.7rem; border-radius: 8px; background: rgba(255, 255, 255, 0.08);">
+                                <strong>1: 通常弾</strong>
+                                <div style="font-size: 0.8rem; color: #cccccc;">固定武器 / 常に使用可能</div>
+                            </div>
+                            <select id="weaponSlot2" class="weapon-loadout-select" aria-label="武器スロット2" style="width: 100%; padding: 0.8rem; border: none; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: white; font-size: 1rem;"></select>
+                            <select id="weaponSlot3" class="weapon-loadout-select" aria-label="武器スロット3" style="width: 100%; padding: 0.8rem; border: none; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: white; font-size: 1rem;"></select>
+                            <select id="weaponSlot4" class="weapon-loadout-select" aria-label="武器スロット4" style="width: 100%; padding: 0.8rem; border: none; border-radius: 8px; background: rgba(255, 255, 255, 0.1); color: white; font-size: 1rem;"></select>
+                        </div>
+                    </div>
+                    
                     <button type="submit" class="save-button">💾 設定を保存</button>
                 </form>
             </div>
@@ -358,39 +542,53 @@
                 
                 <h3 style="color: #ffff00; margin-bottom: 1rem;">🏅 ランキング</h3>
                 <ul class="ranking-list" id="rankingList">
-                    <!-- ランキングがここに表示されます -->
+                    <!-- ランキングがここに表示される -->
+                </ul>
+            </div>
+
+            <!-- 称号カード -->
+            <div class="card titles-card">
+                <h2>🎖️ 称号</h2>
+                <p class="title-note">実績称号は永続、ランキング称号は順位変動で変化します。</p>
+                <ul class="titles-list" id="titlesList">
+                    <li class="title-badge empty">まだ称号がありません</li>
                 </ul>
             </div>
             
             <!-- アカウント設定カード -->
-            <div class="card">
+            <div class="card account-card">
                 <h2>👤 アカウント設定</h2>
                 
                 <form id="accountForm">
-                    <div class="form-group">
-                        <label for="playerName">プレイヤー名</label>
-                        <input type="text" id="playerName" placeholder="プレイヤー名を入力">
+                    <div class="account-form-grid">
+                        <div class="form-group">
+                            <label for="playerName">プレイヤー名</label>
+                            <input type="text" id="playerName" placeholder="プレイヤー名を入力">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email">メールアドレス（オプション）</label>
+                            <input type="email" id="email" placeholder="メールアドレスを入力">
+                        </div>
                     </div>
-                    
-                    <div class="form-group">
-                        <label for="email">メールアドレス（オプション）</label>
-                        <input type="email" id="email" placeholder="メールアドレスを入力">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="currentPassword">現在のパスワード</label>
-                        <input type="password" id="currentPassword" placeholder="現在のパスワードを入力">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="newPassword">新しいパスワード</label>
-                        <input type="password" id="newPassword" placeholder="新しいパスワードを入力">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="confirmPassword">新しいパスワード（確認）</label>
-                        <input type="password" id="confirmPassword" placeholder="新しいパスワードを再入力">
-                    </div>
+
+                    <details class="password-panel">
+                        <summary>パスワードを変更する（任意）</summary>
+                        <div class="form-group">
+                            <label for="currentPassword">現在のパスワード</label>
+                            <input type="password" id="currentPassword" placeholder="現在のパスワードを入力">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="newPassword">新しいパスワード</label>
+                            <input type="password" id="newPassword" placeholder="新しいパスワードを入力">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="confirmPassword">新しいパスワード（確認）</label>
+                            <input type="password" id="confirmPassword" placeholder="新しいパスワードを再入力">
+                        </div>
+                    </details>
                     
                     <button type="submit" class="save-button">💾 設定を保存</button>
                 </form>
@@ -406,6 +604,199 @@
     <script src="firebase-config.js"></script>
     
     <script>
+        const RANK_TITLES = {
+            1: 'ランキング王者',
+            2: 'ランキング準王',
+            3: 'ランキング三傑'
+        };
+        const TITLE_META = {
+            'ルーキー': { icon: '🌱', tier: 'common' },
+            'スコア100突破': { icon: '🎯', tier: 'rare' },
+            'ウェポンマスター': { icon: '⚔️', tier: 'legendary' },
+            'ランキング王者': { icon: '🥇', tier: 'legendary', rank: true },
+            'ランキング準王': { icon: '🥈', tier: 'epic', rank: true },
+            'ランキング三傑': { icon: '🥉', tier: 'epic', rank: true }
+        };
+        let currentFixedTitles = [];
+        let currentWeaponProgress = {};
+        const DEFAULT_WEAPON_LOADOUT = ['normal', 'rapid', 'shotgun', 'laser'];
+        const WEAPON_CATALOG = {
+            normal:   { id: 'normal',   name: '通常弾',     unlockProgressKey: null,                unlockRequirement: '常時装備・使用可能',                                              description: '固定武器' },
+            rapid:    { id: 'rapid',    name: '連射弾',     unlockProgressKey: 'rapidUnlocked',     unlockRequirement: '100点ボス撃破で解放',                                              description: '3点バースト / 中射程' },
+            shotgun:  { id: 'shotgun',  name: '散弾',       unlockProgressKey: 'shotgunUnlocked',   unlockRequirement: '500点ボス撃破で解放',                                              description: '5発拡散 / 短射程高火力' },
+            laser:    { id: 'laser',    name: 'レーザー',   unlockProgressKey: 'laserUnlocked',     unlockRequirement: '1000点ボス撃破で解放',                                             description: '貫通 / 長射程' },
+            sniper:   { id: 'sniper',   name: '狙撃',       unlockProgressKey: 'sniperUnlocked',    unlockRequirement: '1000点ボス撃破で解放',                                             description: 'ボス特化の超火力一撃 / 弾数極小' },
+            launcher: { id: 'launcher', name: 'ランチャー', unlockProgressKey: 'launcherUnlocked',  unlockRequirement: '1000点ボス撃破歴で装備可（ラン中: 補給1個取得も必要）',              description: '重弾頭 / 着弾範囲爆発' },
+            slowtime: { id: 'slowtime', name: '時空弾',     unlockProgressKey: 'slowtimeUnlocked',  unlockRequirement: '1500点ボス撃破で解放',                                             description: '命中時に対象をスロー化' },
+            homing:   { id: 'homing',   name: 'ホーミング', unlockProgressKey: 'homingUnlocked',    unlockRequirement: '1500点ボス撃破歴で装備可（ラン中: 雑魚30体撃破も必要）',           description: '敵を自動追尾 / 弾数少' },
+            drone:    { id: 'drone',    name: '随伴機',     unlockProgressKey: 'droneUnlocked',     unlockRequirement: '1500点ボス撃破で解放',                                             description: '高速連射の手数武器（コンパニオン化は段階実装）' },
+            gravity:  { id: 'gravity',  name: '重力弾',     unlockProgressKey: 'gravityUnlocked',   unlockRequirement: '2000点ボス撃破で解放',                                             description: '範囲内の敵を吸引 / ダメージ無し' },
+            mine:     { id: 'mine',     name: '機雷',       unlockProgressKey: 'mineUnlocked',      unlockRequirement: '2000点ボス撃破歴で装備可（ラン中: ノーダメも必要）',                description: '低速重弾 / 着弾範囲爆発（後方設置は段階実装）' },
+            blade:    { id: 'blade',    name: 'ブレード',   unlockProgressKey: 'bladeUnlocked',     unlockRequirement: '2000点ボス撃破歴で装備可（ラン中: 補給2個取得も必要）',            description: '近接斬撃 / 短射程・幅広' },
+            shield:   { id: 'shield',   name: 'シールド',   unlockProgressKey: 'shieldUnlocked',    unlockRequirement: '2500点ボス撃破歴で装備可（ラン中: 被弾後に覚醒）',                  description: '前方バリア / 敵弾を貫通破壊' }
+        };
+
+        function getStoredWeaponProgress() {
+            try {
+                const raw = JSON.parse(localStorage.getItem('weaponProgress') || '{}');
+                return (raw && typeof raw === 'object') ? raw : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function persistWeaponProgress(progress) {
+            try {
+                localStorage.setItem('weaponProgress', JSON.stringify(progress || {}));
+            } catch (e) {
+                // 無視
+            }
+        }
+
+
+        function getRankTitle(rank) {
+            return RANK_TITLES[rank] || '';
+        }
+
+        function getTitleMeta(title) {
+            return TITLE_META[title] || { icon: '🎖️', tier: 'common' };
+        }
+
+        function getUnlockedWeaponIds(progress) {
+            const p = (progress && typeof progress === 'object') ? progress : {};
+            return Object.values(WEAPON_CATALOG)
+                .filter(weapon => weapon.id === 'normal' || !weapon.unlockProgressKey || p[weapon.unlockProgressKey])
+                .map(weapon => weapon.id);
+        }
+
+        function sanitizeWeaponLoadout(loadout, unlockedWeaponIds) {
+            const unlocked = new Set(unlockedWeaponIds);
+            const source = Array.isArray(loadout) ? loadout : DEFAULT_WEAPON_LOADOUT;
+            const result = ['normal'];
+            const used = new Set(result);
+            for (let i = 1; i < 4; i++) {
+                const candidate = source[i];
+                if (candidate && candidate !== 'normal' && WEAPON_CATALOG[candidate] && unlocked.has(candidate) && !used.has(candidate)) {
+                    result.push(candidate);
+                    used.add(candidate);
+                    continue;
+                }
+                const fallback = DEFAULT_WEAPON_LOADOUT.find(id => id !== 'normal' && unlocked.has(id) && !used.has(id));
+                result.push(fallback || '');
+                if (fallback) used.add(fallback);
+            }
+            return result;
+        }
+
+        function getStoredWeaponLoadout() {
+            try {
+                return JSON.parse(localStorage.getItem('weaponLoadout') || 'null');
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function renderWeaponLoadoutSelects(loadout, progress) {
+            const unlockedIds = getUnlockedWeaponIds(progress);
+            const sanitized = sanitizeWeaponLoadout(loadout, unlockedIds);
+            [2, 3, 4].forEach(slot => {
+                const select = document.getElementById(`weaponSlot${slot}`);
+                if (!select) return;
+                const current = sanitized[slot - 1] || '';
+                const usedByOthers = new Set(sanitized.filter((id, index) => index !== slot - 1 && id));
+                select.innerHTML = '<option value="">未設定</option>' + Object.values(WEAPON_CATALOG)
+                    .filter(weapon => weapon.id !== 'normal')
+                    .map(weapon => {
+                        const unlocked = unlockedIds.includes(weapon.id);
+                        const duplicate = usedByOthers.has(weapon.id);
+                        const disabled = !unlocked || (duplicate && weapon.id !== current);
+                        const label = unlocked
+                            ? `${weapon.name} - ${weapon.description}`
+                            : `${weapon.name} - ${weapon.unlockRequirement || '未解放'}（未取得）`;
+                        return `<option value="${weapon.id}" ${weapon.id === current ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${label}</option>`;
+                    }).join('');
+                select.value = current;
+            });
+            localStorage.setItem('weaponLoadout', JSON.stringify(sanitized));
+            return sanitized;
+        }
+
+        function getSelectedWeaponLoadout() {
+            return ['normal', 2, 3, 4].map((slot, index) => {
+                if (index === 0) return 'normal';
+                return document.getElementById(`weaponSlot${slot}`).value || '';
+            });
+        }
+
+        function playTitleStage3Fx(type) {
+            const fxRoot = document.getElementById('titleFx');
+            if (!fxRoot) return;
+            const icons = type === 'gain' ? ['✨', '🌟', '💫'] : ['💥', '⚠️', '🫥'];
+            for (let i = 0; i < 9; i++) {
+                const s = document.createElement('span');
+                s.className = 'sparkle';
+                s.textContent = icons[i % icons.length];
+                s.style.left = `${55 + (Math.random() * 30 - 15)}%`;
+                s.style.top = `${82 + (Math.random() * 8 - 4)}%`;
+                s.style.setProperty('--dx', `${Math.random() * 140 - 70}px`);
+                s.style.setProperty('--dy', `${-40 - Math.random() * 90}px`);
+                fxRoot.appendChild(s);
+                setTimeout(() => s.remove(), 1000);
+            }
+        }
+
+        function animateTitleBadge(title, type) {
+            const badge = document.querySelector(`.title-badge[data-title="${title}"]`);
+            if (!badge) return;
+            const className = type === 'gain' ? 'stage2-gain' : 'stage2-lose';
+            badge.classList.remove(className);
+            // reflow
+            void badge.offsetWidth;
+            badge.classList.add(className);
+            setTimeout(() => badge.classList.remove(className), 1300);
+        }
+
+        function showTitleToast(message, type, relatedTitle = '') {
+            const toast = document.getElementById('titleToast');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.className = `title-toast show ${type}`;
+            // 3段階演出: 1)トースト表示 2)バッジ強調 3)キラ演出
+            if (relatedTitle) {
+                setTimeout(() => animateTitleBadge(relatedTitle, type), 350);
+            }
+            setTimeout(() => playTitleStage3Fx(type), 650);
+            setTimeout(() => {
+                toast.className = 'title-toast';
+            }, 5000);
+        }
+
+        function renderTitles(fixedTitles, rankTitle) {
+            const titlesList = document.getElementById('titlesList');
+            if (!titlesList) return;
+
+            const allTitles = [...(fixedTitles || [])];
+            if (rankTitle) {
+                allTitles.unshift(`⭐ ${rankTitle}`);
+            }
+
+            if (allTitles.length === 0) {
+                titlesList.innerHTML = '<li class="title-badge empty">まだ称号がありません</li>';
+                return;
+            }
+
+            titlesList.innerHTML = allTitles.map((title) => {
+                const isRank = title.startsWith('⭐ ');
+                const plainTitle = isRank ? title.replace(/^⭐\s*/, '') : title;
+                const meta = getTitleMeta(plainTitle);
+                const extraClasses = [
+                    isRank ? 'rank' : '',
+                    meta.tier === 'legendary' ? 'legendary' : ''
+                ].filter(Boolean).join(' ');
+                return `<li class="title-badge ${extraClasses}" data-title="${plainTitle}"><span class="icon">${meta.icon}</span>${title}</li>`;
+            }).join('');
+        }
+
         // ページ読み込み時の初期化
         window.addEventListener('load', async () => {
             console.log('マイページ読み込み開始');
@@ -503,9 +894,22 @@
                     const settings = await firebaseDataManager.getSettings();
                     const difficulty = settings.difficulty || 'normal';
                     document.getElementById('difficulty').value = difficulty;
+                    const pvpAiRaw = settings.pvpAiDifficulty || localStorage.getItem('pvpAiDifficulty') || 'hard';
+                    const pvpAi = ['easy', 'medium', 'hard', 'expert'].includes(pvpAiRaw) ? pvpAiRaw : 'hard';
+                    document.getElementById('pvpAiDifficulty').value = pvpAi;
+                    localStorage.setItem('pvpAiDifficulty', pvpAi);
                     
                     // 現在の設定を表示
                     updateCurrentSettings(difficulty);
+
+                    currentFixedTitles = Array.isArray(userData.titles) ? userData.titles : [];
+                    const localProgress = getStoredWeaponProgress();
+                    const remoteProgress = (userData.progress && typeof userData.progress === 'object') ? userData.progress : {};
+                    currentWeaponProgress = { ...localProgress, ...remoteProgress };
+                    persistWeaponProgress(currentWeaponProgress);
+                    const savedLoadout = settings.weaponLoadout || getStoredWeaponLoadout() || DEFAULT_WEAPON_LOADOUT;
+                    renderWeaponLoadoutSelects(savedLoadout, currentWeaponProgress);
+                    renderTitles(currentFixedTitles, '');
                 }
             } catch (error) {
                 console.error('ユーザーデータ読み込みエラー:', error);
@@ -521,12 +925,20 @@
                 document.getElementById('playerName').value = playerName;
                 document.getElementById('email').value = email;
                 document.getElementById('difficulty').value = difficulty;
+                const pvpAiRaw = localStorage.getItem('pvpAiDifficulty') || 'hard';
+                const pvpAi = ['easy', 'medium', 'hard', 'expert'].includes(pvpAiRaw) ? pvpAiRaw : 'hard';
+                document.getElementById('pvpAiDifficulty').value = pvpAi;
                 document.getElementById('totalGames').textContent = totalGames;
                 
                 const avgScore = totalGames > 0 ? Math.round(totalScore / totalGames) : 0;
                 document.getElementById('avgScore').textContent = avgScore;
                 
                 updateCurrentSettings(difficulty);
+                currentFixedTitles = [];
+                currentWeaponProgress = getStoredWeaponProgress();
+                persistWeaponProgress(currentWeaponProgress);
+                renderWeaponLoadoutSelects(getStoredWeaponLoadout() || DEFAULT_WEAPON_LOADOUT, currentWeaponProgress);
+                renderTitles(currentFixedTitles, '');
             }
         }
         
@@ -565,11 +977,13 @@
                 
                 // ランキングを表示
                 rankingList.innerHTML = '';
+                let currentUserRank = 0;
                 ranking.forEach((player, index) => {
                     const li = document.createElement('li');
                     li.className = 'ranking-item';
                     if (player.username === currentPlayerName) {
                         li.classList.add('current');
+                        currentUserRank = index + 1;
                     }
                     
                     li.innerHTML = `
@@ -580,6 +994,17 @@
                     
                     rankingList.appendChild(li);
                 });
+
+                const previousRankTitle = localStorage.getItem('lastRankTitle') || '';
+                const currentRankTitle = getRankTitle(currentUserRank);
+                renderTitles(currentFixedTitles, currentRankTitle);
+
+                if (currentRankTitle && currentRankTitle !== previousRankTitle) {
+                    showTitleToast(`称号獲得: ${currentRankTitle}`, 'gain', currentRankTitle);
+                } else if (!currentRankTitle && previousRankTitle) {
+                    showTitleToast(`称号喪失: ${previousRankTitle}`, 'lose');
+                }
+                localStorage.setItem('lastRankTitle', currentRankTitle);
             } catch (error) {
                 console.error('ランキング読み込みエラー:', error);
                 // エラー時はサンプルデータを表示
@@ -598,11 +1023,13 @@
                 sampleRanking.sort((a, b) => b.score - a.score);
                 
                 rankingList.innerHTML = '';
+                let currentUserRank = 0;
                 sampleRanking.forEach((player, index) => {
                     const li = document.createElement('li');
                     li.className = 'ranking-item';
                     if (player.name === currentPlayerName) {
                         li.classList.add('current');
+                        currentUserRank = index + 1;
                     }
                     
                     li.innerHTML = `
@@ -613,6 +1040,17 @@
                     
                     rankingList.appendChild(li);
                 });
+
+                const previousRankTitle = localStorage.getItem('lastRankTitle') || '';
+                const currentRankTitle = getRankTitle(currentUserRank);
+                renderTitles(currentFixedTitles, currentRankTitle);
+
+                if (currentRankTitle && currentRankTitle !== previousRankTitle) {
+                    showTitleToast(`称号獲得: ${currentRankTitle}`, 'gain', currentRankTitle);
+                } else if (!currentRankTitle && previousRankTitle) {
+                    showTitleToast(`称号喪失: ${previousRankTitle}`, 'lose');
+                }
+                localStorage.setItem('lastRankTitle', currentRankTitle);
             }
         }
         
@@ -683,23 +1121,51 @@
             e.preventDefault();
             
             const difficulty = document.getElementById('difficulty').value;
+            const pvpAiDifficulty = document.getElementById('pvpAiDifficulty').value;
+            const weaponLoadout = sanitizeWeaponLoadout(getSelectedWeaponLoadout(), getUnlockedWeaponIds(currentWeaponProgress));
             
             try {
-                // Firebaseに設定を保存
-                await firebaseDataManager.saveSettings({ difficulty: difficulty });
+                let prevSettings = {};
+                try {
+                    prevSettings = await firebaseDataManager.getSettings();
+                } catch (e) {
+                    prevSettings = {};
+                }
+                await firebaseDataManager.saveSettings({
+                    ...prevSettings,
+                    difficulty,
+                    pvpAiDifficulty,
+                    weaponLoadout
+                });
                 
-                // ローカルストレージにも保存（フォールバック用）
                 localStorage.setItem('gameDifficulty', difficulty);
+                localStorage.setItem('pvpAiDifficulty', pvpAiDifficulty);
+                localStorage.setItem('weaponLoadout', JSON.stringify(weaponLoadout));
                 
-                // 現在の設定を更新
                 updateCurrentSettings(difficulty);
+                renderWeaponLoadoutSelects(weaponLoadout, currentWeaponProgress);
                 
-                // 成功メッセージ
-                alert('難易度設定が保存されました！\n\n難易度変更は次回のゲーム開始時に適用されます。');
+                alert('設定が保存されました！\n\n・シングルプレイの難易度は次回のゲーム開始から反映されます。\n・PvPのAI強さは次回のAI対戦から反映されます。\n・武器編成は次回の通常ゲーム開始から反映されます。');
             } catch (error) {
                 console.error('設定保存エラー:', error);
-                alert('設定の保存に失敗しました。');
+                localStorage.setItem('gameDifficulty', difficulty);
+                localStorage.setItem('pvpAiDifficulty', pvpAiDifficulty);
+                localStorage.setItem('weaponLoadout', JSON.stringify(weaponLoadout));
+                updateCurrentSettings(difficulty);
+                renderWeaponLoadoutSelects(weaponLoadout, currentWeaponProgress);
+                alert('クラウドへの保存に失敗しましたが、この端末には設定を保存しました。');
             }
+        });
+
+        document.getElementById('pvpAiDifficulty').addEventListener('change', () => {
+            localStorage.setItem('pvpAiDifficulty', document.getElementById('pvpAiDifficulty').value);
+        });
+
+        document.querySelectorAll('.weapon-loadout-select').forEach(select => {
+            select.addEventListener('change', () => {
+                const loadout = sanitizeWeaponLoadout(getSelectedWeaponLoadout(), getUnlockedWeaponIds(currentWeaponProgress));
+                renderWeaponLoadoutSelects(loadout, currentWeaponProgress);
+            });
         });
         
         // ログイン状態チェック
@@ -767,6 +1233,7 @@
                     localStorage.removeItem('userEmail');
                     localStorage.removeItem('isLoggedIn');
                     localStorage.removeItem('firebaseUid');
+                    localStorage.removeItem('lastRankTitle');
                     
                     alert('ログアウトしました。\n\nホームページに戻ります。');
                     window.location.href = 'index.html';
@@ -777,5 +1244,7 @@
             }
         }
     </script>
+    <div id="titleFx" class="title-fx"></div>
+    <div id="titleToast" class="title-toast"></div>
 </body>
 </html> 
