@@ -488,7 +488,7 @@
         <div id="score">スコア: 0</div>
         <div id="lives">ライフ: 3</div>
         <div id="ammo">弾薬: 50/50</div>
-        <div id="time">残り時間: 60秒</div>
+        <div id="time">残り時間: 120秒</div>
     </div>
     <div id="runStatus">
         <div class="run-status-title">ラン進捗</div>
@@ -726,7 +726,8 @@
         let score = 0;
         let lives = 3;
         let gameRunning = true;
-        let gameTime = 100; // 100秒制限
+        let gameTime = 120; // 120秒制限
+        const PLAYER_MAX_UP_RATIO = 0.35; // プレイヤーが上に進める割合（小さいほどボスに接近可能）
         let gameStartTime = Date.now();
         let bossSpawned = false;
         let bossWarningShown = false;
@@ -1936,7 +1937,7 @@
                     
                     // 画面境界内に制限
                     player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
-                    player.y = Math.max(canvas.height / 2, Math.min(canvas.height - player.height, newY));
+                    player.y = Math.max(canvas.height * PLAYER_MAX_UP_RATIO, Math.min(canvas.height - player.height, newY));
                 }
             }
         });
@@ -2685,7 +2686,7 @@
             if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
                 player.x += player.speed;
             }
-            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > canvas.height / 2) {
+            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > canvas.height * PLAYER_MAX_UP_RATIO) {
                 player.y -= player.speed;
             }
             if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < canvas.height - player.height) {
@@ -3422,7 +3423,7 @@
             weaponChangeMessage = ''; // リスタート時に武器変更メッセージもリセット
             weaponChangeTimer = 0;
             gameRunning = true;
-            gameTime = 100;
+            gameTime = 120;
             gameStartTime = Date.now();
             
             // 難易度設定を再適用
