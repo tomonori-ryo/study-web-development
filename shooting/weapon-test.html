@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>武器挙動テストベンチ（ローカル用）</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #001122;
+            color: #fff;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        #stage {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            background: linear-gradient(180deg, #001122 0%, #000511 100%);
+            border: 1px solid #224;
+            box-shadow: 0 0 24px rgba(0, 200, 255, 0.15);
+        }
+
+        .panel {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(6px);
+            border: 1px solid #224;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #cde;
+            z-index: 10;
+        }
+
+        #hud {
+            top: 10px;
+            left: 10px;
+            min-width: 220px;
+        }
+        #hud h2 {
+            margin-bottom: 4px;
+            font-size: 13px;
+            color: #aaffcc;
+            letter-spacing: 0.06em;
+        }
+        #hud .row { display: flex; justify-content: space-between; gap: 12px; }
+        #hud .row .label { color: #889; }
+        #hud .row .value { color: #fff; }
+        .help {
+            color: #678;
+            font-size: 11px;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dashed #335;
+        }
+
+        #weapons {
+            top: 10px;
+            right: 10px;
+            min-width: 230px;
+            max-height: calc(100vh - 20px);
+            overflow-y: auto;
+        }
+        #weapons h2 {
+            font-size: 13px;
+            color: #aaffcc;
+            margin-bottom: 6px;
+            letter-spacing: 0.06em;
+        }
+        .w-btn {
+            display: block;
+            width: 100%;
+            text-align: left;
+            margin: 3px 0;
+            padding: 6px 8px;
+            background: rgba(40, 60, 80, 0.5);
+            color: #cde;
+            border: 1px solid #335;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        .w-btn:hover { background: rgba(60, 90, 120, 0.6); }
+        .w-btn.active {
+            background: rgba(0, 100, 80, 0.7);
+            border-color: #0fc;
+            color: #fff;
+            box-shadow: 0 0 8px rgba(0, 255, 200, 0.4);
+        }
+        .w-btn .num { color: #4af; margin-right: 6px; font-weight: bold; }
+        .w-btn .desc { display: block; color: #678; font-size: 10px; margin-top: 2px; }
+
+        #controls {
+            bottom: 10px;
+            left: 10px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            max-width: 60vw;
+        }
+        #controls button {
+            padding: 6px 10px;
+            background: rgba(40, 60, 80, 0.7);
+            color: #cde;
+            border: 1px solid #335;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        #controls button:hover { background: rgba(60, 90, 120, 0.8); }
+        #controls button.danger { border-color: #844; }
+        #controls button.danger:hover { background: rgba(120, 60, 60, 0.8); }
+
+        #debug {
+            bottom: 10px;
+            right: 10px;
+            font-family: 'SF Mono', Menlo, monospace;
+            font-size: 11px;
+            color: #8ab;
+            min-width: 180px;
+        }
+    </style>
+</head>
+<body>
+<div id="stage">
+    <canvas id="canvas" width="900" height="600"></canvas>
+    <div id="hud" class="panel">
+        <h2>WEAPON TEST BENCH</h2>
+        <div class="row"><span class="label">武器</span><span class="value" id="hudWeapon">—</span></div>
+        <div class="row"><span class="label">残弾</span><span class="value" id="hudAmmo">—</span></div>
+        <div class="row"><span class="label">威力 / 射程</span><span class="value" id="hudStats">—</span></div>
+        <div class="row"><span class="label">特殊</span><span class="value" id="hudSpecial">—</span></div>
+        <div class="help">
+            移動: 矢印 / WASD<br>
+            発射: Space (押しっぱなしOK)<br>
+            武器選択: 1〜9, Q, E, R<br>
+            ターゲット追加: 画面クリック
+        </div>
+    </div>
+
+    <div id="weapons" class="panel">
+        <h2>WEAPONS</h2>
+        <div id="weaponList"></div>
+    </div>
+
+    <div id="controls" class="panel">
+        <button id="addStaticBtn">静的ターゲット +1</button>
+        <button id="addMovingBtn">移動ターゲット +1</button>
+        <button id="addBossBtn">巨大ターゲット +1</button>
+        <button id="addSwarmBtn">群体ターゲット +5</button>
+        <button id="clearTargetsBtn" class="danger">ターゲット全消去</button>
+        <button id="clearBulletsBtn" class="danger">弾全消去</button>
+        <button id="refillBtn">弾薬満タン</button>
+        <button id="resetPlayerBtn">プレイヤー位置リセット</button>
+    </div>
+
+    <div id="debug" class="panel">
+        <div>FPS: <span id="dbgFps">—</span></div>
+        <div>弾: <span id="dbgBullets">0</span> / ターゲット: <span id="dbgTargets">0</span></div>
+        <div>ドローン: <span id="dbgDrones">0</span></div>
+        <div>機雷: <span id="dbgMines">0</span></div>
+    </div>
+</div>
+
+<script>
+// =========================================================================
+// 武器カタログ（shooting_game.html と同じ定義をテスト用に複製）
+// =========================================================================
+const weaponCatalog = {
+    normal:   { id: 'normal',   name: '通常弾',     ammoCost: 1, maxAmmo: 50, bulletCount: 1, spread: 0,    speed: 8,
+                damage: 1, range: 700, pierce: 0, width: 4,  height: 12, color: '#ffff00' },
+    rapid:    { id: 'rapid',    name: '連射弾',     ammoCost: 1, maxAmmo: 90, bulletCount: 2, spread: 0.04, speed: 9,
+                damage: 1, range: 600, pierce: 0, width: 3,  height: 8,  color: '#ff8800' },
+    shotgun:  { id: 'shotgun',  name: '散弾',       ammoCost: 1, maxAmmo: 24, bulletCount: 5, spread: 0.18, speed: 7,
+                damage: 1, range: 320, pierce: 0, width: 5,  height: 7,  color: '#ff0000' },
+    laser:    { id: 'laser',    name: 'レーザー',   ammoCost: 1, maxAmmo: 15, bulletCount: 1, spread: 0,    speed: 16,
+                damage: 2, range: 900, pierce: 5, width: 3,  height: 22, color: '#00ffff' },
+    sniper:   { id: 'sniper',   name: 'スナイパー', ammoCost: 1, maxAmmo: 8,  bulletCount: 1, spread: 0,    speed: 22,
+                damage: 6, range: 1000, pierce: 1, width: 2, height: 28, color: '#aaffaa' },
+    launcher: { id: 'launcher', name: 'ランチャー', ammoCost: 2, maxAmmo: 6,  bulletCount: 1, spread: 0,    speed: 6,
+                damage: 4, range: 600, pierce: 0, width: 8,  height: 14, color: '#ff6600',
+                explodeOnImpact: { radius: 80, damage: 3 } },
+    slowtime: { id: 'slowtime', name: '時空弾',     ammoCost: 1, maxAmmo: 10, bulletCount: 1, spread: 0,    speed: 7,
+                damage: 1, range: 600, pierce: 0, width: 6,  height: 10, color: '#88ccff',
+                slowOnHitMs: 1500 },
+    homing:   { id: 'homing',   name: 'ホーミング', ammoCost: 1, maxAmmo: 8,  bulletCount: 1, spread: 0,    speed: 6,
+                damage: 6, range: 900, pierce: 0, width: 6,  height: 12, color: '#ff66ff',
+                homing: true, homingForce: 0.18 },
+    drone:    { id: 'drone',    name: '随伴機',     ammoCost: 1, maxAmmo: 30, bulletCount: 1, spread: 0.05, speed: 7,
+                damage: 1, range: 600, pierce: 0, width: 4,  height: 10, color: '#00ff88' },
+    gravity:  { id: 'gravity',  name: '重力弾',     ammoCost: 1, maxAmmo: 6,  bulletCount: 1, spread: 0,    speed: 4,
+                damage: 2, range: 500, pierce: 0, width: 10, height: 10, color: '#9966ff',
+                pullRadius: 110, pullForce: 0.6 },
+    mine:     { id: 'mine',     name: '機雷',       ammoCost: 1, maxAmmo: 8,  bulletCount: 1, spread: 0,    speed: 0,
+                damage: 8, range: 9999, pierce: 0, width: 14, height: 14, color: '#cccc33',
+                lifeFrames: 360, explodeOnImpact: { radius: 70, damage: 6 } },
+    blade:    { id: 'blade',    name: 'ブレード',   ammoCost: 1, maxAmmo: 50, bulletCount: 1, spread: 0,    speed: 14,
+                damage: 4, range: 100, pierce: 1, width: 22, height: 8,  color: '#00ffaa',
+                blocksBossBullets: true },
+    shield:   { id: 'shield',   name: 'シールド',   ammoCost: 1, maxAmmo: 20, bulletCount: 1, spread: 0,    speed: 3,
+                damage: 1, range: 200, pierce: 99, width: 32, height: 6,  color: '#66ddff',
+                blocksBossBullets: true }
+};
+
+// 1〜9, Q, E, R に対応
+const WEAPON_KEY_ORDER = ['normal', 'rapid', 'shotgun', 'laser', 'sniper', 'launcher', 'slowtime', 'homing', 'drone', 'gravity', 'mine', 'blade'];
+
+// =========================================================================
+// ステート
+// =========================================================================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+const player = { x: W / 2 - 20, y: H - 80, width: 40, height: 40, speed: 5 };
+let bullets = [];
+let targets = [];               // { x, y, width, height, health, maxHealth, vx, vy, slowedUntil }
+let bossBullets = [];           // ブレード/シールドの「敵弾切り」検証用ダミー
+let droneCompanions = [];
+let currentWeapon = 'normal';
+let weaponAmmo = {};
+const keys = {};
+let lastShotMs = 0;             // 連射制限用
+const SHOT_COOLDOWN_MS = 110;
+
+// 弾薬を初期化
+function refillAmmo() {
+    Object.keys(weaponCatalog).forEach(id => {
+        weaponAmmo[id] = weaponCatalog[id].maxAmmo;
+    });
+}
+refillAmmo();
+
+// =========================================================================
+// 入力
+// =========================================================================
+window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ') { e.preventDefault(); }
+    // 数字キー + Q E R で武器切替
+    const idx = WEAPON_KEY_ORDER.indexOf((function(k){
+        if (k >= '1' && k <= '9') return WEAPON_KEY_ORDER[parseInt(k) - 1];
+        if (k.toLowerCase() === 'q') return WEAPON_KEY_ORDER[9];
+        if (k.toLowerCase() === 'e') return WEAPON_KEY_ORDER[10];
+        if (k.toLowerCase() === 'r') return WEAPON_KEY_ORDER[11];
+        return null;
+    })(e.key));
+    if (idx >= 0) selectWeapon(WEAPON_KEY_ORDER[idx]);
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (W / rect.width);
+    const y = (e.clientY - rect.top)  * (H / rect.height);
+    spawnTarget({ x, y, kind: 'static' });
+});
+
+// =========================================================================
+// ターゲット
+// =========================================================================
+function spawnTarget(opts) {
+    const kind = opts.kind || 'static';
+    const t = {
+        x: opts.x !== undefined ? opts.x - 14 : Math.random() * (W - 60) + 30,
+        y: opts.y !== undefined ? opts.y - 14 : 60 + Math.random() * 200,
+        width: 28, height: 28,
+        health: 8, maxHealth: 8,
+        vx: 0, vy: 0,
+        slowedUntil: 0,
+        color: '#ff6677'
+    };
+    if (kind === 'moving') {
+        t.vx = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.random() * 1.5);
+        t.color = '#ffaa44';
+    } else if (kind === 'boss') {
+        t.width = 80; t.height = 60;
+        t.health = 60; t.maxHealth = 60;
+        t.color = '#ff3399';
+        t.vx = 1.5;
+    } else if (kind === 'swarm') {
+        t.width = 18; t.height = 18;
+        t.health = 3; t.maxHealth = 3;
+        t.color = '#ddaa66';
+        t.vy = 0.6 + Math.random() * 0.8;
+    }
+    targets.push(t);
+}
+
+function spawnSwarm(count) {
+    for (let i = 0; i < count; i++) spawnTarget({ x: 100 + i * 80, y: 80, kind: 'swarm' });
+}
+
+// =========================================================================
+// 武器発射 / ヘルパー（shooting_game.html と同じロジックを移植）
+// =========================================================================
+function findNearestTarget(x, y) {
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const t of targets) {
+        const dx = (t.x + t.width / 2) - x;
+        const dy = (t.y + t.height / 2) - y;
+        const d = dx * dx + dy * dy;
+        if (d < nearestDist) { nearest = t; nearestDist = d; }
+    }
+    return nearest;
+}
+
+function steerBulletTowards(bullet, target, force) {
+    const refSpeed = bullet.maxSpeed || Math.hypot(bullet.speedX, bullet.speedY) || 1;
+    const tx = target.x + target.width / 2;
+    const ty = target.y + target.height / 2;
+    const dx = tx - bullet.x;
+    const dy = ty - bullet.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const desiredX = (dx / dist) * refSpeed;
+    const desiredY = (dy / dist) * refSpeed;
+    const newX = bullet.speedX * (1 - force) + desiredX * force;
+    const newY = bullet.speedY * (1 - force) + desiredY * force;
+    const newMag = Math.hypot(newX, newY);
+    if (newMag > 0.0001) {
+        bullet.speedX = (newX / newMag) * refSpeed;
+        bullet.speedY = (newY / newMag) * refSpeed;
+    } else {
+        bullet.speedX = desiredX;
+        bullet.speedY = desiredY;
+    }
+}
+
+function applyGravityPull(bullet) {
+    const radiusSq = bullet.pullRadius * bullet.pullRadius;
+    const cx = bullet.x + bullet.width / 2;
+    const cy = bullet.y + bullet.height / 2;
+    for (const t of targets) {
+        const tx = t.x + t.width / 2;
+        const ty = t.y + t.height / 2;
+        const dx = cx - tx;
+        const dy = cy - ty;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 4 && d2 < radiusSq) {
+            const d = Math.sqrt(d2);
+            const f = bullet.pullForce * (1 - d / bullet.pullRadius);
+            t.x += (dx / d) * f;
+            t.y += (dy / d) * f;
+        }
+    }
+}
+
+function applyExplosion(x, y, radius, damage) {
+    const r2 = radius * radius;
+    for (let i = targets.length - 1; i >= 0; i--) {
+        const t = targets[i];
+        const dx = (t.x + t.width / 2) - x;
+        const dy = (t.y + t.height / 2) - y;
+        if (dx * dx + dy * dy <= r2) {
+            t.health -= damage;
+            if (t.health <= 0) targets.splice(i, 1);
+        }
+    }
+    explosions.push({ x, y, radius, life: 18 });
+}
+
+function applySlow(t, durationMs) {
+    if (!t) return;
+    t.slowedUntil = Math.max(t.slowedUntil || 0, Date.now() + durationMs);
+}
+
+let explosions = [];
+
+function shoot() {
+    const w = weaponCatalog[currentWeapon];
+    if (weaponAmmo[currentWeapon] < w.ammoCost) return;
+
+    const baseAngle = 0;
+    const count = w.bulletCount;
+    for (let i = 0; i < count; i++) {
+        const angle = baseAngle + (i - (count - 1) / 2) * w.spread;
+        const speedX = Math.sin(angle) * w.speed;
+        const speedY = -Math.cos(angle) * w.speed;
+        bullets.push({
+            x: player.x + player.width / 2 - w.width / 2,
+            y: player.y,
+            width: w.width, height: w.height,
+            speedX, speedY,
+            maxSpeed: w.speed,
+            damage: w.damage,
+            range: w.range,
+            traveled: 0,
+            pierceRemaining: w.pierce,
+            color: w.color,
+            homing: !!w.homing,
+            homingForce: w.homingForce || 0,
+            slowOnHitMs: w.slowOnHitMs || 0,
+            pullRadius: w.pullRadius || 0,
+            pullForce: w.pullForce || 0,
+            explodeOnImpact: w.explodeOnImpact || null,
+            blocksBossBullets: !!w.blocksBossBullets,
+            lifeFrames: (typeof w.lifeFrames === 'number') ? w.lifeFrames : null
+        });
+    }
+    weaponAmmo[currentWeapon] -= w.ammoCost;
+    updateHud();
+}
+
+// ドローン
+function refreshDrones() {
+    if (currentWeapon === 'drone') {
+        if (droneCompanions.length === 0) {
+            const now = Date.now();
+            droneCompanions = [
+                { offsetX: -32, lastFireMs: now,        interval: 900 },
+                { offsetX:  32, lastFireMs: now + 450,  interval: 900 }
+            ];
+        }
+    } else {
+        droneCompanions = [];
+    }
+}
+
+function updateDrones() {
+    if (droneCompanions.length === 0) return;
+    if (currentWeapon !== 'drone') { droneCompanions = []; return; }
+    const w = weaponCatalog.drone;
+    const now = Date.now();
+    droneCompanions.forEach(d => {
+        if (now - d.lastFireMs < d.interval) return;
+        d.lastFireMs = now;
+        bullets.push({
+            x: player.x + player.width / 2 + d.offsetX - 2,
+            y: player.y - 2,
+            width: w.width, height: w.height,
+            speedX: 0, speedY: -w.speed,
+            maxSpeed: w.speed,
+            damage: w.damage, range: w.range, traveled: 0,
+            pierceRemaining: w.pierce, color: w.color,
+            homing: false, homingForce: 0,
+            slowOnHitMs: 0, pullRadius: 0, pullForce: 0,
+            explodeOnImpact: null, blocksBossBullets: false,
+            lifeFrames: null
+        });
+    });
+}
+
+// =========================================================================
+// 衝突判定
+// =========================================================================
+function checkCollision(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+// =========================================================================
+// Update
+// =========================================================================
+let lastFrameTime = performance.now();
+let fpsAvg = 60;
+
+function update(dt) {
+    // プレイヤー
+    if ((keys.ArrowLeft  || keys.a || keys.A) && player.x > 0)                 player.x -= player.speed;
+    if ((keys.ArrowRight || keys.d || keys.D) && player.x < W - player.width)  player.x += player.speed;
+    if ((keys.ArrowUp    || keys.w || keys.W) && player.y > H / 3)             player.y -= player.speed;
+    if ((keys.ArrowDown  || keys.s || keys.S) && player.y < H - player.height) player.y += player.speed;
+
+    // 連射
+    if (keys[' ']) {
+        const now = Date.now();
+        if (now - lastShotMs >= SHOT_COOLDOWN_MS) {
+            shoot();
+            lastShotMs = now;
+        }
+    }
+
+    // ドローン自動射撃
+    updateDrones();
+
+    // 弾の更新
+    bullets = bullets.filter(bullet => {
+        // ライフタイマー（機雷）
+        if (bullet.lifeFrames !== null && bullet.lifeFrames !== undefined) {
+            bullet.lifeFrames--;
+            if (bullet.lifeFrames <= 0) {
+                if (bullet.explodeOnImpact) {
+                    applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
+                                   bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                }
+                return false;
+            }
+        }
+        // ホーミング
+        if (bullet.homing && bullet.homingForce > 0) {
+            const t = findNearestTarget(bullet.x, bullet.y);
+            if (t) steerBulletTowards(bullet, t, bullet.homingForce);
+        }
+        // 重力弾
+        if (bullet.pullRadius > 0 && bullet.pullForce > 0) {
+            applyGravityPull(bullet);
+        }
+        // 移動
+        bullet.x += bullet.speedX;
+        bullet.y += bullet.speedY;
+        bullet.traveled += Math.hypot(bullet.speedX, bullet.speedY);
+
+        // ブレード/シールド: ボス弾切り
+        if (bullet.blocksBossBullets) {
+            for (let i = bossBullets.length - 1; i >= 0; i--) {
+                if (checkCollision(bullet, bossBullets[i])) {
+                    bossBullets.splice(i, 1);
+                }
+            }
+        }
+
+        // ターゲット衝突
+        for (let i = targets.length - 1; i >= 0; i--) {
+            const t = targets[i];
+            if (checkCollision(bullet, t)) {
+                t.health -= bullet.damage;
+                if (bullet.slowOnHitMs > 0) applySlow(t, bullet.slowOnHitMs);
+                if (bullet.explodeOnImpact) {
+                    applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
+                                   bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                }
+                if (t.health <= 0) targets.splice(i, 1);
+                if (bullet.pierceRemaining > 0) {
+                    bullet.pierceRemaining--;
+                } else {
+                    return false;
+                }
+                break;
+            }
+        }
+
+        // 画面外 / 射程切れ
+        return bullet.x > -50 && bullet.x < W + 50 && bullet.y > -50 && bullet.y < H + 50
+               && bullet.traveled < bullet.range;
+    });
+
+    // ターゲット移動
+    const now = Date.now();
+    targets.forEach(t => {
+        const slow = (t.slowedUntil > now) ? 0.4 : 1.0;
+        t.x += t.vx * slow;
+        t.y += t.vy * slow;
+        if (t.x < 0 || t.x + t.width > W) t.vx *= -1;
+        if (t.y < 30) { t.vy = Math.abs(t.vy); }
+        if (t.y + t.height > H - 50) { t.vy = -Math.abs(t.vy || 0.5); }
+    });
+
+    // 爆発エフェクト
+    explosions = explosions.filter(e => { e.life--; return e.life > 0; });
+}
+
+// =========================================================================
+// Draw
+// =========================================================================
+function draw() {
+    ctx.fillStyle = '#001122';
+    ctx.fillRect(0, 0, W, H);
+    // 星背景
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 60; i++) {
+        ctx.fillRect((i * 51) % W, (i * 89) % H, 1, 1);
+    }
+
+    // プレイヤー（緑の三角）
+    ctx.save();
+    ctx.fillStyle = '#0f8';
+    ctx.shadowColor = '#0f8';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(player.x + player.width / 2, player.y);
+    ctx.lineTo(player.x, player.y + player.height);
+    ctx.lineTo(player.x + player.width, player.y + player.height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // ドローン
+    droneCompanions.forEach(d => {
+        const cx = player.x + player.width / 2 + d.offsetX;
+        const cy = player.y + 10;
+        ctx.save();
+        ctx.fillStyle = '#0f8';
+        ctx.shadowColor = '#0f8';
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 6);
+        ctx.lineTo(cx - 6, cy + 6);
+        ctx.lineTo(cx + 6, cy + 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    });
+
+    // ターゲット
+    targets.forEach(t => {
+        ctx.save();
+        const slowed = (t.slowedUntil > Date.now());
+        ctx.fillStyle = slowed ? '#88ccff' : t.color;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 4;
+        ctx.fillRect(t.x, t.y, t.width, t.height);
+        ctx.restore();
+        // HP バー
+        const hpRatio = t.health / t.maxHealth;
+        ctx.fillStyle = '#400';
+        ctx.fillRect(t.x, t.y - 6, t.width, 3);
+        ctx.fillStyle = hpRatio > 0.5 ? '#0f0' : (hpRatio > 0.25 ? '#fc0' : '#f44');
+        ctx.fillRect(t.x, t.y - 6, t.width * hpRatio, 3);
+    });
+
+    // 弾
+    bullets.forEach(b => {
+        ctx.save();
+        ctx.fillStyle = b.color;
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = b.pierceRemaining > 0 ? 10 : 4;
+        ctx.fillRect(b.x, b.y, b.width, b.height);
+        // 重力弾の引力範囲
+        if (b.pullRadius > 0) {
+            ctx.strokeStyle = b.color;
+            ctx.globalAlpha = 0.2;
+            ctx.beginPath();
+            ctx.arc(b.x + b.width / 2, b.y + b.height / 2, b.pullRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+        ctx.restore();
+    });
+
+    // 爆発
+    explosions.forEach(e => {
+        const a = e.life / 18;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = '#ff8800';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.radius * (1 - a) + 8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    });
+}
+
+// =========================================================================
+// HUD
+// =========================================================================
+function buildWeaponList() {
+    const root = document.getElementById('weaponList');
+    root.innerHTML = '';
+    WEAPON_KEY_ORDER.forEach((id, i) => {
+        const w = weaponCatalog[id];
+        const btn = document.createElement('button');
+        btn.className = 'w-btn' + (id === currentWeapon ? ' active' : '');
+        btn.dataset.id = id;
+        const keyLabel = i < 9 ? (i + 1).toString() : ['Q', 'E', 'R'][i - 9];
+        const tags = [];
+        if (w.homing)            tags.push('追尾');
+        if (w.pullRadius)        tags.push('引力');
+        if (w.explodeOnImpact)   tags.push('爆発');
+        if (w.slowOnHitMs)       tags.push('減速');
+        if (w.blocksBossBullets) tags.push('弾切り');
+        if (w.lifeFrames)        tags.push('設置');
+        if (w.pierce > 0)        tags.push('貫通×' + w.pierce);
+        btn.innerHTML = `<span class="num">[${keyLabel}]</span>${w.name}` +
+                        `<span class="desc">威力 ${w.damage} / 射程 ${w.range} / 弾速 ${w.speed}` +
+                        (tags.length ? ` ・ ${tags.join(' / ')}` : '') + `</span>`;
+        btn.addEventListener('click', () => selectWeapon(id));
+        root.appendChild(btn);
+    });
+}
+
+function selectWeapon(id) {
+    if (!weaponCatalog[id]) return;
+    currentWeapon = id;
+    document.querySelectorAll('.w-btn').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+    refreshDrones();
+    updateHud();
+}
+
+function updateHud() {
+    const w = weaponCatalog[currentWeapon];
+    document.getElementById('hudWeapon').textContent = w.name;
+    document.getElementById('hudAmmo').textContent = `${weaponAmmo[currentWeapon]} / ${w.maxAmmo}`;
+    document.getElementById('hudStats').textContent = `D${w.damage} / R${w.range} / S${w.speed}`;
+    const sp = [];
+    if (w.homing)            sp.push(`追尾(${w.homingForce})`);
+    if (w.pullRadius)        sp.push(`引力(r=${w.pullRadius})`);
+    if (w.explodeOnImpact)   sp.push(`爆発(r=${w.explodeOnImpact.radius})`);
+    if (w.slowOnHitMs)       sp.push(`減速(${w.slowOnHitMs}ms)`);
+    if (w.blocksBossBullets) sp.push('弾切り');
+    if (w.lifeFrames)        sp.push(`設置(${w.lifeFrames}f)`);
+    document.getElementById('hudSpecial').textContent = sp.length ? sp.join(' / ') : '—';
+}
+
+function updateDebug() {
+    document.getElementById('dbgFps').textContent     = fpsAvg.toFixed(0);
+    document.getElementById('dbgBullets').textContent = bullets.length;
+    document.getElementById('dbgTargets').textContent = targets.length;
+    document.getElementById('dbgDrones').textContent  = droneCompanions.length;
+    const mineCount = bullets.filter(b => b.lifeFrames !== null && b.lifeFrames !== undefined).length;
+    document.getElementById('dbgMines').textContent = mineCount;
+}
+
+// =========================================================================
+// コントロールボタン
+// =========================================================================
+document.getElementById('addStaticBtn')   .addEventListener('click', () => spawnTarget({ kind: 'static' }));
+document.getElementById('addMovingBtn')   .addEventListener('click', () => spawnTarget({ kind: 'moving' }));
+document.getElementById('addBossBtn')     .addEventListener('click', () => spawnTarget({ kind: 'boss' }));
+document.getElementById('addSwarmBtn')    .addEventListener('click', () => spawnSwarm(5));
+document.getElementById('clearTargetsBtn').addEventListener('click', () => { targets = []; });
+document.getElementById('clearBulletsBtn').addEventListener('click', () => { bullets = []; explosions = []; });
+document.getElementById('refillBtn')      .addEventListener('click', () => { refillAmmo(); updateHud(); });
+document.getElementById('resetPlayerBtn') .addEventListener('click', () => {
+    player.x = W / 2 - 20; player.y = H - 80;
+});
+
+// =========================================================================
+// メインループ
+// =========================================================================
+buildWeaponList();
+updateHud();
+
+// 初期ターゲットを少し置いておく
+spawnTarget({ x: 200, y: 150, kind: 'static' });
+spawnTarget({ x: 500, y: 120, kind: 'moving' });
+spawnTarget({ x: 700, y: 180, kind: 'static' });
+
+function loop(now) {
+    const dt = now - lastFrameTime;
+    lastFrameTime = now;
+    if (dt > 0) fpsAvg = fpsAvg * 0.9 + (1000 / dt) * 0.1;
+
+    update(dt);
+    draw();
+    updateDebug();
+    requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
