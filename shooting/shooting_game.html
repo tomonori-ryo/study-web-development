@@ -704,7 +704,15 @@
                 if (detail) {
                     if (isUsable) {
                         const pierceText = weapon.pierce > 0 ? ' / 貫通' : '';
-                        detail.textContent = `残弾 ${weaponAmmo[slotNum] || 0}/${weaponMaxAmmo[slotNum] || 0} 消費${weapon.ammoCost} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
+                        if (weapon.usesStamina) {
+                            const cur = Math.floor(weaponStamina[slotNum] || 0);
+                            const max = weaponMaxStamina[slotNum] || weapon.staminaMax;
+                            const pct = Math.round((cur / max) * 100);
+                            const tag = weaponOverheated[slotNum] ? '【クールダウン】' : '';
+                            detail.textContent = `スタミナ ${pct}% ${tag} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
+                        } else {
+                            detail.textContent = `残弾 ${weaponAmmo[slotNum] || 0}/${weaponMaxAmmo[slotNum] || 0} 消費${weapon.ammoCost} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
+                        }
                     } else {
                         const ctx = buildTriggerContext();
                         const progress = describeTriggerProgress(weapon.runTrigger, ctx);
@@ -732,6 +740,10 @@
         // 武器ごとに独立した残弾（補給・宝箱の挙動は従来どおり）
         let weaponMaxAmmo = {};
         let weaponAmmo = {};
+        // スタミナ式武器（ブレード等）用: スロット番号 -> 現在スタミナ / 最大スタミナ / オーバーヒート中フラグ
+        let weaponStamina = {};
+        let weaponMaxStamina = {};
+        let weaponOverheated = {};
         let equippedWeaponIds = ['normal', 'rapid', 'shotgun', 'laser'];
         let equippedWeapons = {};
         function getCurrentAmmo() { return weaponAmmo[currentWeapon] || 0; }
@@ -745,7 +757,32 @@
                 weaponAmmo[id] = Math.min(weaponMaxAmmo[id], (weaponAmmo[id] || 0) + amount);
             });
         }
+        // スタミナ系: 各スロットの自然回復・オーバーヒート復帰判定。dt はミリ秒。
+        function updateWeaponStamina(dt) {
+            Object.keys(equippedWeapons).forEach(slotKey => {
+                const slot = parseInt(slotKey);
+                const w = equippedWeapons[slot];
+                if (!w || !w.usesStamina) return;
+                const max = weaponMaxStamina[slot] || w.staminaMax;
+                const regen = (w.staminaRegen || 0) * (dt / 1000);
+                weaponStamina[slot] = Math.min(max, (weaponStamina[slot] || 0) + regen);
+                if (weaponOverheated[slot] && weaponStamina[slot] >= max * (w.overheatRecover || 0.4)) {
+                    weaponOverheated[slot] = false;
+                }
+            });
+        }
         function updateAmmoHud() {
+            const w = equippedWeapons[currentWeapon];
+            if (w && w.usesStamina) {
+                const cur = Math.floor(weaponStamina[currentWeapon] || 0);
+                const max = weaponMaxStamina[currentWeapon] || w.staminaMax;
+                const pct = Math.round((cur / max) * 100);
+                const bars = Math.round((cur / max) * 10);
+                const bar = '▓'.repeat(bars) + '░'.repeat(10 - bars);
+                const tag = weaponOverheated[currentWeapon] ? ' (クールダウン)' : '';
+                ammoElement.textContent = `スタミナ ${bar} ${pct}%${tag}`;
+                return;
+            }
             ammoElement.textContent = `弾薬: ${getCurrentAmmo()}/${getCurrentMaxAmmo()}`;
         }
         let weaponMessage = ''; // 武器解禁メッセージ
@@ -881,7 +918,12 @@
             },
             blade: {
                 id: 'blade', name: 'ブレード',
-                ammoCost: 1, maxAmmo: 50, bulletCount: 1, spread: 0, speed: 14,
+                // スタミナ式: 弾数の概念を持たず、振るたびに staminaPerShot を消費して
+                // staminaRegen / 秒で自動回復する。0 まで使い切るとオーバーヒートし、
+                // overheatRecover * staminaMax まで回復するまで振れない。
+                usesStamina: true,
+                staminaMax: 100, staminaPerShot: 10, staminaRegen: 30, overheatRecover: 0.4,
+                ammoCost: 0, maxAmmo: 0, bulletCount: 1, spread: 0, speed: 14,
                 damage: 4, range: 100, pierce: 1, width: 22, height: 8, color: '#00ffaa',
                 blocksBossBullets: true,                            // 敵弾を切り裂く
                 runTrigger: {
@@ -1056,6 +1098,9 @@
             equippedWeapons = {};
             weaponMaxAmmo = {};
             weaponAmmo = {};
+            weaponStamina = {};
+            weaponMaxStamina = {};
+            weaponOverheated = {};
             equippedWeaponIds.forEach((weaponId, index) => {
                 const slot = index + 1;
                 const weapon = weaponCatalog[weaponId] || null;
@@ -1063,6 +1108,11 @@
                 equippedWeapons[slot] = weapon;
                 weaponMaxAmmo[slot] = weapon.maxAmmo;
                 weaponAmmo[slot] = weapon.maxAmmo;
+                if (weapon.usesStamina) {
+                    weaponMaxStamina[slot] = weapon.staminaMax;
+                    weaponStamina[slot] = weapon.staminaMax;
+                    weaponOverheated[slot] = false;
+                }
             });
             currentWeapon = 1;
             recomputeUnlockedSlots();
@@ -1592,7 +1642,25 @@
                 weaponChangeTimer = 90;
                 return;
             }
-            if ((weaponAmmo[currentWeapon] || 0) < weapon.ammoCost) return; // 弾薬が不足している場合は発射できない
+            // スタミナ式武器: オーバーヒート中は撃てない / 必要スタミナ未満なら撃てない
+            if (weapon.usesStamina) {
+                if (weaponOverheated[currentWeapon]) {
+                    weaponChangeMessage = `${weapon.name}: クールダウン中`;
+                    weaponChangeTimer = 30;
+                    return;
+                }
+                const cur = weaponStamina[currentWeapon] || 0;
+                if (cur < (weapon.staminaPerShot || 0)) {
+                    // 0 まで使い切ったらオーバーヒート
+                    weaponOverheated[currentWeapon] = true;
+                    weaponChangeMessage = `${weapon.name}: オーバーヒート！`;
+                    weaponChangeTimer = 60;
+                    updateAmmoHud();
+                    return;
+                }
+            } else {
+                if ((weaponAmmo[currentWeapon] || 0) < weapon.ammoCost) return;
+            }
             
             // 武器に応じた弾丸を発射
             for (let i = 0; i < weapon.bulletCount; i++) {
@@ -1626,7 +1694,15 @@
             }
             
             playSound(shootSound);
-            weaponAmmo[currentWeapon] -= weapon.ammoCost;
+            if (weapon.usesStamina) {
+                weaponStamina[currentWeapon] = (weaponStamina[currentWeapon] || 0) - (weapon.staminaPerShot || 0);
+                if (weaponStamina[currentWeapon] <= 0) {
+                    weaponStamina[currentWeapon] = 0;
+                    weaponOverheated[currentWeapon] = true;
+                }
+            } else {
+                weaponAmmo[currentWeapon] -= weapon.ammoCost;
+            }
             updateAmmoHud();
             updateWeaponSelector();
         }
@@ -2578,7 +2654,18 @@
         });
 
         // ゲームループ
-        function gameLoop() {
+        // 連続フレーム間の経過時間からスタミナ回復量を計算するため、前フレームの timestamp を保持。
+        let lastFrameTimestamp = performance.now();
+        function gameLoop(timestamp) {
+            const now = timestamp || performance.now();
+            const dt = Math.min(64, now - lastFrameTimestamp);  // 64ms 上限でタブ復帰時の暴走回復を防ぐ
+            lastFrameTimestamp = now;
+            if (gameRunning) {
+                updateWeaponStamina(dt);
+                if (equippedWeapons[currentWeapon] && equippedWeapons[currentWeapon].usesStamina) {
+                    updateAmmoHud();
+                }
+            }
             update();
             draw();
             requestAnimationFrame(gameLoop);
