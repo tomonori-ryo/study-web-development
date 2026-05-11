@@ -1,0 +1,27 @@
+{
+  "name": "shooting-game",
+  "version": "1.0.0",
+  "description": "戦闘機シューティングゲーム",
+  "main": "index.html",
+  "scripts": {
+    "start": "live-server",
+    "build": "echo 'No build step required'",
+    "deploy": "firebase deploy",
+    "deploy:netlify": "netlify deploy --prod --dir=."
+  },
+  "dependencies": {
+    "firebase": "^9.0.0"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.1",
+    "netlify-cli": "^12.0.0"
+  },
+  "keywords": [
+    "game",
+    "shooting",
+    "firebase",
+    "javascript"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+} 

@@ -1,0 +1,2535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>戦闘機シューティングゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: linear-gradient(to bottom, #001122, #003366);
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: clamp(14px, 2.5vw, 18px);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+
+        #runStatus {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #ffffff;
+            font-size: clamp(11px, 1.6vw, 13px);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.55);
+            padding: 8px 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            line-height: 1.45;
+            max-width: min(40vw, 220px);
+            display: none;
+        }
+        .run-status-title {
+            font-size: clamp(10px, 1.3vw, 11px);
+            color: #aaffcc;
+            letter-spacing: 0.06em;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .run-status-row {
+            white-space: nowrap;
+            color: #e0e0e0;
+        }
+        .run-status-row .ok { color: #88ff88; }
+        .run-status-row .warn { color: #ffcc66; }
+        .run-status-row .label { color: #aaaaaa; margin-right: 4px; }
+        @media (max-width: 600px) {
+            #runStatus {
+                top: auto;
+                bottom: 10px;
+                right: 10px;
+                font-size: 10px;
+                max-width: 50vw;
+            }
+        }
+        
+        #score {
+            margin-bottom: 8px;
+            font-size: clamp(12px, 2vw, 16px);
+        }
+        
+        #lives {
+            margin-bottom: 8px;
+            font-size: clamp(12px, 2vw, 16px);
+        }
+        
+        #time {
+            margin-bottom: 8px;
+            color: #ffff00;
+            font-size: clamp(12px, 2vw, 16px);
+        }
+        
+        #ammo {
+            margin-bottom: 8px;
+            font-size: clamp(12px, 2vw, 16px);
+        }
+        
+        /* 武器名は左下の #weaponHud に表示 */
+        
+        #bossWarning {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff0000;
+            font-size: clamp(24px, 6vw, 36px);
+            text-align: center;
+            display: none;
+            z-index: 150;
+            text-shadow: 2px 2px 4px #000;
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: clamp(32px, 8vw, 48px);
+            text-align: center;
+            display: none;
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .high-score {
+            font-size: clamp(16px, 3vw, 20px);
+            margin-top: 10px;
+            color: #ffff00;
+        }
+        
+        #restartBtn {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: clamp(10px, 2vw, 15px) clamp(20px, 4vw, 30px);
+            font-size: clamp(14px, 3vw, 20px);
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        #restartBtn:hover {
+            background: #cc3333;
+        }
+        
+        #homeBtn {
+            background: #4444ff;
+            color: white;
+            border: none;
+            padding: clamp(10px, 2vw, 15px) clamp(20px, 4vw, 30px);
+            font-size: clamp(14px, 3vw, 20px);
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 10px;
+            margin-left: 10px;
+        }
+        
+        #homeBtn:hover {
+            background: #3333cc;
+        }
+        
+
+        
+        .final-score {
+            font-size: clamp(18px, 4vw, 24px);
+            margin-top: 20px;
+            color: #ffff00;
+        }
+        
+        .login-promotion {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .login-promotion h3 {
+            color: #00ff00;
+            margin: 0 0 10px 0;
+            font-size: clamp(14px, 3vw, 18px);
+        }
+        
+        .login-promotion p {
+            color: #ffffff;
+            margin: 5px 0;
+            font-size: clamp(12px, 2.5vw, 16px);
+        }
+        
+        .login-buttons {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .login-btn {
+            background: #00ff00;
+            color: #000000;
+            border: none;
+            padding: clamp(8px, 2vw, 12px) clamp(16px, 3vw, 24px);
+            font-size: clamp(12px, 2.5vw, 16px);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .login-btn:hover {
+            background: #00cc00;
+            transform: scale(1.05);
+        }
+        
+        .register-btn {
+            background: #0066ff;
+            color: #ffffff;
+            border: none;
+            padding: clamp(8px, 2vw, 12px) clamp(16px, 3vw, 24px);
+            font-size: clamp(12px, 2.5vw, 16px);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .register-btn:hover {
+            background: #0055cc;
+            transform: scale(1.05);
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-size: clamp(10px, 2vw, 12px);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px;
+            border-radius: 5px;
+            backdrop-filter: blur(5px);
+            z-index: 50;
+        }
+        
+        #controls h3 {
+            margin: 0 0 5px 0;
+            font-size: clamp(12px, 2.5vw, 14px);
+            color: #00ffff;
+        }
+        
+        #controls p {
+            margin: 2px 0;
+            font-size: clamp(8px, 1.8vw, 10px);
+        }
+        
+        /* 武器選択UI（左下配置） */
+        #weaponSelector {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            transform: translateY(calc(-100% - 8px));
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            padding: 10px;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            transition: all 0.3s ease;
+            max-height: min(45vh, 320px);
+            overflow-y: auto;
+        }
+        
+        .weapon-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .weapon-display:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+        
+        .weapon-display.active {
+            background: rgba(0, 255, 255, 0.3);
+            border: 2px solid #00ffff;
+        }
+
+        .weapon-display.locked {
+            opacity: 0.55;
+            filter: grayscale(0.6);
+            cursor: not-allowed;
+        }
+
+        .weapon-display.locked:hover {
+            transform: none;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .weapon-display.locked .weapon-icon {
+            position: relative;
+        }
+
+        .weapon-display.locked .weapon-icon::after {
+            content: '🔒';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+            border-radius: 50%;
+            font-size: 14px;
+        }
+        
+        .weapon-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .weapon-info {
+            flex: 1;
+        }
+        
+        .weapon-name {
+            font-size: clamp(12px, 2.5vw, 14px);
+            font-weight: bold;
+            color: white;
+            margin-bottom: 2px;
+        }
+        
+        .weapon-details {
+            font-size: clamp(10px, 2vw, 12px);
+            color: #cccccc;
+        }
+        
+        .weapon-selector-toggle {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            transform: translateY(calc(-100% - 8px));
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            z-index: 101;
+            transition: all 0.3s ease;
+            display: none;
+        }
+        
+        .weapon-selector-toggle:hover {
+            background: rgba(0, 0, 0, 0.9);
+            transform: translateY(calc(-100% - 8px)) scale(1.1);
+        }
+        
+        /* レスポンシブ対応 */
+        @media (max-width: 768px) {
+            #ui {
+                font-size: clamp(10px, 2vw, 14px);
+                padding: 8px;
+            }
+            
+            #score, #lives, #time, #ammo {
+                font-size: clamp(10px, 2vw, 14px);
+                margin-bottom: 6px;
+            }
+
+            #bossWarning {
+                font-size: clamp(18px, 5vw, 24px);
+            }
+            
+            #gameOver {
+                font-size: clamp(24px, 6vw, 32px);
+                padding: 15px;
+            }
+            
+            .final-score, .high-score {
+                font-size: clamp(14px, 3vw, 18px);
+            }
+            
+            #restartBtn, #homeBtn {
+                padding: clamp(8px, 2vw, 12px) clamp(16px, 3vw, 24px);
+                font-size: clamp(12px, 2.5vw, 16px);
+            }
+            
+            .login-promotion {
+                padding: 10px;
+                margin-top: 15px;
+            }
+            
+            .login-promotion h3 {
+                font-size: clamp(12px, 2.5vw, 16px);
+            }
+            
+            .login-promotion p {
+                font-size: clamp(10px, 2vw, 14px);
+            }
+            
+            .login-btn, .register-btn {
+                padding: clamp(6px, 1.5vw, 10px) clamp(12px, 2.5vw, 20px);
+                font-size: clamp(10px, 2vw, 14px);
+            }
+            
+            #controls {
+                font-size: clamp(8px, 1.5vw, 10px);
+                padding: 6px;
+            }
+            
+            #controls h3 {
+                font-size: clamp(10px, 2vw, 12px);
+            }
+            
+            #controls p {
+                font-size: clamp(6px, 1.5vw, 8px);
+                margin: 1px 0;
+            }
+            
+            #weaponSelector {
+                padding: 8px;
+            }
+            
+            .weapon-display {
+                padding: 6px;
+                gap: 8px;
+            }
+            
+            .weapon-icon {
+                width: 25px;
+                height: 25px;
+                font-size: 14px;
+            }
+            
+            .weapon-name {
+                font-size: clamp(10px, 2vw, 12px);
+            }
+            
+            .weapon-details {
+                font-size: clamp(8px, 1.5vw, 10px);
+            }
+            
+            .weapon-selector-toggle {
+                padding: 12px;
+                font-size: 18px;
+            }
+        }
+        
+        @media (max-height: 600px) {
+            #ui {
+                font-size: clamp(8px, 1.5vw, 12px);
+                padding: 6px;
+            }
+            
+            #score, #lives, #time, #ammo {
+                font-size: clamp(8px, 1.5vw, 12px);
+                margin-bottom: 4px;
+            }
+
+            #bossWarning {
+                font-size: clamp(16px, 4vw, 20px);
+            }
+            
+            #gameOver {
+                font-size: clamp(20px, 5vw, 28px);
+                padding: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <div id="score">スコア: 0</div>
+        <div id="lives">ライフ: 3</div>
+        <div id="ammo">弾薬: 50/50</div>
+        <div id="time">残り時間: 60秒</div>
+    </div>
+    <div id="runStatus">
+        <div class="run-status-title">ラン進捗</div>
+        <div id="runStatusBody"></div>
+    </div>
+    <div id="bossWarning">⚠️ ボス出現！ ⚠️</div>
+    <div id="gameOver">
+        <div>ゲームオーバー</div>
+        <div class="final-score">最終スコア: 0</div>
+        <div class="high-score">最高スコア: 0</div>
+        <button id="restartBtn">リスタート</button>
+        <button id="homeBtn">ホームに戻る</button>
+        <div class="login-promotion" style="display: none;">
+            <h3>スコアを保存してランキングに参加！</h3>
+            <p>ログインすると、あなたのスコアが保存され、</p>
+            <p>他のプレイヤーと競い合えます！</p>
+            <div class="login-buttons">
+                <button class="login-btn" onclick="window.location.href='mypage.html'">ログイン</button>
+                <button class="register-btn" onclick="window.location.href='mypage.html'">新規登録</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="weapon" style="display: none;">武器: 通常弾</div>
+
+    <!-- 武器選択UI -->
+    <button id="weaponSelectorToggle" class="weapon-selector-toggle">🔫</button>
+    <div id="weaponSelector" style="display: none;">
+        <div class="weapon-display active" data-slot="1">
+            <div class="weapon-icon" style="background: #ffff00;">1</div>
+            <div class="weapon-info">
+                <div class="weapon-name">通常弾</div>
+                <div class="weapon-details">弾薬: 1発</div>
+            </div>
+        </div>
+        <div class="weapon-display" data-slot="2">
+            <div class="weapon-icon" style="background: #ff8800;">2</div>
+            <div class="weapon-info">
+                <div class="weapon-name">連射弾</div>
+                <div class="weapon-details">弾薬: 2発</div>
+            </div>
+        </div>
+        <div class="weapon-display" data-slot="3">
+            <div class="weapon-icon" style="background: #ff0000;">3</div>
+            <div class="weapon-info">
+                <div class="weapon-name">散弾</div>
+                <div class="weapon-details">弾薬: 3発</div>
+            </div>
+        </div>
+        <div class="weapon-display" data-slot="4">
+            <div class="weapon-icon" style="background: #00ffff;">4</div>
+            <div class="weapon-info">
+                <div class="weapon-name">レーザー</div>
+                <div class="weapon-details">弾薬: 5発</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-analytics-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        const ammoElement = document.getElementById('ammo'); // 弾薬表示要素
+        const weaponElement = document.getElementById('weapon'); // 武器表示要素
+        const timeElement = document.getElementById('time');
+        const bossWarningElement = document.getElementById('bossWarning');
+        const gameOverElement = document.getElementById('gameOver');
+        const restartBtn = document.getElementById('restartBtn');
+        const homeBtn = document.getElementById('homeBtn');
+        const highScoreElement = document.querySelector('.high-score');
+        const weaponSelectorToggle = document.getElementById('weaponSelectorToggle');
+        const weaponSelector = document.getElementById('weaponSelector');
+
+        // オーディオ要素
+        let shootSound = null;
+        let bossShootSound = null;
+        let explosionSound = null;
+        let bossExplosionSound = null;
+
+        // サウンド初期化
+        function initSounds() {
+            // プレイヤーの銃撃音
+            shootSound = new Audio('shoot.mp3');
+            shootSound.volume = 0.3;
+            
+            // ボスの銃撃音
+            bossShootSound = new Audio('boss_shoot.mp3');
+            bossShootSound.volume = 0.4;
+            
+            // 敵の爆発音
+            explosionSound = new Audio('explosion.mp3');
+            explosionSound.volume = 0.3;
+            
+            // ボスの爆発音
+            bossExplosionSound = new Audio('boss_explosion.mp3');
+            bossExplosionSound.volume = 0.5;
+        }
+
+        // サウンド再生関数
+        function playSound(audio) {
+            if (audio) {
+                audio.currentTime = 0; // 音を最初から再生
+                audio.play().catch(e => console.log('音声再生エラー:', e));
+            }
+        }
+
+        // キャンバスサイズを画面サイズに設定
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            // プレイヤーの位置を調整（画面サイズが変わった場合）
+            if (typeof player !== 'undefined' && player) {
+                player.x = Math.min(player.x, canvas.width - player.width);
+                player.y = Math.min(player.y, canvas.height - player.height);
+            }
+        }
+        
+        // 初期キャンバスサイズ設定
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // リサイズイベントリスナーを設定
+        window.addEventListener('resize', resizeCanvas);
+
+        // 武器選択UIの初期化
+        function initWeaponSelector() {
+            // スマホ判定
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                weaponSelectorToggle.style.display = 'block';
+                weaponSelector.style.display = 'none';
+            } else {
+                weaponSelectorToggle.style.display = 'none';
+                weaponSelector.style.display = 'block';
+            }
+            
+            // 武器選択トグルボタンのイベント
+            weaponSelectorToggle.addEventListener('click', () => {
+                if (weaponSelector.style.display === 'none') {
+                    weaponSelector.style.display = 'block';
+                    weaponSelectorToggle.textContent = '✕';
+                } else {
+                    weaponSelector.style.display = 'none';
+                    weaponSelectorToggle.textContent = '🔫';
+                }
+            });
+            
+            // 武器選択イベント
+            const weaponDisplays = document.querySelectorAll('.weapon-display');
+            weaponDisplays.forEach(display => {
+                display.addEventListener('click', () => {
+                    const slotNum = parseInt(display.dataset.slot);
+                    if (unlockedWeapons.includes(slotNum)) {
+                        setWeapon(slotNum);
+                        
+                        // スマホの場合は選択後にパネルを閉じる
+                        if (isMobile) {
+                            weaponSelector.style.display = 'none';
+                            weaponSelectorToggle.textContent = '🔫';
+                        }
+                    } else {
+                        // 装備中だがロック中のスロット: 解放条件を一瞬通知
+                        const weapon = equippedWeapons[slotNum];
+                        if (weapon) {
+                            const trigger = weapon.runTrigger || { type: 'always' };
+                            weaponChangeMessage = `${weapon.name}: ${trigger.label || '解放条件あり'}`;
+                            weaponChangeTimer = 90;
+                        }
+                    }
+                });
+            });
+        }
+        
+        // 武器選択UIの更新
+        function updateWeaponSelector() {
+            const weaponDisplays = document.querySelectorAll('.weapon-display');
+            weaponDisplays.forEach(display => {
+                const slotNum = parseInt(display.dataset.slot);
+                const weapon = equippedWeapons[slotNum];
+
+                // 未装備スロット（ロードアウトに何も入っていない）は非表示
+                if (!weapon) {
+                    display.style.display = 'none';
+                    return;
+                }
+
+                display.style.display = 'flex';
+
+                const isUsable = unlockedWeapons.includes(slotNum);
+                display.classList.toggle('locked', !isUsable);
+                display.classList.toggle('active', isUsable && slotNum === currentWeapon);
+
+                const icon = display.querySelector('.weapon-icon');
+                const name = display.querySelector('.weapon-name');
+                if (icon) {
+                    icon.textContent = slotNum;
+                    icon.style.background = weapon.color;
+                }
+                if (name) {
+                    name.textContent = weapon.name;
+                }
+                const detail = display.querySelector('.weapon-details');
+                if (detail) {
+                    if (isUsable) {
+                        const pierceText = weapon.pierce > 0 ? ' / 貫通' : '';
+                        detail.textContent = `残弾 ${weaponAmmo[slotNum] || 0}/${weaponMaxAmmo[slotNum] || 0} 消費${weapon.ammoCost} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
+                    } else {
+                        const ctx = buildTriggerContext();
+                        const progress = describeTriggerProgress(weapon.runTrigger, ctx);
+                        detail.textContent = `🔒 ${progress}`;
+                    }
+                }
+            });
+        }
+
+        // ゲーム状態
+        let score = 0;
+        let lives = 3;
+        let gameRunning = true;
+        let gameTime = 100; // 100秒制限
+        let gameStartTime = Date.now();
+        let bossSpawned = false;
+        let bossWarningShown = false;
+        let lastBossScore = 0; // 最後にボスが出現したスコア
+        let lastTimeBonusScore = 0; // 最後に時間ボーナスが与えられたスコア
+        let timeBonusMessage = ''; // 時間ボーナスメッセージ
+        let timeBonusTimer = 0; // 時間ボーナスメッセージの表示時間
+        let bossLevel = 1; // ボスの難易度レベル
+        let currentWeapon = 1; // 現在のスロット（1: 通常弾固定、2-4: 編成枠）
+        let unlockedWeapons = [1, 2, 3, 4]; // 使用可能なスロット
+        // 武器ごとに独立した残弾（補給・宝箱の挙動は従来どおり）
+        let weaponMaxAmmo = {};
+        let weaponAmmo = {};
+        let equippedWeaponIds = ['normal', 'rapid', 'shotgun', 'laser'];
+        let equippedWeapons = {};
+        function getCurrentAmmo() { return weaponAmmo[currentWeapon] || 0; }
+        function getCurrentMaxAmmo() { return weaponMaxAmmo[currentWeapon] || 0; }
+        function refillAllAmmoToMax() {
+            Object.keys(weaponMaxAmmo).forEach(k => { weaponAmmo[k] = weaponMaxAmmo[k]; });
+        }
+        function addSupplyAmmoToAll(amount) {
+            Object.keys(weaponMaxAmmo).forEach(k => {
+                const id = parseInt(k);
+                weaponAmmo[id] = Math.min(weaponMaxAmmo[id], (weaponAmmo[id] || 0) + amount);
+            });
+        }
+        function updateAmmoHud() {
+            ammoElement.textContent = `弾薬: ${getCurrentAmmo()}/${getCurrentMaxAmmo()}`;
+        }
+        let weaponMessage = ''; // 武器解禁メッセージ
+        let weaponMessageTimer = 0; // 武器メッセージの表示時間
+        let weaponChangeMessage = ''; // 武器変更メッセージ
+        let weaponChangeTimer = 0; // 武器変更メッセージの表示時間
+        let highScore = parseInt(localStorage.getItem('shootingGameHighScore')) || 0; // 最高スコア
+        
+        // 難易度設定（固定）
+        let gameDifficulty = localStorage.getItem('gameDifficulty') || 'normal';
+        let speedMultiplier = 1.0; // 基準速度の倍率
+        
+        // 難易度に応じてスピード倍率を設定（ゲーム開始時に固定）
+        function setDifficultySpeed() {
+            switch(gameDifficulty) {
+                case 'easy':
+                    speedMultiplier = 0.7; // 30%遅く
+                    break;
+                case 'hard':
+                    speedMultiplier = 1.4; // 40%早く
+                    break;
+                default: // normal
+                    speedMultiplier = 1.0; // 基準速度
+                    break;
+            }
+        }
+
+        const DEFAULT_WEAPON_LOADOUT = ['normal', 'rapid', 'shotgun', 'laser'];
+
+        // 全武器カタログ。後で武器が増えてもロードアウトだけ差し替えられる。
+        // runTrigger はランごとの「覚醒条件」。type ごとに評価器（evaluateRunTrigger）が増えていく拡張ポイント。
+        const weaponCatalog = {
+            normal: {
+                id: 'normal', name: '通常弾',
+                ammoCost: 1, maxAmmo: 60, bulletCount: 1, spread: 0, speed: 8,
+                damage: 1, range: 900, pierce: 0, width: 4, height: 12, color: '#ffff00',
+                runTrigger: { type: 'always', label: '常時使用可' }
+            },
+            rapid: {
+                id: 'rapid', name: '連射弾',
+                ammoCost: 2, maxAmmo: 40, bulletCount: 3, spread: 0.16, speed: 8,
+                damage: 1, range: 650, pierce: 0, width: 4, height: 10, color: '#ff8800',
+                runTrigger: { type: 'bossLevelDefeated', level: 1, label: '100点ボス撃破で解放' }
+            },
+            shotgun: {
+                id: 'shotgun', name: '散弾',
+                ammoCost: 3, maxAmmo: 24, bulletCount: 5, spread: 0.55, speed: 7,
+                damage: 2, range: 280, pierce: 0, width: 5, height: 10, color: '#ff0000',
+                runTrigger: { type: 'bossLevelDefeated', level: 2, label: '500点ボス撃破で解放' }
+            },
+            laser: {
+                id: 'laser', name: 'レーザー',
+                ammoCost: 5, maxAmmo: 15, bulletCount: 1, spread: 0, speed: 14,
+                damage: 3, range: 950, pierce: 99, width: 7, height: 22, color: '#00ffff',
+                runTrigger: { type: 'bossLevelDefeated', level: 3, label: '1000点ボス撃破で解放' }
+            },
+            // ▼ 新武器（パターンB）。Lv3ボス撃破歴で装備可能。ラン中の覚醒条件は runTrigger 参照。
+            sniper: {
+                id: 'sniper', name: '狙撃',
+                ammoCost: 1, maxAmmo: 6, bulletCount: 1, spread: 0, speed: 18,
+                damage: 10, range: 1200, pierce: 1, width: 3, height: 24, color: '#dddddd',
+                runTrigger: { type: 'bossLevelDefeated', level: 3, label: '1000点ボス撃破で解放' }
+            },
+            launcher: {
+                id: 'launcher', name: 'ランチャー',
+                ammoCost: 1, maxAmmo: 12, bulletCount: 1, spread: 0, speed: 5,
+                damage: 4, range: 700, pierce: 0, width: 14, height: 14, color: '#ffaa00',
+                explodeOnImpact: { radius: 80, damage: 5 },  // 着弾時に範囲爆発
+                runTrigger: {
+                    type: 'all',
+                    requirements: [
+                        { type: 'bossLevelDefeated', level: 3 },
+                        { type: 'supplyCollected', count: 1 }
+                    ],
+                    label: '1000点ボス撃破＋補給1個取得で解放'
+                }
+            },
+
+            // ▼▼▼ Lv4ボス撃破歴で装備可能（パターンB）▼▼▼
+            slowtime: {
+                id: 'slowtime', name: '時空弾',
+                ammoCost: 1, maxAmmo: 12, bulletCount: 1, spread: 0, speed: 8,
+                damage: 1, range: 700, pierce: 0, width: 12, height: 12, color: '#99ccff',
+                slowOnHitMs: 1500,  // 命中時に対象を1.5秒スロー
+                runTrigger: { type: 'bossLevelDefeated', level: 4, label: '1500点ボス撃破で解放' }
+            },
+            homing: {
+                id: 'homing', name: 'ホーミング',
+                ammoCost: 1, maxAmmo: 8, bulletCount: 1, spread: 0, speed: 6,
+                damage: 6, range: 900, pierce: 0, width: 6, height: 12, color: '#ff66ff',
+                homing: true, homingForce: 0.18,
+                runTrigger: {
+                    type: 'all',
+                    requirements: [
+                        { type: 'bossLevelDefeated', level: 4 },
+                        { type: 'enemyKillCount', count: 30 }
+                    ],
+                    label: '1500点ボス撃破＋雑魚30体撃破で解放'
+                }
+            },
+            drone: {
+                // 注: 真の随伴機（横並びコンパニオン）は次フェーズ。今は弾数多めの直射武器として動作。
+                id: 'drone', name: '随伴機',
+                ammoCost: 1, maxAmmo: 30, bulletCount: 1, spread: 0.05, speed: 7,
+                damage: 1, range: 600, pierce: 0, width: 4, height: 10, color: '#00ff88',
+                runTrigger: { type: 'bossLevelDefeated', level: 4, label: '1500点ボス撃破で解放' }
+            },
+
+            // ▼▼▼ Lv5ボス撃破歴で装備可能 ▼▼▼
+            gravity: {
+                id: 'gravity', name: '重力弾',
+                ammoCost: 1, maxAmmo: 10, bulletCount: 1, spread: 0, speed: 4,
+                damage: 0, range: 600, pierce: 99, width: 16, height: 16, color: '#9933ff',
+                pullRadius: 140, pullForce: 1.4,  // 範囲内の敵を吸引
+                runTrigger: { type: 'bossLevelDefeated', level: 5, label: '2000点ボス撃破で解放' }
+            },
+            mine: {
+                // 設置型: 撃った地点で停止し、ライフタイマー切れで自爆 / 敵接触で起爆。
+                id: 'mine', name: '機雷',
+                ammoCost: 1, maxAmmo: 8, bulletCount: 1, spread: 0, speed: 0,
+                damage: 8, range: 9999, pierce: 0, width: 14, height: 14, color: '#cccc33',
+                lifeFrames: 360,                                    // 約6秒で自然消滅
+                explodeOnImpact: { radius: 70, damage: 6 },
+                runTrigger: {
+                    type: 'all',
+                    requirements: [
+                        { type: 'bossLevelDefeated', level: 5 },
+                        { type: 'damageTakenInRun', max: 0 }
+                    ],
+                    label: '2000点ボス撃破＋ノーダメで解放'
+                }
+            },
+            blade: {
+                id: 'blade', name: 'ブレード',
+                ammoCost: 1, maxAmmo: 50, bulletCount: 1, spread: 0, speed: 14,
+                damage: 4, range: 100, pierce: 1, width: 22, height: 8, color: '#00ffaa',
+                blocksBossBullets: true,                            // 敵弾を切り裂く
+                runTrigger: {
+                    type: 'all',
+                    requirements: [
+                        { type: 'bossLevelDefeated', level: 5 },
+                        { type: 'supplyCollected', count: 2 }
+                    ],
+                    label: '2000点ボス撃破＋補給2個取得で解放'
+                }
+            },
+
+            // ▼▼▼ Lv6ボス撃破歴で装備可能 ▼▼▼
+            shield: {
+                id: 'shield', name: 'シールド',
+                ammoCost: 1, maxAmmo: 8, bulletCount: 1, spread: 0, speed: 4,
+                damage: 0, range: 400, pierce: 99, width: 80, height: 12, color: '#88ffff',
+                blocksBossBullets: true,  // 敵弾を貫通破壊
+                runTrigger: {
+                    type: 'all',
+                    requirements: [
+                        { type: 'bossLevelDefeated', level: 6 },
+                        { type: 'livesLost', count: 1 }
+                    ],
+                    label: '2500点ボス撃破＋被弾後で解放'
+                }
+            }
+        };
+
+        // runTrigger 評価器。新しい武器・トリガーを追加するときはここを増やすだけで対応できる。
+        // 'all' は AND の複合トリガー。requirements の各要素を再帰的に評価する。
+        const RUN_TRIGGER_EVALUATORS = {
+            always: () => true,
+            bossLevelDefeated: (trigger, ctx) => {
+                const level = trigger.level || 1;
+                return ctx.defeatedBossLevels.has(level);
+            },
+            scoreReached: (trigger, ctx) => ctx.score >= (trigger.value || 0),
+            supplyCollected: (trigger, ctx) => (ctx.suppliesCollected || 0) >= (trigger.count || 1),
+            enemyKillCount: (trigger, ctx) => (ctx.enemyKillCount || 0) >= (trigger.count || 1),
+            // damageTakenInRun: livesLost が max 以下のあいだ TRUE（例: max=0 で「ノーダメ」）
+            damageTakenInRun: (trigger, ctx) => (ctx.livesLost || 0) <= (trigger.max || 0),
+            livesLost: (trigger, ctx) => (ctx.livesLost || 0) >= (trigger.count || 1),
+            all: (trigger, ctx) => Array.isArray(trigger.requirements)
+                && trigger.requirements.every(req => evaluateRunTrigger(req, ctx))
+        };
+
+        function getRangeLabel(range) {
+            if (range <= 320) return '短';
+            if (range <= 700) return '中';
+            return '長';
+        }
+
+        function getUseConditionLabel(weapon) {
+            const trigger = weapon.runTrigger || { type: 'always' };
+            if (trigger.type === 'always') return '';
+            return ` / ${trigger.label || '解放条件あり'}`;
+        }
+
+        // ロック中武器の解放条件を「現在値 / 必要値」で動的に表示するためのテキスト整形。
+        function describeTriggerProgress(trigger, ctx) {
+            const t = trigger || { type: 'always' };
+            if (t.type === 'all' && Array.isArray(t.requirements)) {
+                return t.requirements.map(r => describeSingleTriggerProgress(r, ctx)).join(' + ');
+            }
+            return describeSingleTriggerProgress(t, ctx);
+        }
+
+        function describeSingleTriggerProgress(t, ctx) {
+            switch (t.type) {
+                case 'bossLevelDefeated': {
+                    const level = t.level || 1;
+                    const ok = ctx.defeatedBossLevels && ctx.defeatedBossLevels.has(level);
+                    return ok ? `Lv${level}ボス✓` : `Lv${level}ボス未撃破`;
+                }
+                case 'supplyCollected': {
+                    const need = t.count || 1;
+                    const cur = ctx.suppliesCollected || 0;
+                    return `補給 ${Math.min(cur, need)}/${need}`;
+                }
+                case 'enemyKillCount': {
+                    const need = t.count || 1;
+                    const cur = ctx.enemyKillCount || 0;
+                    return `撃破 ${Math.min(cur, need)}/${need}`;
+                }
+                case 'damageTakenInRun': {
+                    const ok = (ctx.livesLost || 0) <= (t.max || 0);
+                    return ok ? 'ノーダメ✓' : 'ノーダメ失敗';
+                }
+                case 'livesLost': {
+                    const need = t.count || 1;
+                    const cur = ctx.livesLost || 0;
+                    return `被弾 ${Math.min(cur, need)}/${need}`;
+                }
+                case 'scoreReached':
+                    return `スコア ${ctx.score || 0}/${t.value || 0}`;
+                case 'always':
+                    return 'いつでも';
+                default:
+                    return t.label || t.type || '解放条件あり';
+            }
+        }
+
+        function sanitizeLoadout(rawLoadout) {
+            const hasSavedLoadout = Array.isArray(rawLoadout);
+            const loadout = hasSavedLoadout ? rawLoadout : DEFAULT_WEAPON_LOADOUT;
+            const result = ['normal'];
+            const used = new Set(result);
+            for (let i = 1; i < 4; i++) {
+                const candidate = loadout[i];
+                if (weaponCatalog[candidate] && candidate !== 'normal' && !used.has(candidate)) {
+                    result.push(candidate);
+                    used.add(candidate);
+                } else {
+                    const fallback = hasSavedLoadout ? '' : (DEFAULT_WEAPON_LOADOUT.find(id => !used.has(id)) || '');
+                    result.push(fallback);
+                    if (fallback) used.add(fallback);
+                }
+            }
+            return result;
+        }
+
+        // ログイン状態（'login' or 'guest'）。Firebase auth と localStorage 双方を見る。
+        let loadoutMode = 'guest';
+        // ラン中のトリガー評価に使う状態。装備武器の「覚醒条件」をここから読み取る。
+        let runState = {
+            defeatedBossLevels: new Set(),  // この出撃で倒したボスレベル（1, 2, 3...）
+            suppliesCollected: 0,            // 補給ユニット回収数
+            enemyKillCount: 0,               // 雑魚撃破累計（このラン）
+            livesLost: 0                     // 被弾でライフを失った回数（このラン）
+            // score は外側のグローバル `score` を都度参照する
+        };
+
+        function detectLoadoutMode() {
+            try {
+                if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
+                    return 'login';
+                }
+            } catch (e) {
+                // 初期化前などは無視
+            }
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            const playerName = localStorage.getItem('playerName');
+            const firebaseUid = localStorage.getItem('firebaseUid');
+            return (isLoggedIn && playerName && firebaseUid) ? 'login' : 'guest';
+        }
+
+        function loadWeaponLoadout() {
+            loadoutMode = detectLoadoutMode();
+
+            if (loadoutMode === 'login') {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('weaponLoadout') || 'null');
+                    equippedWeaponIds = sanitizeLoadout(saved);
+                } catch (e) {
+                    equippedWeaponIds = [...DEFAULT_WEAPON_LOADOUT];
+                }
+            } else {
+                // 未ログインは在来の固定編成。
+                equippedWeaponIds = [...DEFAULT_WEAPON_LOADOUT];
+            }
+
+            // ランごとの解放状態は両モード共通で必ずリセット。
+            // 「装備可否（メタ層）」と「使用可否（ラン層）」を独立させる設計。
+            runState = {
+                defeatedBossLevels: new Set(),
+                suppliesCollected: 0,
+                enemyKillCount: 0,
+                livesLost: 0
+            };
+
+            equippedWeapons = {};
+            weaponMaxAmmo = {};
+            weaponAmmo = {};
+            equippedWeaponIds.forEach((weaponId, index) => {
+                const slot = index + 1;
+                const weapon = weaponCatalog[weaponId] || null;
+                if (!weapon) return;
+                equippedWeapons[slot] = weapon;
+                weaponMaxAmmo[slot] = weapon.maxAmmo;
+                weaponAmmo[slot] = weapon.maxAmmo;
+            });
+            currentWeapon = 1;
+            recomputeUnlockedSlots();
+        }
+
+        function buildTriggerContext() {
+            return {
+                score: score,
+                defeatedBossLevels: runState.defeatedBossLevels,
+                suppliesCollected: runState.suppliesCollected,
+                enemyKillCount: runState.enemyKillCount,
+                livesLost: runState.livesLost
+            };
+        }
+
+        function evaluateRunTrigger(trigger, ctx) {
+            const t = trigger || { type: 'always' };
+            const evaluator = RUN_TRIGGER_EVALUATORS[t.type];
+            if (!evaluator) return false;
+            return !!evaluator(t, ctx || buildTriggerContext());
+        }
+
+        function isWeaponUsable(weapon) {
+            if (!weapon) return false;
+            return evaluateRunTrigger(weapon.runTrigger);
+        }
+
+        function recomputeUnlockedSlots() {
+            unlockedWeapons = Object.keys(equippedWeapons)
+                .map(Number)
+                .filter(slot => isWeaponUsable(equippedWeapons[slot]))
+                .sort((a, b) => a - b);
+            if (unlockedWeapons.length === 0) {
+                unlockedWeapons = [1];
+            }
+            if (!unlockedWeapons.includes(currentWeapon)) {
+                currentWeapon = unlockedWeapons[0];
+            }
+            // 現在武器が drone でなくなったらコンパニオンを撤収
+            refreshDrones();
+            // ラン進捗 HUD を更新
+            updateRunStatusHud();
+        }
+
+        // ラン進捗（撃破ボス・補給・キル・被弾）の表示。装備中にロック武器が残っているときだけ表示する。
+        const runStatusElement     = document.getElementById('runStatus');
+        const runStatusBodyElement = document.getElementById('runStatusBody');
+        function updateRunStatusHud() {
+            if (!runStatusElement || !runStatusBodyElement) return;
+            const slots = Object.keys(equippedWeapons).map(Number);
+            const hasLocked = slots.some(slot => !isWeaponUsable(equippedWeapons[slot]));
+            if (!hasLocked) {
+                runStatusElement.style.display = 'none';
+                return;
+            }
+            runStatusElement.style.display = 'block';
+            const levelsArr = Array.from(runState.defeatedBossLevels).sort((a, b) => a - b);
+            const lvText = levelsArr.length > 0
+                ? levelsArr.map(l => `Lv${l}`).join(' ')
+                : '<span class="warn">未撃破</span>';
+            const noDamage = runState.livesLost === 0
+                ? '<span class="ok">継続中</span>'
+                : `<span class="warn">${runState.livesLost}回 被弾</span>`;
+            runStatusBodyElement.innerHTML =
+                `<div class="run-status-row"><span class="label">撃破ボス</span>${lvText}</div>` +
+                `<div class="run-status-row"><span class="label">補給</span>${runState.suppliesCollected || 0}個</div>` +
+                `<div class="run-status-row"><span class="label">敵撃破</span>${runState.enemyKillCount || 0}体</div>` +
+                `<div class="run-status-row"><span class="label">ノーダメ</span>${noDamage}</div>`;
+        }
+
+        function canUseWeapon(weapon) {
+            if (!weapon) return { ok: false, reason: '未装備' };
+            if (isWeaponUsable(weapon)) return { ok: true };
+            const trigger = weapon.runTrigger || { type: 'always' };
+            return { ok: false, reason: trigger.label || '未解放' };
+        }
+
+        // ───── 武器メカニクス用ユーティリティ ────────────────────────────────
+        // 指定座標から最も近い敵（敵がいないならボス）を返す。
+        function findNearestTarget(x, y) {
+            let nearest = null;
+            let nearestDist = Infinity;
+            for (const e of enemies) {
+                const dx = (e.x + (e.width || e.size || 0) / 2) - x;
+                const dy = (e.y + (e.height || e.size || 0) / 2) - y;
+                const d = dx * dx + dy * dy;
+                if (d < nearestDist) { nearest = e; nearestDist = d; }
+            }
+            if (!nearest && boss) {
+                return boss;
+            }
+            return nearest;
+        }
+
+        // bullet の現在の進行ベクトルを target 方向に lerp する（追尾）。
+        function steerBulletTowards(bullet, target, force) {
+            const tx = target.x + (target.width || target.size || 0) / 2;
+            const ty = target.y + (target.height || target.size || 0) / 2;
+            const dx = tx - bullet.x;
+            const dy = ty - bullet.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            const speed = Math.hypot(bullet.speedX, bullet.speedY) || 1;
+            const desiredX = (dx / dist) * speed;
+            const desiredY = (dy / dist) * speed;
+            bullet.speedX = bullet.speedX * (1 - force) + desiredX * force;
+            bullet.speedY = bullet.speedY * (1 - force) + desiredY * force;
+        }
+
+        // 範囲内の敵 / ボス を引き寄せる（重力弾用）。
+        function applyGravityPull(bullet) {
+            const radiusSq = bullet.pullRadius * bullet.pullRadius;
+            const cx = bullet.x + bullet.width / 2;
+            const cy = bullet.y + bullet.height / 2;
+            const pullStep = (target) => {
+                const tx = target.x + (target.width || target.size || 0) / 2;
+                const ty = target.y + (target.height || target.size || 0) / 2;
+                const dx = cx - tx;
+                const dy = cy - ty;
+                const distSq = dx * dx + dy * dy;
+                if (distSq <= 1 || distSq > radiusSq) return;
+                const dist = Math.sqrt(distSq);
+                target.x += (dx / dist) * bullet.pullForce;
+                target.y += (dy / dist) * bullet.pullForce;
+            };
+            for (const e of enemies) pullStep(e);
+            if (boss) pullStep(boss);
+        }
+
+        // 範囲爆発: 中心(x,y)から radius 内の敵 / ボス に damage を与える（ランチャー / 機雷）。
+        function applyExplosion(x, y, radius, damage) {
+            const radiusSq = radius * radius;
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                const ex = e.x + (e.width || e.size || 0) / 2;
+                const ey = e.y + (e.height || e.size || 0) / 2;
+                const dx = ex - x;
+                const dy = ey - y;
+                if (dx * dx + dy * dy <= radiusSq) {
+                    e.health -= damage;
+                    if (e.health <= 0) {
+                        enemies.splice(i, 1);
+                        score += e.points;
+                        scoreElement.textContent = `スコア: ${score}`;
+                        runState.enemyKillCount++;
+                    }
+                }
+            }
+            if (boss) {
+                const bx = boss.x + boss.width / 2;
+                const by = boss.y + boss.height / 2;
+                const dx = bx - x;
+                const dy = by - y;
+                if (dx * dx + dy * dy <= radiusSq) {
+                    boss.health -= damage;
+                }
+            }
+            recomputeUnlockedSlots();
+        }
+
+        // 命中時の状態異常付与（時空弾）。enemy / boss どちらでも slowedUntil を持たせる。
+        function applySlowToTarget(target, durationMs) {
+            if (!target) return;
+            const now = Date.now();
+            const candidate = now + durationMs;
+            target.slowedUntil = Math.max(target.slowedUntil || 0, candidate);
+        }
+
+        // ───── 随伴機（drone）コンパニオン制御 ──────────────────────────────
+        // 現在の武器が drone のときだけプレイヤーの左右に表示され、自動で前方射撃する。
+        let droneCompanions = [];
+
+        function refreshDrones() {
+            const w = equippedWeapons[currentWeapon];
+            const isDrone = !!(w && w.id === 'drone');
+            if (isDrone) {
+                if (droneCompanions.length === 0) {
+                    const startNow = Date.now();
+                    droneCompanions = [
+                        { offsetX: -32, lastFireMs: startNow,        interval: 900 },
+                        { offsetX:  32, lastFireMs: startNow + 450,  interval: 900 }
+                    ];
+                }
+            } else {
+                droneCompanions = [];
+            }
+        }
+
+        function updateDrones() {
+            if (droneCompanions.length === 0) return;
+            const w = equippedWeapons[currentWeapon];
+            if (!w || w.id !== 'drone') {
+                droneCompanions = [];
+                return;
+            }
+            const now = Date.now();
+            droneCompanions.forEach(d => {
+                if (now - d.lastFireMs < d.interval) return;
+                d.lastFireMs = now;
+                const dx = player.x + player.width / 2 + d.offsetX - 2;
+                const dy = player.y - 2;
+                bullets.push({
+                    x: dx, y: dy,
+                    width: w.width, height: w.height,
+                    speedX: 0, speedY: -w.speed,
+                    damage: w.damage,
+                    range: w.range,
+                    traveled: 0,
+                    pierceRemaining: w.pierce,
+                    color: w.color,
+                    homing: false, homingForce: 0,
+                    slowOnHitMs: 0,
+                    pullRadius: 0, pullForce: 0,
+                    explodeOnImpact: null,
+                    blocksBossBullets: false,
+                    lifeFrames: null
+                });
+            });
+        }
+
+        function drawDrones() {
+            if (droneCompanions.length === 0) return;
+            ctx.save();
+            droneCompanions.forEach(d => {
+                const cx = player.x + player.width / 2 + d.offsetX;
+                const cy = player.y + 10;
+                ctx.fillStyle = '#00ff88';
+                ctx.shadowColor = '#00ff88';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 7);
+                ctx.lineTo(cx - 7, cy + 7);
+                ctx.lineTo(cx + 7, cy + 7);
+                ctx.closePath();
+                ctx.fill();
+                // 中央のコア
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#003322';
+                ctx.fillRect(cx - 2, cy - 1, 4, 4);
+            });
+            ctx.restore();
+        }
+
+        // bossLevel -> 解放される武器のリスト。1レベルで複数武器を解放できる（パターンB対応）。
+        const BOSS_LEVEL_META_UNLOCKS = {
+            1: [{ weaponId: 'rapid', persistKey: 'rapidUnlocked' }],
+            2: [{ weaponId: 'shotgun', persistKey: 'shotgunUnlocked' }],
+            3: [
+                { weaponId: 'laser', persistKey: 'laserUnlocked' },
+                { weaponId: 'sniper', persistKey: 'sniperUnlocked' },
+                { weaponId: 'launcher', persistKey: 'launcherUnlocked' }
+            ],
+            4: [
+                { weaponId: 'slowtime', persistKey: 'slowtimeUnlocked' },
+                { weaponId: 'homing', persistKey: 'homingUnlocked' },
+                { weaponId: 'drone', persistKey: 'droneUnlocked' }
+            ],
+            5: [
+                { weaponId: 'gravity', persistKey: 'gravityUnlocked' },
+                { weaponId: 'mine', persistKey: 'mineUnlocked' },
+                { weaponId: 'blade', persistKey: 'bladeUnlocked' }
+            ],
+            6: [
+                { weaponId: 'shield', persistKey: 'shieldUnlocked' }
+            ]
+        };
+
+        // ボス撃破イベント。ラン層の進捗を更新し、ログイン時はメタ層も永続化する。
+        // 戻り値は「このレベルで解放対象になっている武器」のリスト（既に解放済みも含む）。
+        function handleBossDefeated(level) {
+            // ラン層: トリガー評価のための状態更新（両モード共通）
+            runState.defeatedBossLevels.add(level);
+            recomputeUnlockedSlots();
+
+            const entries = BOSS_LEVEL_META_UNLOCKS[level] || [];
+            const unlockedWeapons = [];
+
+            entries.forEach(entry => {
+                const weapon = weaponCatalog[entry.weaponId];
+                if (!weapon) return;
+                unlockedWeapons.push(weapon);
+
+                if (loadoutMode === 'login') {
+                    // メタ層: ログイン時のみ永続化（次回プレイから装備候補に入る）
+                    try {
+                        const localProgress = JSON.parse(localStorage.getItem('weaponProgress') || '{}');
+                        if (!localProgress[entry.persistKey]) {
+                            localProgress[entry.persistKey] = true;
+                            localStorage.setItem('weaponProgress', JSON.stringify(localProgress));
+                        }
+                    } catch (e) {
+                        // 何もしない
+                    }
+                    try {
+                        if (typeof firebaseDataManager !== 'undefined'
+                            && typeof firebase !== 'undefined'
+                            && firebase.auth
+                            && firebase.auth().currentUser) {
+                            firebaseDataManager.updateProgress({ [entry.persistKey]: true }).catch(() => {});
+                        }
+                    } catch (e) {
+                        // Firebase 未初期化等は無視
+                    }
+                }
+            });
+
+            return unlockedWeapons;
+        }
+
+        function setWeapon(weaponNum) {
+            if (!unlockedWeapons.includes(weaponNum) || !equippedWeapons[weaponNum]) return;
+            if (currentWeapon === weaponNum) return;
+            currentWeapon = weaponNum;
+            weaponElement.textContent = `武器: ${equippedWeapons[weaponNum].name}`;
+            updateWeaponSelector();
+            updateAmmoHud();
+            refreshDrones();
+            weaponChangeMessage = `武器変更: ${equippedWeapons[weaponNum].name}`;
+            weaponChangeTimer = 120;
+        }
+
+        function cycleWeapon(direction) {
+            if (unlockedWeapons.length <= 1) return;
+            const idx = unlockedWeapons.indexOf(currentWeapon);
+            const start = idx >= 0 ? idx : 0;
+            let next = start;
+            for (let i = 0; i < unlockedWeapons.length; i++) {
+                next = (next + direction + unlockedWeapons.length) % unlockedWeapons.length;
+                if (unlockedWeapons[next] !== currentWeapon) {
+                    setWeapon(unlockedWeapons[next]);
+                    return;
+                }
+            }
+        }
+
+        // プレイヤー
+        let player = {
+            x: canvas.width / 2,
+            y: canvas.height - 80,
+            width: Math.max(30, Math.min(40, canvas.width / 20)),
+            height: Math.max(40, Math.min(50, canvas.height / 15)),
+            speed: 5
+        };
+
+        // 弾丸配列
+        let bullets = [];
+        let enemies = [];
+        let boss = null;
+        let bossBullets = [];
+        let treasureBox = null; // 宝箱
+        let supplyUnits = []; // 支援物資（補給型ユニット）
+        let healthItems = []; // ライフ回復アイテム
+
+        // 敵の種類（基準速度）
+        const baseEnemyTypes = [
+            { color: '#ff0000', size: Math.max(25, Math.min(35, canvas.width / 30)), points: 5, speed: 1, spawnRate: 0.005, health: 3, type: 'enemy' }, // 赤い敵機（硬い）
+            { color: '#ff8800', size: Math.max(20, Math.min(30, canvas.width / 35)), points: 3, speed: 2, spawnRate: 0.01, health: 2, type: 'enemy' },  // オレンジ敵機（中耐久）
+            { color: '#ffff00', size: Math.max(15, Math.min(25, canvas.width / 40)), points: 1, speed: 3, spawnRate: 0.02, health: 1, type: 'enemy' }   // 黄色敵機（低耐久）
+        ];
+        
+        // 難易度に応じた敵の種類を取得
+        function getEnemyTypes() {
+            return baseEnemyTypes.map(enemy => ({
+                ...enemy,
+                speed: enemy.speed * speedMultiplier,
+                spawnRate: enemy.spawnRate * speedMultiplier
+            }));
+        }
+
+        // キー入力
+        const keys = {};
+        let lastShootTime = 0; // 最後に発射した時間
+        const shootCooldown = 100; // 発射のクールダウン時間（ミリ秒）
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                const now = Date.now();
+                if (now - lastShootTime > shootCooldown) {
+                    shoot();
+                    lastShootTime = now;
+                }
+            }
+
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                cycleWeapon(e.shiftKey ? -1 : 1);
+                return;
+            }
+            
+            // 武器選択（数字キー1-4）
+            if (e.key >= '1' && e.key <= '4') {
+                const weaponNum = parseInt(e.key);
+                setWeapon(weaponNum);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // タッチ操作の変数
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchEndX = 0;
+        let touchEndY = 0;
+        let lastTouchTime = 0;
+        let touchMoved = false;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let playerStartX = 0;
+        let playerStartY = 0;
+
+        // タッチイベント
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchMoved = false;
+            lastTouchTime = Date.now();
+            
+            // ドラッグ開始
+            isDragging = false;
+            dragStartX = touch.clientX;
+            dragStartY = touch.clientY;
+            playerStartX = player.x;
+            playerStartY = player.y;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchEndX = touch.clientX;
+            touchEndY = touch.clientY;
+            touchMoved = true;
+            
+            // ドラッグ移動
+            if (touchMoved) {
+                const deltaX = touch.clientX - dragStartX;
+                const deltaY = touch.clientY - dragStartY;
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                
+                if (distance > 10) { // 最小ドラッグ距離
+                    isDragging = true;
+                    
+                    // プレイヤーの位置をリアルタイムで更新
+                    const newX = playerStartX + deltaX;
+                    const newY = playerStartY + deltaY;
+                    
+                    // 画面境界内に制限
+                    player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
+                    player.y = Math.max(canvas.height / 2, Math.min(canvas.height - player.height, newY));
+                }
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const touchDuration = Date.now() - lastTouchTime;
+            
+            if (!isDragging && touchDuration < 200) {
+                // 短時間のタップで攻撃
+                shoot();
+            }
+            
+            // ドラッグ終了
+            isDragging = false;
+        });
+
+        // 弾丸発射
+        function shoot() {
+            const weapon = equippedWeapons[currentWeapon];
+            if (!weapon) return;
+            const availability = canUseWeapon(weapon);
+            if (!availability.ok) {
+                weaponChangeMessage = `${weapon.name}: ${availability.reason}`;
+                weaponChangeTimer = 90;
+                return;
+            }
+            if ((weaponAmmo[currentWeapon] || 0) < weapon.ammoCost) return; // 弾薬が不足している場合は発射できない
+            
+            // 武器に応じた弾丸を発射
+            for (let i = 0; i < weapon.bulletCount; i++) {
+                const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
+                const speedX = Math.sin(spread) * weapon.speed * 0.3;
+                const speedY = -weapon.speed;
+                
+                bullets.push({
+                    x: player.x + player.width / 2 - 2,
+                    y: player.y,
+                    width: weapon.width,
+                    height: weapon.height,
+                    speedX: speedX,
+                    speedY: speedY,
+                    damage: weapon.damage,
+                    range: weapon.range,
+                    traveled: 0,
+                    pierceRemaining: weapon.pierce,
+                    color: weapon.color,
+                    // 拡張プロパティ（武器カタログから引き継ぐ。未定義は falsy / null）
+                    homing: !!weapon.homing,
+                    homingForce: weapon.homingForce || 0,
+                    slowOnHitMs: weapon.slowOnHitMs || 0,
+                    pullRadius: weapon.pullRadius || 0,
+                    pullForce: weapon.pullForce || 0,
+                    explodeOnImpact: weapon.explodeOnImpact || null,
+                    blocksBossBullets: !!weapon.blocksBossBullets,
+                    lifeFrames: (typeof weapon.lifeFrames === 'number') ? weapon.lifeFrames : null
+                });
+            }
+            
+            playSound(shootSound);
+            weaponAmmo[currentWeapon] -= weapon.ammoCost;
+            updateAmmoHud();
+            updateWeaponSelector();
+        }
+
+        // ボス弾丸発射
+        function bossShoot() {
+            if (!boss) return;
+            
+            // レベルに応じて弾丸数を増加
+            const bulletCount = Math.min(3 + Math.floor(bossLevel / 2), 7); // 最大7発まで
+            
+            for (let i = 0; i < bulletCount; i++) {
+                const angle = (i - (bulletCount - 1) / 2) * 0.5; // 角度を計算
+                const speedX = Math.sin(angle) * 3;
+                const speedY = Math.cos(angle) * 4;
+                
+                bossBullets.push({
+                    x: boss.x + boss.width / 2 - 3,
+                    y: boss.y + boss.height,
+                    width: 6 + (bossLevel - 1) * 2, // レベルに応じて弾丸サイズ増加
+                    height: 15 + (bossLevel - 1) * 3,
+                    speedX: speedX,
+                    speedY: speedY,
+                    color: bossLevel > 2 ? '#ff00ff' : '#ff0000' // レベル3以上は紫色
+                });
+            }
+            playSound(bossShootSound);
+        }
+
+        // ボス生成
+        function spawnBoss() {
+            // 100点間隔でボスが出現
+            if (!bossSpawned && score >= lastBossScore + 100) {
+                bossSpawned = true;
+                lastBossScore = score;
+                
+                // ボスの難易度レベルを計算（500点間隔でレベルアップ）
+                bossLevel = Math.floor(score / 500) + 1;
+                
+                boss = {
+                    x: canvas.width / 2 - 50,
+                    y: -100,
+                    width: 100 + (bossLevel - 1) * 10, // レベルに応じてサイズ増加
+                    height: 80 + (bossLevel - 1) * 8,
+                    health: 20 + (bossLevel - 1) * 10, // レベルに応じてHP増加
+                    maxHealth: 20 + (bossLevel - 1) * 10,
+                    speed: 1 * speedMultiplier,
+                    moveSpeed: (2 + (bossLevel - 1) * 0.5) * speedMultiplier, // レベルに応じて移動速度増加
+                    moveDirection: 1, // 移動方向（1:右、-1:左）
+                    points: 50 + (bossLevel - 1) * 25, // レベルに応じて点数増加
+                    lastShot: 0,
+                    shotInterval: Math.max(500, 2000 - (bossLevel - 1) * 200) / speedMultiplier // レベルに応じて攻撃間隔短縮
+                };
+                
+                // ボス警告表示（レベルに応じてメッセージ変更）
+                const levelText = bossLevel > 1 ? `レベル${bossLevel} ` : '';
+                bossWarningElement.textContent = `⚠️ ${levelText}ボス出現！ ⚠️`;
+                bossWarningElement.style.display = 'block';
+                setTimeout(() => {
+                    bossWarningElement.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // 敵生成
+        function spawnEnemy() {
+            // スコアが100の時と500の倍数のボス以外は通常の敵も生成
+            if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみ通常の敵を生成しない
+            
+            const enemyTypes = getEnemyTypes();
+            enemyTypes.forEach(type => {
+                if (Math.random() < type.spawnRate) {
+                    enemies.push({
+                        x: Math.random() * (canvas.width - type.size),
+                        y: -type.size,
+                        width: type.size,
+                        height: type.size,
+                        speed: type.speed + Math.random() * 1,
+                        color: type.color,
+                        points: type.points,
+                        health: type.health,
+                        maxHealth: type.health,
+                        enemyType: type.type // 敵のタイプを追加
+                    });
+                }
+            });
+        }
+
+        // 支援物資生成
+        function spawnSupplyUnits() {
+            // スコアが100の時と500の倍数のボス以外は支援物資も生成
+            if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみ支援物資を生成しない
+            
+            // ランダムで支援物資を生成（難易度に応じて確率調整）
+            const spawnRate = 0.003 * speedMultiplier; // 難易度に応じて生成確率を調整
+            if (Math.random() < spawnRate) {
+                supplyUnits.push({
+                    x: Math.random() * (canvas.width - 28),
+                    y: Math.random() * (canvas.height / 2), // 画面上半分に配置
+                    width: 28,
+                    height: 28,
+                    color: '#00ff00',
+                    isCollected: false
+                });
+            }
+        }
+        
+        // ライフ回復アイテム生成
+        function spawnHealthItems() {
+            // スコアが100の時と500の倍数のボス以外はライフ回復アイテムも生成
+            if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみライフ回復アイテムを生成しない
+            
+            // 低確率でライフ回復アイテムを生成（弾薬補給より低い確率、難易度に応じて確率調整）
+            const spawnRate = 0.0001 * speedMultiplier; // 難易度に応じて生成確率を調整
+            if (Math.random() < spawnRate) {
+                healthItems.push({
+                    x: Math.random() * (canvas.width - 30),
+                    y: Math.random() * (canvas.height / 2), // 画面上半分に配置
+                    width: 30,
+                    height: 30,
+                    color: '#ff69b4', // ピンク色
+                    isCollected: false
+                });
+            }
+        }
+
+        // 衝突判定
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // プレイヤー戦闘機描画
+        function drawPlayer() {
+            const x = player.x;
+            const y = player.y;
+            const w = player.width;
+            const h = player.height;
+            
+            // 武器変更時のエフェクト
+            if (weaponChangeTimer > 0) {
+                ctx.shadowColor = equippedWeapons[currentWeapon].color;
+                ctx.shadowBlur = 15;
+            }
+            
+            // 戦闘機の本体（青）
+            ctx.fillStyle = '#0066cc';
+            ctx.fillRect(x + w/4, y + h/3, w/2, h/2);
+            
+            // 戦闘機の機首（白）
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x + w/3, y, w/3, h/3);
+            
+            // 戦闘機の翼（青）
+            ctx.fillStyle = '#0066cc';
+            ctx.fillRect(x, y + h/3, w/4, h/3);
+            ctx.fillRect(x + 3*w/4, y + h/3, w/4, h/3);
+            
+            // 戦闘機の尾翼（青）
+            ctx.fillStyle = '#0066cc';
+            ctx.fillRect(x + w/3, y + 2*h/3, w/3, h/3);
+            
+            // エンジン部分（オレンジ）
+            ctx.fillStyle = '#ff6600';
+            ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
+            
+            // コックピット（水色）
+            ctx.fillStyle = '#00ccff';
+            ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
+            
+            // 武器変更時のエフェクトをリセット
+            if (weaponChangeTimer > 0) {
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // 弾丸描画
+        function drawBullets() {
+            bullets.forEach(bullet => {
+                ctx.fillStyle = bullet.color;
+                ctx.shadowColor = bullet.color;
+                ctx.shadowBlur = bullet.pierceRemaining > 0 ? 14 : 5;
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        // ボス弾丸描画
+        function drawBossBullets() {
+            bossBullets.forEach(bullet => {
+                ctx.fillStyle = bullet.color;
+                ctx.shadowColor = bullet.color;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        // 敵戦闘機描画
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                const x = enemy.x;
+                const y = enemy.y;
+                const w = enemy.width;
+                const h = enemy.height;
+                
+                // 通常の敵戦闘機の描画
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(x + w/4, y + h/3, w/2, h/2);
+                
+                // 敵戦闘機の機首
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(x + w/3, y, w/3, h/3);
+                
+                // 敵戦闘機の翼
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(x, y + h/3, w/4, h/3);
+                ctx.fillRect(x + 3*w/4, y + h/3, w/4, h/3);
+                
+                // 敵戦闘機の尾翼
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(x + w/3, y + 2*h/3, w/3, h/3);
+                
+                // 敵戦闘機のエンジン
+                ctx.fillStyle = '#ff6600';
+                ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
+                
+                // 敵戦闘機のコックピット
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
+                
+                // 点数の表示
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(enemy.points, x + w/2, y + h + 15);
+
+                if (enemy.maxHealth > 1) {
+                    const barWidth = w;
+                    const barHeight = 4;
+                    const hpRatio = Math.max(0, enemy.health / enemy.maxHealth);
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                    ctx.fillRect(x, y - 8, barWidth, barHeight);
+                    ctx.fillStyle = hpRatio > 0.5 ? '#00ff66' : '#ff4444';
+                    ctx.fillRect(x, y - 8, barWidth * hpRatio, barHeight);
+                }
+            });
+        }
+
+        // ボス描画
+        function drawBoss() {
+            if (!boss) return;
+            
+            const x = boss.x;
+            const y = boss.y;
+            const w = boss.width;
+            const h = boss.height;
+            
+            // ボスの影効果（レベルに応じて強化）
+            ctx.shadowColor = bossLevel > 2 ? '#ff00ff' : '#ff0000';
+            ctx.shadowBlur = 10 + (bossLevel - 1) * 5;
+            
+            // ボスの本体（重厚感のある黒）
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(x + w/6, y + h/4, 2*w/3, h/2);
+            
+            // ボスの装甲板（金属的な灰色）
+            ctx.fillStyle = '#666666';
+            ctx.fillRect(x + w/8, y + h/6, 3*w/4, h/3);
+            
+            // ボスの砲塔（レベルに応じて色変更）
+            ctx.fillStyle = bossLevel > 2 ? '#ff00ff' : '#cc0000';
+            ctx.fillRect(x + w/4, y, w/2, h/4);
+            
+            // ボスの翼（黒）
+            ctx.fillStyle = '#222222';
+            ctx.fillRect(x - w/4, y + h/3, w/4, h/3);
+            ctx.fillRect(x + w, y + h/3, w/4, h/3);
+            
+            // ボスのエンジン（オレンジ）
+            ctx.fillStyle = '#ff4400';
+            ctx.fillRect(x + w/6, y + h/2, w/3, h/6);
+            
+            // ボスのコックピット（レベルに応じて色変更）
+            ctx.fillStyle = bossLevel > 2 ? '#ff00ff' : '#ff0000';
+            ctx.fillRect(x + w/3, y + h/6, w/3, h/6);
+            
+            // ボスの装甲板の詳細
+            ctx.fillStyle = '#888888';
+            ctx.fillRect(x + w/6, y + h/4, w/3, h/8);
+            
+            ctx.shadowBlur = 0;
+            
+            // ボスのHPバー
+            const barWidth = w;
+            const barHeight = 8;
+            const barX = x;
+            const barY = y - 20;
+            
+            // HPバーの背景
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+            
+            // HPバー
+            const hpRatio = boss.health / boss.maxHealth;
+            ctx.fillStyle = hpRatio > 0.5 ? '#00ff00' : hpRatio > 0.2 ? '#ffff00' : '#ff0000';
+            ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight);
+            
+            // HPバーの枠
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+            
+            // ボスの点数表示（レベルも表示）
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            const levelText = bossLevel > 1 ? ` (Lv.${bossLevel})` : '';
+            ctx.fillText(`BOSS: ${boss.points}点${levelText}`, x + w/2, y + h + 20);
+        }
+
+        // ゲーム更新
+        function update() {
+            if (!gameRunning) return;
+
+            // 時間更新
+            const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+            const remainingTime = Math.max(0, gameTime - elapsed);
+            timeElement.textContent = `残り時間: ${remainingTime}秒`;
+
+            // 時間切れ
+            if (remainingTime <= 0) {
+                gameOver('timeout');
+                return;
+            }
+
+            // スコアによる時間ボーナス
+            if (score > lastTimeBonusScore + 100) {
+                gameTime += 30; // 30秒追加
+                lastTimeBonusScore = score;
+                timeBonusMessage = '+30秒ボーナス！';
+                timeBonusTimer = 120; // 2秒間表示
+                timeElement.textContent = `残り時間: ${gameTime}秒`;
+            }
+
+            // プレイヤー移動（矢印キー + WASD）
+            if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
+                player.x += player.speed;
+            }
+            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > canvas.height / 2) {
+                player.y -= player.speed;
+            }
+            if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < canvas.height - player.height) {
+                player.y += player.speed;
+            }
+
+            // 随伴機の自動射撃
+            updateDrones();
+
+            // 弾丸更新（追尾・引力・シールド遮断もここで処理）
+            bullets = bullets.filter(bullet => {
+                // ライフタイマー（機雷など設置型用）
+                if (bullet.lifeFrames !== null && bullet.lifeFrames !== undefined) {
+                    bullet.lifeFrames--;
+                    if (bullet.lifeFrames <= 0) {
+                        // 自爆 = 起点で爆発（爆発プロパティを持つもののみ）
+                        if (bullet.explodeOnImpact) {
+                            applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
+                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                        }
+                        return false;
+                    }
+                }
+
+                // 追尾武器（ホーミング系）
+                if (bullet.homing && bullet.homingForce > 0) {
+                    const target = findNearestTarget(bullet.x, bullet.y);
+                    if (target) steerBulletTowards(bullet, target, bullet.homingForce);
+                }
+                // 引力武器（重力弾系）
+                if (bullet.pullRadius > 0 && bullet.pullForce > 0) {
+                    applyGravityPull(bullet);
+                }
+
+                bullet.x += bullet.speedX;
+                bullet.y += bullet.speedY;
+                bullet.traveled += Math.hypot(bullet.speedX, bullet.speedY);
+
+                // シールド武器・ブレード: 進行経路上の敵弾を破壊
+                if (bullet.blocksBossBullets) {
+                    for (let bi = bossBullets.length - 1; bi >= 0; bi--) {
+                        if (checkCollision(bullet, bossBullets[bi])) {
+                            bossBullets.splice(bi, 1);
+                        }
+                    }
+                }
+
+                return bullet.y > -bullet.height && bullet.traveled < bullet.range;
+            });
+
+            // ボス弾丸更新
+            bossBullets = bossBullets.filter(bullet => {
+                bullet.x += bullet.speedX;
+                bullet.y += bullet.speedY;
+                return bullet.y < canvas.height && bullet.x > 0 && bullet.x < canvas.width;
+            });
+
+            // ボス更新
+            if (boss) {
+                const bossSlowFactor = (boss.slowedUntil && Date.now() < boss.slowedUntil) ? 0.4 : 1;
+
+                if (boss.y < 50) {
+                    boss.y += boss.speed * bossSlowFactor;
+                }
+                
+                // ボスの横移動
+                boss.x += boss.moveSpeed * boss.moveDirection * bossSlowFactor;
+                
+                // 画面端で方向転換
+                if (boss.x <= 0 || boss.x + boss.width >= canvas.width) {
+                    boss.moveDirection *= -1;
+                }
+                
+                // ボスの攻撃
+                const now = Date.now();
+                if (now - boss.lastShot > boss.shotInterval) {
+                    bossShoot();
+                    boss.lastShot = now;
+                }
+                
+                // プレイヤーとの衝突
+                if (checkCollision(boss, player)) {
+                    lives--;
+                    livesElement.textContent = `ライフ: ${lives}`;
+                    runState.livesLost++;
+                    recomputeUnlockedSlots();
+                    if (lives <= 0) {
+                        gameOver('gameover');
+                    }
+                }
+            }
+
+            // 敵更新
+            enemies = enemies.filter(enemy => {
+                const slowFactor = (enemy.slowedUntil && Date.now() < enemy.slowedUntil) ? 0.4 : 1;
+                enemy.y += enemy.speed * slowFactor;
+                
+                // プレイヤーとの衝突
+                if (checkCollision(enemy, player)) {
+                    lives--;
+                    livesElement.textContent = `ライフ: ${lives}`;
+                    runState.livesLost++;
+                    recomputeUnlockedSlots();
+                    if (lives <= 0) {
+                        gameOver('gameover');
+                    }
+                    return false;
+                }
+                
+                return enemy.y < canvas.height;
+            });
+
+            // 弾丸と敵・ボスの衝突
+            for (let bulletIndex = bullets.length - 1; bulletIndex >= 0; bulletIndex--) {
+                const bullet = bullets[bulletIndex];
+                let bulletRemoved = false;
+
+                for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex--) {
+                    const enemy = enemies[enemyIndex];
+                    if (!checkCollision(bullet, enemy)) continue;
+
+                    // スロー（時空弾系）
+                    if (bullet.slowOnHitMs > 0) applySlowToTarget(enemy, bullet.slowOnHitMs);
+
+                    enemy.health -= bullet.damage;
+                    if (enemy.health <= 0) {
+                        enemies.splice(enemyIndex, 1);
+                        score += enemy.points;
+                        scoreElement.textContent = `スコア: ${score}`;
+                        playSound(explosionSound);
+                        runState.enemyKillCount++;
+                        // scoreReached / enemyKillCount 系トリガーに備えて再評価
+                        recomputeUnlockedSlots();
+                    }
+
+                    // 範囲爆発（ランチャー / 機雷）
+                    if (bullet.explodeOnImpact) {
+                        applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
+                                       bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                    }
+
+                    if (bullet.pierceRemaining > 0) {
+                        bullet.pierceRemaining--;
+                    } else {
+                        bullets.splice(bulletIndex, 1);
+                        bulletRemoved = true;
+                        break;
+                    }
+                }
+
+                if (bulletRemoved) continue;
+
+                // 弾丸とボスの衝突
+                if (boss && checkCollision(bullet, boss)) {
+                    if (bullet.slowOnHitMs > 0) applySlowToTarget(boss, bullet.slowOnHitMs);
+
+                    boss.health -= bullet.damage;
+
+                    if (bullet.explodeOnImpact) {
+                        applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
+                                       bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                    }
+
+                    if (bullet.pierceRemaining > 0) {
+                        bullet.pierceRemaining--;
+                    } else {
+                        bullets.splice(bulletIndex, 1);
+                        bulletRemoved = true;
+                    }
+
+                    if (boss.health <= 0) {
+                        score += boss.points;
+                        scoreElement.textContent = `スコア: ${score}`;
+                        
+                        // ボス撃破時に宝箱をドロップ（倒した地点と同じ横座標、プレイヤーが行ける最も上の地点）
+                        treasureBox = {
+                            x: boss.x + boss.width / 2 - 25, // ボスの中心と同じ横座標
+                            y: canvas.height / 2, // プレイヤーが行ける最も上の地点
+                            width: 50,
+                            height: 50,
+                            speed: 0, // 固定位置なので移動しない
+                            color: '#ffd700', // 金色
+                            isCollected: false
+                        };
+                        
+                        const defeatedLevel = bossLevel;
+                        boss = null;
+                        bossSpawned = false;
+                        playSound(bossExplosionSound); // ボス撃破音
+                        
+                        // bossLevel に応じたラン内解放（＋ログイン時はメタ層も永続化）
+                        const unlockedList = handleBossDefeated(defeatedLevel);
+                        if (unlockedList.length > 0) {
+                            // 装備中（即使える）と未装備（マイページで編成）を分ける
+                            const equippedNow = unlockedList.filter(w => equippedWeaponIds.includes(w.id));
+                            const onlyMeta = unlockedList.filter(w => !equippedWeaponIds.includes(w.id));
+
+                            if (loadoutMode === 'guest') {
+                                // ゲストはロードアウト固定なので、装備中のものだけ通知
+                                weaponMessage = equippedNow.length > 0
+                                    ? `${equippedNow.map(w => w.name).join('・')}を解放！`
+                                    : 'ボス撃破！';
+                            } else if (equippedNow.length > 0 && onlyMeta.length === 0) {
+                                weaponMessage = `${equippedNow.map(w => w.name).join('・')}が今すぐ使えます！`;
+                            } else if (equippedNow.length === 0 && onlyMeta.length > 0) {
+                                weaponMessage = `${onlyMeta.map(w => w.name).join('・')}が装備可能に！マイページで編成しよう`;
+                            } else {
+                                weaponMessage = `${equippedNow.map(w => w.name).join('・')}が使用可！他${onlyMeta.length}種が装備可能に`;
+                            }
+                        } else {
+                            weaponMessage = 'ボス撃破！';
+                        }
+                        weaponMessageTimer = 180;
+                        updateWeaponSelector(); // 武器選択UIを更新
+                    }
+                }
+            }
+
+            // ボス弾丸とプレイヤーの衝突
+            bossBullets.forEach((bullet, bulletIndex) => {
+                if (checkCollision(bullet, player)) {
+                    bossBullets.splice(bulletIndex, 1);
+                    lives--;
+                    livesElement.textContent = `ライフ: ${lives}`;
+                    runState.livesLost++;
+                    recomputeUnlockedSlots();
+                    if (lives <= 0) {
+                        gameOver('gameover');
+                    }
+                }
+            });
+
+            // 宝箱生成チェック（ランダム生成は削除）
+            // 宝箱はボス撃破時のみ生成される
+
+            // 宝箱更新（固定位置なので移動しない）
+            // 宝箱は固定位置に配置されるため、移動処理は不要
+
+            // プレイヤーと宝箱の衝突
+            if (treasureBox && checkCollision(player, treasureBox)) {
+                treasureBox.isCollected = true;
+                refillAllAmmoToMax();
+                updateAmmoHud();
+                updateWeaponSelector();
+                playSound(explosionSound); // 宝箱取得音
+                treasureBox = null; // 宝箱を消去
+            }
+
+            // 支援物資更新
+            supplyUnits = supplyUnits.filter(unit => {
+                unit.y += 1; // ゆっくり落下
+                if (unit.y > canvas.height) {
+                    return false; // 画面外に出たら消去
+                }
+                // プレイヤーとの衝突判定
+                if (checkCollision(unit, player)) {
+                    unit.isCollected = true;
+                    addSupplyAmmoToAll(20); // 全武器に+20（各最大値で頭打ち）
+                    runState.suppliesCollected = (runState.suppliesCollected || 0) + 1;
+                    recomputeUnlockedSlots();
+                    updateAmmoHud();
+                    updateWeaponSelector();
+                    playSound(explosionSound); // 補給取得音
+                    return false; // 画面外に出たら消去
+                }
+                return true;
+            });
+            
+            // ライフ回復アイテム更新
+            healthItems = healthItems.filter(item => {
+                item.y += 1; // ゆっくり落下
+                if (item.y > canvas.height) {
+                    return false; // 画面外に出たら消去
+                }
+                // プレイヤーとの衝突判定
+                if (checkCollision(item, player)) {
+                    item.isCollected = true;
+                    if (lives < 3) { // 最大ライフは3
+                        lives++;
+                        livesElement.textContent = `ライフ: ${lives}`;
+                    }
+                    playSound(explosionSound); // ライフ回復取得音
+                    return false; // 画面外に出たら消去
+                }
+                return true;
+            });
+
+            // ボス生成チェック
+            spawnBoss();
+            
+            // 敵生成
+            spawnEnemy();
+
+            // 支援物資生成
+            spawnSupplyUnits();
+            
+            // ライフ回復アイテム生成
+            spawnHealthItems();
+        }
+
+        // ゲーム描画
+        function draw() {
+            // 背景クリア
+            ctx.fillStyle = '#001122';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 星の背景
+            ctx.fillStyle = '#ffffff';
+            for (let i = 0; i < 50; i++) {
+                ctx.fillRect(
+                    (i * 37) % canvas.width,
+                    (i * 73) % canvas.height,
+                    1, 1
+                );
+            }
+
+            drawPlayer();
+            drawDrones();
+            drawBullets();
+            drawBossBullets();
+            drawEnemies();
+            drawBoss();
+            
+            // 宝箱の描画
+            if (treasureBox) {
+                const x = treasureBox.x;
+                const y = treasureBox.y;
+                const w = treasureBox.width;
+                const h = treasureBox.height;
+                
+                // 宝箱の本体（金色）
+                ctx.fillStyle = treasureBox.color;
+                ctx.shadowColor = treasureBox.color;
+                ctx.shadowBlur = 10;
+                ctx.fillRect(x, y, w, h);
+                ctx.shadowBlur = 0;
+                
+                // 宝箱の蓋
+                ctx.fillStyle = '#ffed4e';
+                ctx.fillRect(x + w/6, y, 2*w/3, h/4);
+                
+                // 宝箱の鍵穴
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(x + w/2 - 3, y + h/2 - 3, 6, 6);
+                
+                // 宝箱の装飾
+                ctx.strokeStyle = '#ffed4e';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+                
+                // 宝箱の説明
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('弾薬満タン', x + w/2, y + h + 15);
+            }
+
+            // 支援物資の描画
+            supplyUnits.forEach(unit => {
+                const x = unit.x;
+                const y = unit.y;
+                const w = unit.width;
+                const h = unit.height;
+
+                ctx.fillStyle = unit.color;
+                ctx.shadowColor = unit.color;
+                ctx.shadowBlur = 5;
+                ctx.fillRect(x, y, w, h);
+                ctx.shadowBlur = 0;
+
+                // 補給マーク
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('+', x + w/2, y + h/2 + 5);
+
+                // 補給表示
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '12px Arial';
+                ctx.fillText('補給', x + w/2, y + h + 15);
+            });
+            
+            // ライフ回復アイテムの描画
+            healthItems.forEach(item => {
+                const x = item.x;
+                const y = item.y;
+                const w = item.width;
+                const h = item.height;
+
+                ctx.fillStyle = item.color;
+                ctx.shadowColor = item.color;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(x, y, w, h);
+                ctx.shadowBlur = 0;
+
+                // ハートマーク
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('♥', x + w/2, y + h/2 + 5);
+
+                // ライフ回復表示
+                ctx.fillStyle = '#ff69b4';
+                ctx.font = '12px Arial';
+                ctx.fillText('ライフ', x + w/2, y + h + 15);
+            });
+
+            // 時間ボーナスメッセージの描画
+            if (timeBonusTimer > 0) {
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 4;
+                ctx.fillText(timeBonusMessage, canvas.width / 2, canvas.height / 2 - 50);
+                ctx.shadowBlur = 0;
+                timeBonusTimer--;
+            }
+
+            // 武器解禁メッセージの描画
+            if (weaponMessageTimer > 0) {
+                ctx.fillStyle = '#00ffff'; // 水色
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 4;
+                ctx.fillText(weaponMessage, canvas.width / 2, canvas.height / 2 - 50);
+                ctx.shadowBlur = 0;
+                weaponMessageTimer--;
+            }
+            
+            // 武器変更メッセージの描画
+            if (weaponChangeTimer > 0) {
+                ctx.fillStyle = '#ffff00'; // 黄色
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 4;
+                ctx.fillText(weaponChangeMessage, canvas.width / 2, canvas.height / 2 + 50);
+                ctx.shadowBlur = 0;
+                weaponChangeTimer--;
+            }
+        }
+
+        // ゲームオーバー
+        async function gameOver(reason = 'gameover') {
+            gameRunning = false;
+            
+            // 最高スコアの更新
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('shootingGameHighScore', highScore.toString());
+            }
+            
+            // 総プレイ回数と総スコアを更新
+            const totalGames = parseInt(localStorage.getItem('totalGames')) || 0;
+            const totalScore = parseInt(localStorage.getItem('totalScore')) || 0;
+            
+            localStorage.setItem('totalGames', (totalGames + 1).toString());
+            localStorage.setItem('totalScore', (totalScore + score).toString());
+            
+            // ログイン状態を確認
+            const playerName = localStorage.getItem('playerName');
+            const isLoggedIn = localStorage.getItem('isLoggedIn');
+            const currentUser = firebase.auth().currentUser;
+            
+            const isAuthenticated = (playerName && isLoggedIn === 'true') || currentUser;
+            
+            // ログイン促進メッセージの表示/非表示
+            const loginPromotion = document.querySelector('.login-promotion');
+            if (loginPromotion) {
+                if (isAuthenticated) {
+                    loginPromotion.style.display = 'none';
+                } else {
+                    loginPromotion.style.display = 'block';
+                }
+            }
+            
+            // Firebaseにスコアを保存（ログインしている場合のみ）
+            // saveScore 側で進捗フラグから称号と allWeaponsUnlocked を再計算するため、ここでは追加更新しない
+            if (isAuthenticated) {
+                try {
+                    await firebaseDataManager.saveScore(score);
+                    console.log('スコアがFirebaseに保存されました');
+                } catch (error) {
+                    console.error('スコア保存エラー:', error);
+                }
+            }
+            
+            // ゲームオーバーの理由に応じてメッセージを変更
+            const gameOverTitle = document.querySelector('#gameOver div:first-child');
+            if (gameOverTitle) {
+                if (reason === 'timeout') {
+                    gameOverTitle.textContent = '時間切れ';
+                } else {
+                    gameOverTitle.textContent = 'ゲームオーバー';
+                }
+            }
+            
+            document.querySelector('.final-score').textContent = `最終スコア: ${score}`;
+            highScoreElement.textContent = `最高スコア: ${highScore}`;
+            gameOverElement.style.display = 'block';
+            if (runStatusElement) runStatusElement.style.display = 'none';
+        }
+
+        // ホームに戻る
+        homeBtn.addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+        
+
+        
+        // リスタート
+        restartBtn.addEventListener('click', () => {
+            score = 0;
+            lives = 3;
+            bullets = [];
+            enemies = [];
+            boss = null;
+            bossSpawned = false;
+            bossBullets = [];
+            droneCompanions = [];
+            treasureBox = null; // リスタート時に宝箱もリセット
+            supplyUnits = []; // 支援物資をリセット
+            healthItems = []; // ライフ回復アイテムをリセット
+            lastBossScore = 0;
+            lastTimeBonusScore = 0; // リスタート時に時間ボーナススコアもリセット
+            timeBonusMessage = '';
+            timeBonusTimer = 0;
+            bossLevel = 1; // ボスレベルをリセット
+            loadWeaponLoadout();
+            weaponMessage = ''; // リスタート時に武器メッセージもリセット
+            weaponMessageTimer = 0;
+            weaponChangeMessage = ''; // リスタート時に武器変更メッセージもリセット
+            weaponChangeTimer = 0;
+            gameRunning = true;
+            gameTime = 100;
+            gameStartTime = Date.now();
+            
+            // 難易度設定を再適用
+            gameDifficulty = localStorage.getItem('gameDifficulty') || 'normal';
+            setDifficultySpeed();
+            
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 80; // プレイヤーの初期位置をリセット
+            player.width = Math.max(30, Math.min(40, canvas.width / 20));
+            player.height = Math.max(40, Math.min(50, canvas.height / 15));
+            scoreElement.textContent = `スコア: ${score}`;
+            livesElement.textContent = `ライフ: ${lives}`;
+            updateAmmoHud();
+            weaponElement.textContent = `武器: ${equippedWeapons[currentWeapon].name}`; // 武器表示を更新
+            timeElement.textContent = `残り時間: ${gameTime}秒`;
+            gameOverElement.style.display = 'none';
+            bossWarningElement.style.display = 'none';
+            highScoreElement.textContent = `最高スコア: ${highScore}`; // 最高スコア表示を更新
+            
+            // ログイン促進メッセージを非表示
+            const loginPromotion = document.querySelector('.login-promotion');
+            if (loginPromotion) {
+                loginPromotion.style.display = 'none';
+            }
+            
+            // 武器選択UIを更新
+            updateWeaponSelector();
+        });
+
+        // ゲームループ
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ゲーム開始時の初期化
+        function initGame() {
+            resizeCanvas();
+            initSounds();
+            loadWeaponLoadout();
+            
+            // 難易度設定を適用
+            setDifficultySpeed();
+            
+            // プレイヤーの初期位置とサイズを再設定
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 80;
+            player.width = Math.max(30, Math.min(40, canvas.width / 20));
+            player.height = Math.max(40, Math.min(50, canvas.height / 15));
+            
+            // 武器選択UIを初期化
+            initWeaponSelector();
+            updateWeaponSelector();
+            updateAmmoHud();
+            weaponElement.textContent = `武器: ${equippedWeapons[currentWeapon].name}`;
+            
+            gameLoop();
+        }
+
+        // ゲーム開始
+        initGame();
+    </script>
+</body>
+</html> 

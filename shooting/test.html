@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テストページ</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>ゲームテストページ</h1>
+    <p>以下のボタンをクリックしてゲームが動作するかテストしてください。</p>
+    
+    <button class="test-button" onclick="testNavigation()">shooting_game.htmlに移動</button>
+    <button class="test-button" onclick="testFileExists()">ファイル存在確認</button>
+    
+    <div id="result"></div>
+    
+    <script>
+        function testNavigation() {
+            try {
+                console.log('shooting_game.htmlに移動を試行中...');
+                window.location.href = 'shooting_game.html';
+            } catch (error) {
+                console.error('ナビゲーションエラー:', error);
+                document.getElementById('result').innerHTML = '<p style="color: red;">エラー: ' + error.message + '</p>';
+            }
+        }
+        
+        function testFileExists() {
+            fetch('shooting_game.html')
+                .then(response => {
+                    if (response.ok) {
+                        document.getElementById('result').innerHTML = '<p style="color: green;">✓ shooting_game.htmlファイルは存在します</p>';
+                    } else {
+                        document.getElementById('result').innerHTML = '<p style="color: red;">✗ shooting_game.htmlファイルが見つかりません</p>';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('result').innerHTML = '<p style="color: red;">✗ エラー: ' + error.message + '</p>';
+                });
+        }
+        
+        // ページ読み込み時のログ
+        window.addEventListener('load', () => {
+            console.log('テストページが読み込まれました');
+        });
+    </script>
+</body>
+</html> 
