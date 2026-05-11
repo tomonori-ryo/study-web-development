@@ -2392,12 +2392,9 @@
             localStorage.setItem('totalGames', (totalGames + 1).toString());
             localStorage.setItem('totalScore', (totalScore + score).toString());
             
-            // ログイン状態を確認
-            const playerName = localStorage.getItem('playerName');
-            const isLoggedIn = localStorage.getItem('isLoggedIn');
+            // Firebase 認証を「真実」とする。localStorage の名残りでは保存処理を走らせない。
             const currentUser = firebase.auth().currentUser;
-            
-            const isAuthenticated = (playerName && isLoggedIn === 'true') || currentUser;
+            const isAuthenticated = !!currentUser;
             
             // ログイン促進メッセージの表示/非表示
             const loginPromotion = document.querySelector('.login-promotion');

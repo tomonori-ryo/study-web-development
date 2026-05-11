@@ -775,17 +775,14 @@
                 currentUser: currentUser ? currentUser.uid : null
             });
             
-            // ログイン状態の判定（Firebase認証またはローカルストレージ）
-            const isAuthenticated = (playerName && isLoggedIn === 'true') || 
-                                  (currentUser && firebaseUid === currentUser.uid);
+            // Firebase 認証を「真実」とする。localStorage だけが残っている場合は未ログイン扱い。
+            const isAuthenticated = !!currentUser;
             
             if (isAuthenticated) {
-                // ログイン済みの場合
-                const displayName = playerName || (currentUser ? currentUser.email.split('@')[0] : 'ユーザー');
+                const displayName = playerName || (currentUser.email ? currentUser.email.split('@')[0] : 'ユーザー');
                 authButton.textContent = `👤 ${displayName}`;
                 authButton.onclick = () => window.location.href = 'mypage.html';
             } else {
-                // 未ログインの場合
                 authButton.textContent = '👤 ログイン';
                 authButton.onclick = handleAuthClick;
             }
@@ -793,20 +790,11 @@
         
         // 認証ボタンのクリック処理
         function handleAuthClick() {
-            const playerName = localStorage.getItem('playerName');
-            const isLoggedIn = localStorage.getItem('isLoggedIn');
-            const firebaseUid = localStorage.getItem('firebaseUid');
+            // Firebase 認証を「真実」とする。currentUser があるならマイページへ、なければログインモーダル。
             const currentUser = firebase.auth().currentUser;
-            
-            // ログイン状態の判定（Firebase認証またはローカルストレージ）
-            const isAuthenticated = (playerName && isLoggedIn === 'true') || 
-                                  (currentUser && firebaseUid === currentUser.uid);
-            
-            if (isAuthenticated) {
-                // ログイン済みの場合はマイページに移動
+            if (currentUser) {
                 window.location.href = 'mypage.html';
             } else {
-                // 未ログインの場合はモーダルを表示
                 showLoginModal();
             }
         }
@@ -1079,11 +1067,9 @@
                     firebaseUid
                 });
                 
-                // 既存ユーザーのログイン状態を設定（後方互換性のため）
-                if (playerName && !isLoggedIn) {
-                    localStorage.setItem('isLoggedIn', 'true');
-                }
-                
+                // 旧仕様の「playerName だけで isLoggedIn を真にする」後方互換は削除。
+                // Firebase auth を「真実」とし、未ログインなら localStorage は信用しない。
+
                 // Firebase認証状態とローカルストレージを同期
                 if (currentUser) {
                     console.log('Firebase認証ユーザーが存在します');
@@ -1115,19 +1101,16 @@
                     }
                 } else {
                     console.log('Firebase認証ユーザーが存在しません');
-                    
-                    // ローカルストレージにログイン情報がある場合は保持
-                    if (playerName && isLoggedIn === 'true') {
-                        console.log('ローカルストレージのログイン情報を保持します');
-                        // ローカルストレージはクリアしない
-                    } else {
-                        console.log('ローカルストレージをクリアします');
-                        // ローカルストレージをクリア
-                        localStorage.removeItem('playerName');
-                        localStorage.removeItem('userEmail');
-                        localStorage.removeItem('isLoggedIn');
-                        localStorage.removeItem('firebaseUid');
+
+                    // Firebase が未ログインなら localStorage の認証情報も常にクリアして表示と一致させる。
+                    // これをしないと「ホームではログイン中表示・マイページでは弾かれる」というズレが発生する。
+                    if (playerName || isLoggedIn || firebaseUid) {
+                        console.log('Firebase 未ログインのため localStorage の認証情報をクリアします');
                     }
+                    localStorage.removeItem('playerName');
+                    localStorage.removeItem('userEmail');
+                    localStorage.removeItem('isLoggedIn');
+                    localStorage.removeItem('firebaseUid');
                 }
                 
                 // 認証ボタンを更新
