@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Boss Behavior Test Bench</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: #000;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+    }
+    #game {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(180deg, #050010, #001122);
+    }
+    canvas {
+        background: #001122;
+        border: 2px solid #00ff88;
+        box-shadow: 0 0 20px #00ff88aa;
+    }
+    #panel {
+        width: 360px;
+        background: #0a0a14;
+        border-left: 2px solid #00ff88;
+        padding: 16px;
+        overflow-y: auto;
+    }
+    h1 { font-size: 16px; color: #00ff88; margin-bottom: 12px; }
+    h2 { font-size: 13px; color: #ffcc44; margin-top: 14px; margin-bottom: 6px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    button {
+        background: #1a1a2e;
+        color: #fff;
+        border: 1px solid #00ff88;
+        padding: 6px 10px;
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        border-radius: 3px;
+    }
+    button:hover { background: #003322; }
+    button.danger { border-color: #ff4466; color: #ff4466; }
+    button.warn { border-color: #ffcc44; color: #ffcc44; }
+    button.active { background: #00ff88; color: #000; }
+    label { font-size: 12px; color: #aaa; }
+    input[type="number"], input[type="range"] {
+        background: #000;
+        color: #00ff88;
+        border: 1px solid #444;
+        padding: 4px;
+        width: 60px;
+        font-family: inherit;
+        font-size: 12px;
+    }
+    input[type="range"] { width: 140px; }
+    #stats { font-size: 11px; line-height: 1.6; }
+    #stats div { display: flex; justify-content: space-between; }
+    #stats .key { color: #888; }
+    #stats .val { color: #00ff88; }
+    .help {
+        font-size: 10px;
+        color: #666;
+        margin-top: 6px;
+        line-height: 1.4;
+    }
+    #log {
+        background: #000;
+        border: 1px solid #222;
+        padding: 6px;
+        font-size: 10px;
+        height: 90px;
+        overflow-y: scroll;
+        line-height: 1.3;
+    }
+    #log .entry { color: #888; }
+    #log .info { color: #00ff88; }
+    #log .warn { color: #ffcc44; }
+    #log .danger { color: #ff4466; }
+</style>
+</head>
+<body>
+<div id="game">
+    <canvas id="canvas" width="800" height="600"></canvas>
+</div>
+<div id="panel">
+    <h1>BOSS TEST BENCH</h1>
+
+    <h2>1. ボスレベル設定</h2>
+    <div class="row" style="align-items: center;">
+        <label style="min-width: 56px;">レベル:</label>
+        <input id="levelSlider" type="range" min="1" max="20" value="1" oninput="onLevelChange(this.value)">
+        <input id="levelNumber" type="number" min="1" max="20" value="1" oninput="onLevelChange(this.value)" style="width: 48px;">
+    </div>
+    <div id="levelPreview" class="help" style="background:#000; border:1px solid #222; padding:6px; line-height:1.5; color:#aaa;"></div>
+    <div class="row" style="margin-top:8px;">
+        <button onclick="spawnAtSelectedLevel()">このレベルでスポーン</button>
+        <button class="warn" onclick="applyLevelToCurrentBoss()">現在のボスに適用</button>
+        <button class="danger" onclick="killBoss()">Despawn</button>
+    </div>
+    <div class="row">
+        <label style="font-size:11px; color:#666;">クイック:</label>
+        <button onclick="setLevel(1)">1</button>
+        <button onclick="setLevel(3)">3</button>
+        <button onclick="setLevel(5)">5</button>
+        <button onclick="setLevel(8)">8</button>
+        <button onclick="setLevel(10)">10</button>
+        <button onclick="setLevel(15)">15</button>
+        <button onclick="setLevel(20)">20</button>
+    </div>
+
+    <h2>2. 状態操作</h2>
+    <div class="row">
+        <button onclick="boss && (boss.health = boss.maxHealth)">HP回復</button>
+        <button onclick="boss && (boss.health = Math.max(1, boss.health - 5))">-5 HP</button>
+        <button onclick="boss && (boss.health = 1)">瀕死</button>
+    </div>
+    <div class="row">
+        <button id="autoShootBtn" class="active" onclick="toggleAutoShoot()">自動射撃: ON</button>
+        <button id="moveBtn" class="active" onclick="toggleBossMovement()">移動: ON</button>
+    </div>
+    <div class="row">
+        <button class="warn" onclick="applySlowToBoss(2000)">スロー 2秒</button>
+        <button class="warn" onclick="applySlowToBoss(5000)">スロー 5秒</button>
+        <button onclick="bossShootNow()">今撃たせる</button>
+    </div>
+    <div class="row">
+        <button id="shockwaveBtn" class="active" onclick="toggleShockwave()">衝撃波(Lv5+): ON</button>
+        <button onclick="forceShockwave()">今、衝撃波を発動</button>
+    </div>
+    <div class="row">
+        <button id="absorbBtn" class="active" onclick="toggleAbsorb()">吸収(Lv7+): ON</button>
+    </div>
+    <div class="row">
+        <button id="mineBtn" class="active" onclick="toggleMine()">機雷(Lv8+): ON</button>
+        <button onclick="boss && dropBossMine()">今、機雷を投下</button>
+    </div>
+
+    <h2>3. 雑魚スポーン（吸収検証用）</h2>
+    <div class="row">
+        <button onclick="spawnEnemy('small')">小</button>
+        <button onclick="spawnEnemy('medium')">中</button>
+        <button onclick="spawnEnemy('large')">大</button>
+        <button onclick="spawnEnemySwarm('small', 5)">小×5</button>
+        <button onclick="spawnEnemySwarm('medium', 3)">中×3</button>
+        <button class="danger" onclick="clearEnemies()">クリア</button>
+    </div>
+
+    <h2>4. プレイヤー設定</h2>
+    <div class="row">
+        <label>無敵:</label>
+        <button id="invincibleBtn" onclick="toggleInvincible()">OFF</button>
+        <label>ダメージ:</label>
+        <input id="dmgPerShot" type="number" value="1" min="0.1" step="0.5">
+    </div>
+
+    <h2>5. ボスステータス</h2>
+    <div id="stats"></div>
+
+    <h2>6. ログ</h2>
+    <div id="log"></div>
+    <div class="help">
+        移動: WASD / 矢印 &nbsp; 射撃: Space &nbsp; リセット: R
+    </div>
+</div>
+
+<script>
+// =========================================================================
+// Boss Test Bench
+//   実ゲームと同じ式でボスを生成し、挙動を切り出して検証する。
+//
+//   実ゲーム（shooting_game.html）の式：
+//   - bossLevel = floor(score / 500) + 1
+//   - boss.width  = 100 + (bossLevel - 1) * 10
+//   - boss.height = 80  + (bossLevel - 1) * 8
+//   - boss.health = 20  + (bossLevel - 1) * 10
+//   - boss.moveSpeed   = 2 + (bossLevel - 1) * 0.5
+//   - boss.shotInterval = max(500, 2000 - (bossLevel - 1) * 200)
+//   - bulletCount      = min(3 + floor(bossLevel / 2), 7)
+//   - 弾サイズ width=6+(L-1)*2, height=15+(L-1)*3, fan spread angle ±0.5*(N-1)/2
+// =========================================================================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+// ── State
+const player = { x: W / 2 - 20, y: H - 80, width: 40, height: 40, speed: 5 };
+let boss = null;
+let bossBullets = [];
+let bossShockwaves = [];          // ボス衝撃波
+let bullets = [];                 // プレイヤー弾
+let particles = [];
+let livesLost = 0;
+let damageDealt = 0;
+let shockwavesFired = 0;
+let bossSpawnedAt = 0;
+let invincible = false;
+let autoShoot = true;
+let bossMovementOn = true;
+let shockwaveOn = true;
+
+// 衝撃波パラメータ（実ゲームと同期）
+const BOSS_SHOCKWAVE_LEVEL_THRESHOLD = 5;
+const BOSS_SHOCKWAVE_TRIGGER_DIST = 220;
+const BOSS_SHOCKWAVE_COOLDOWN_MS = 3000;
+const BOSS_SHOCKWAVE_CHARGE_MS = 400;
+const BOSS_SHOCKWAVE_EXPAND_SPEED = 6;
+const BOSS_SHOCKWAVE_MAX_RADIUS = 280;
+const BOSS_SHOCKWAVE_THICKNESS = 22;
+const BOSS_SHOCKWAVE_DAMAGE_LIVES = 1;
+const BOSS_SHOCKWAVE_FLASH_MS = 250;
+let shockwaveFlashUntil = 0;
+
+// 吸収パラメータ（実ゲームと同期）
+const BOSS_ABSORB_LEVEL_THRESHOLD = 7;
+const BOSS_ABSORB_RANGE = 280;
+const BOSS_ABSORB_PULL_FORCE = 1.2;
+const BOSS_ABSORB_COOLDOWN_MS = 1500;
+const BOSS_ABSORB_MIN_HEAL = 4;
+const BOSS_ABSORB_HEAL_RATIO = 0.4;
+let absorbOn = true;
+let enemiesAbsorbed = 0;
+let totalHealed = 0;
+let enemies = [];     // 雑魚配列
+
+// 狙撃パラメータ（実ゲームと同期）
+const BOSS_SNIPER_LEVEL_THRESHOLD = 9;
+const BOSS_SNIPER_CHARGE_MS = 400;
+const BOSS_SNIPER_BULLET_SPEED = 9;
+const BOSS_SNIPER_BULLET_W = 10;
+const BOSS_SNIPER_BULLET_H = 22;
+const BOSS_SNIPER_MIN_INTERVAL_MS = 1100;
+const BOSS_SNIPER_DOUBLE_LEVEL = 10;
+const BOSS_SNIPER_DOUBLE_SPREAD = 0.15;
+
+// 部下パラメータ（実ゲームと同期）
+const BOSS_MINION_LEVEL_THRESHOLD = 9;
+const BOSS_MINION_COUNT = 2;
+const BOSS_MINION_ABSORB_DELAY_MS = 8000;
+const BOSS_MINION_PULL_FORCE = 4;
+let bossMinions = [];
+let minionsSpawned = 0;
+let minionsKilled = 0;
+let minionsAbsorbed = 0;
+
+// 機雷パラメータ（実ゲームと同期）
+const BOSS_MINE_LEVEL_THRESHOLD = 8;
+const BOSS_MINE_DROP_COOLDOWN_MS = 4000;
+const BOSS_MINE_LIFE_MS = 8000;
+const BOSS_MINE_BLINK_AT_MS = 5000;
+const BOSS_MINE_FAST_BLINK_AT_MS = 7000;
+const BOSS_MINE_FALL_SPEED = 2.6;
+const BOSS_MINE_TARGET_Y_MIN_RATIO = 0.45;
+const BOSS_MINE_TARGET_Y_MAX_RATIO = 0.85;
+const BOSS_MINE_HORIZONTAL_DRIFT = 0.5;
+const BOSS_MINE_SIZE = 28;
+const BOSS_MINE_EXPLODE_RADIUS = 90;
+const BOSS_MINE_EXPLODE_DAMAGE_LIVES = 1;
+let bossMines = [];
+let mineOn = true;
+let minesDropped = 0;
+let minesShot = 0;
+let minesExploded = 0;
+
+const SHOT_COOLDOWN_MS = 110;
+let lastShotMs = 0;
+
+// ── Input
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ') e.preventDefault();
+    if (e.key === 'r' || e.key === 'R') resetAll();
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// =========================================================================
+// Boss factory (実ゲーム準拠)
+// =========================================================================
+let selectedLevel = 1;
+
+function bossSpecFor(level) {
+    level = Math.max(1, Math.min(20, level | 0 || 1));
+    let shotInterval = Math.max(500, 2000 - (level - 1) * 200);
+    if (level >= BOSS_SNIPER_LEVEL_THRESHOLD) shotInterval = Math.max(shotInterval, BOSS_SNIPER_MIN_INTERVAL_MS);
+    const isSniper = level >= BOSS_SNIPER_LEVEL_THRESHOLD;
+    const sniperCount = level >= BOSS_SNIPER_DOUBLE_LEVEL ? 2 : 1;
+    return {
+        level,
+        width: 100 + (level - 1) * 10,
+        height: 80 + (level - 1) * 8,
+        health: 20 + (level - 1) * 10,
+        moveSpeed: 2 + (level - 1) * 0.5,
+        shotInterval,
+        bulletCount: isSniper ? sniperCount : bulletCountFor(level),
+        bulletWidth: isSniper ? BOSS_SNIPER_BULLET_W : 6 + (level - 1) * 2,
+        bulletHeight: isSniper ? BOSS_SNIPER_BULLET_H : 15 + (level - 1) * 3,
+        points: 50 + (level - 1) * 25,
+        isSniper,
+        sniperCount
+    };
+}
+
+function setLevel(level) {
+    selectedLevel = Math.max(1, Math.min(20, level | 0 || 1));
+    const slider = document.getElementById('levelSlider');
+    const num = document.getElementById('levelNumber');
+    if (slider) slider.value = selectedLevel;
+    if (num) num.value = selectedLevel;
+    updateLevelPreview();
+}
+
+function onLevelChange(v) {
+    selectedLevel = Math.max(1, Math.min(20, parseInt(v) || 1));
+    document.getElementById('levelSlider').value = selectedLevel;
+    document.getElementById('levelNumber').value = selectedLevel;
+    updateLevelPreview();
+}
+
+function updateLevelPreview() {
+    const s = bossSpecFor(selectedLevel);
+    const el = document.getElementById('levelPreview');
+    if (!el) return;
+    const tags = [];
+    if (s.level >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD) tags.push('<span style="color:#ff66cc;">衝撃波</span>');
+    if (s.level >= BOSS_ABSORB_LEVEL_THRESHOLD)    tags.push('<span style="color:#ff66ff;">吸収</span>');
+    const tagHtml = tags.length ? ` &nbsp; 特殊: ${tags.join(' / ')}` : '';
+    const bcSuffix = s.isSniper
+        ? ` <span style="color:#ff66ff;">(狙撃 ${s.sniperCount} 発${s.sniperCount > 1 ? '・扇形' : ''})</span>`
+        : (s.level >= 6 ? ' <span style="color:#888;">(Lv.6 で打ち止め)</span>' : '');
+    el.innerHTML = `
+        <b style="color:#00ff88;">Lv.${s.level} の仕様</b>${tagHtml}<br>
+        HP: <span style="color:#fff;">${s.health}</span> &nbsp;
+        サイズ: <span style="color:#fff;">${s.width}×${s.height}</span><br>
+        移動: <span style="color:#fff;">${s.moveSpeed.toFixed(1)} px/f</span> &nbsp;
+        射撃間隔: <span style="color:#fff;">${s.shotInterval} ms</span><br>
+        射撃数: <span style="color:#fff;">${s.bulletCount} 発</span>${bcSuffix} &nbsp;
+        弾サイズ: <span style="color:#fff;">${s.bulletWidth}×${s.bulletHeight}</span> &nbsp;
+        点数: <span style="color:#fff;">${s.points}</span>
+    `;
+}
+
+function spawnAtSelectedLevel() {
+    spawnBossLevel(selectedLevel);
+}
+
+function applyLevelToCurrentBoss() {
+    if (!boss) {
+        log('warn', '現在ボスがいません。先にスポーンしてください');
+        return;
+    }
+    const s = bossSpecFor(selectedLevel);
+    const hpRatio = boss.health / boss.maxHealth;
+    boss.level = s.level;
+    boss.width = s.width;
+    boss.height = s.height;
+    boss.maxHealth = s.health;
+    boss.health = Math.max(1, s.health * hpRatio);                      // HP割合は維持
+    boss.moveSpeed = s.moveSpeed;
+    boss.shotInterval = s.shotInterval;
+    boss.points = s.points;
+    log('info', `現在のボスを Lv.${s.level} に変更（HP ${boss.health.toFixed(1)}/${boss.maxHealth}）`);
+}
+
+function spawnBossLevel(level) {
+    level = Math.max(1, Math.min(20, level | 0 || 1));
+    setLevel(level);
+    let shotInterval = Math.max(500, 2000 - (level - 1) * 200);
+    if (level >= BOSS_SNIPER_LEVEL_THRESHOLD) {
+        shotInterval = Math.max(shotInterval, BOSS_SNIPER_MIN_INTERVAL_MS);
+    }
+    boss = {
+        level,
+        x: W / 2 - 50,
+        y: -100,
+        width: 100 + (level - 1) * 10,
+        height: 80 + (level - 1) * 8,
+        health: 20 + (level - 1) * 10,
+        maxHealth: 20 + (level - 1) * 10,
+        speed: 1,
+        moveSpeed: 2 + (level - 1) * 0.5,
+        moveDirection: Math.random() < 0.5 ? -1 : 1,
+        points: 50 + (level - 1) * 25,
+        lastShot: Date.now(),
+        shotInterval,
+        slowedUntil: 0,
+        lastShockwaveAt: 0,
+        sniperLocked: false,
+        sniperTargetX: 0,
+        sniperTargetY: 0,
+        minionAbsorbStartAt: null
+    };
+    bossBullets = [];
+    bossShockwaves = [];
+    bossMines = [];
+    bossMinions = [];
+    damageDealt = 0;
+    shockwavesFired = 0;
+    enemiesAbsorbed = 0;
+    totalHealed = 0;
+    minesDropped = 0;
+    minesShot = 0;
+    minesExploded = 0;
+    minionsSpawned = 0;
+    minionsKilled = 0;
+    minionsAbsorbed = 0;
+    if (level >= BOSS_MINION_LEVEL_THRESHOLD) spawnBossMinions(level);
+    bossSpawnedAt = Date.now();
+    const sw = level >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD ? '衝撃波' : '';
+    const ab = level >= BOSS_ABSORB_LEVEL_THRESHOLD ? '吸収' : '';
+    const mn = level >= BOSS_MINE_LEVEL_THRESHOLD ? '機雷' : '';
+    const sn = level >= BOSS_SNIPER_LEVEL_THRESHOLD ? '狙撃' : '';
+    const md = level >= BOSS_MINION_LEVEL_THRESHOLD ? '部下' : '';
+    const tags = [sw, ab, mn, sn, md].filter(Boolean).join('/') || 'なし';
+    log('info', `Lv.${level} ボス出現 / HP ${boss.maxHealth} / 弾数 ${bulletCountFor(level)} / 間隔 ${boss.shotInterval}ms / 特殊: ${tags}`);
+}
+
+function spawnBossMinions(currentBossLevel) {
+    const minionLevel = currentBossLevel === 9 ? 1 : 2;
+    for (let i = 0; i < BOSS_MINION_COUNT; i++) spawnSingleBossMinion(minionLevel, i);
+}
+
+function spawnSingleBossMinion(minionLevel, slotIndex) {
+    const w = 60 + (minionLevel - 1) * 10;
+    const h = 50 + (minionLevel - 1) * 8;
+    const x = slotIndex === 0 ? 60 : W - 60 - w;
+    bossMinions.push({
+        x, y: 80,
+        width: w, height: h,
+        health: 12 + (minionLevel - 1) * 6,
+        maxHealth: 12 + (minionLevel - 1) * 6,
+        vx: (slotIndex === 0 ? 1 : -1) * (1.4 + (minionLevel - 1) * 0.3),
+        level: minionLevel,
+        points: 30 + (minionLevel - 1) * 15,
+        lastShot: Date.now() + slotIndex * 600,
+        shotInterval: 1800,
+        beingAbsorbed: false,
+        slotIndex
+    });
+    minionsSpawned++;
+}
+
+function killBoss() {
+    if (!boss) return;
+    log('warn', `ボス Lv.${boss.level} 撤退（残HP ${boss.health.toFixed(1)}/${boss.maxHealth}）`);
+    boss = null;
+    bossBullets = [];
+    bossShockwaves = [];
+    bossMines = [];
+    bossMinions.forEach(m => spawnExplosion(m.x + m.width/2, m.y + m.height/2));
+    bossMinions = [];
+    enemiesAbsorbed = 0;
+    totalHealed = 0;
+    minesDropped = 0;
+    minesShot = 0;
+    minesExploded = 0;
+}
+
+// 弾数は Lv.6 (= 6発) で打ち止め。それ以上は衝撃波(Lv5+)と吸収(Lv7+)で難易度を上げる。
+function bulletCountFor(level) {
+    return Math.min(3 + Math.floor(level / 2), 6);
+}
+
+function bossSnipeShot(tx, ty) {
+    if (!boss) return;
+    const sx = boss.x + boss.width / 2;
+    const sy = boss.y + boss.height;
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const baseAngle = Math.atan2(dy, dx);
+    const count = boss.level >= BOSS_SNIPER_DOUBLE_LEVEL ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+        const offset = count === 1 ? 0 : (i === 0 ? -1 : 1) * BOSS_SNIPER_DOUBLE_SPREAD / 2;
+        const angle = baseAngle + offset;
+        bossBullets.push({
+            x: sx - BOSS_SNIPER_BULLET_W / 2,
+            y: sy,
+            width: BOSS_SNIPER_BULLET_W,
+            height: BOSS_SNIPER_BULLET_H,
+            speedX: Math.cos(angle) * BOSS_SNIPER_BULLET_SPEED,
+            speedY: Math.sin(angle) * BOSS_SNIPER_BULLET_SPEED,
+            color: '#ff00ff',
+            isSniper: true
+        });
+    }
+}
+
+function updateBossMinions() {
+    if (bossMinions.length === 0) return;
+    const now = Date.now();
+    bossMinions = bossMinions.filter(m => {
+        if (!m.beingAbsorbed) {
+            m.x += m.vx;
+            if (m.x < 10)                  { m.x = 10; m.vx = Math.abs(m.vx); }
+            if (m.x + m.width > W - 10)    { m.x = W - 10 - m.width; m.vx = -Math.abs(m.vx); }
+            if (now - m.lastShot > m.shotInterval) {
+                m.lastShot = now;
+                const dx = (player.x + player.width/2) - (m.x + m.width/2);
+                const dy = (player.y + player.height/2) - (m.y + m.height/2);
+                const dist = Math.hypot(dx, dy) || 1;
+                const speed = 4;
+                bossBullets.push({
+                    x: m.x + m.width / 2 - 3,
+                    y: m.y + m.height,
+                    width: 6, height: 12,
+                    speedX: dx / dist * speed,
+                    speedY: dy / dist * speed,
+                    color: '#ff8844'
+                });
+            }
+        }
+        if (checkCollision(m, player) && !invincible) {
+            livesLost++;
+            log('danger', `部下と接触！ (累計 ${livesLost})`);
+            player.x = W / 2 - 20;
+            player.y = H - 80;
+        }
+        return m.health > 0;
+    });
+}
+
+function bulletHitsMinion(b) {
+    for (let i = bossMinions.length - 1; i >= 0; i--) {
+        const mn = bossMinions[i];
+        if (checkCollision(b, mn)) {
+            mn.health -= b.damage;
+            if (mn.health <= 0) {
+                spawnExplosion(mn.x + mn.width/2, mn.y + mn.height/2);
+                bossMinions.splice(i, 1);
+                minionsKilled++;
+                if (bossMinions.length === 0 && boss) boss.minionAbsorbStartAt = null;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+function drawBossMinions() {
+    if (bossMinions.length === 0) return;
+    ctx.save();
+    bossMinions.forEach(m => {
+        // ボス Lv.1/Lv.2 と同じアートワーク（サイズだけ縮小）
+        drawBossArtwork(m.x, m.y, m.width, m.height, m.level, false);
+        const ratio = m.health / m.maxHealth;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(m.x, m.y - 6, m.width, 4);
+        ctx.fillStyle = ratio > 0.5 ? '#0f0' : ratio > 0.2 ? '#ff0' : '#f00';
+        ctx.fillRect(m.x, m.y - 6, m.width * ratio, 4);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Lv.${m.level} 部下`, m.x + m.width/2, m.y + m.height + 14);
+        if (m.beingAbsorbed && boss) {
+            ctx.save();
+            ctx.strokeStyle = '#ff66ff';
+            ctx.shadowColor = '#ff66ff';
+            ctx.shadowBlur = 14;
+            ctx.lineWidth = 4;
+            ctx.globalAlpha = 0.6 + 0.3 * Math.sin(Date.now() * 0.02);
+            ctx.beginPath();
+            ctx.moveTo(boss.x + boss.width/2, boss.y + boss.height/2);
+            ctx.lineTo(m.x + m.width/2, m.y + m.height/2);
+            ctx.stroke();
+            ctx.restore();
+        }
+    });
+    ctx.restore();
+}
+
+// 狙撃の補助線は表示しない（補助線なしの「ガチ狙撃」設計）
+function drawSniperAim() { /* no-op */ }
+
+function drawMinionAbsorbWarning() {
+    if (!boss || bossMinions.length === 0 || boss.minionAbsorbStartAt === null) return;
+    const remaining = boss.minionAbsorbStartAt - Date.now();
+    if (remaining > 0) {
+        ctx.save();
+        ctx.fillStyle = '#ff44aa';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`部下吸収まで ${(remaining / 1000).toFixed(1)}s — 部下を倒せ！`, W / 2, 30);
+        ctx.restore();
+    }
+}
+
+function bossShoot() {
+    if (!boss) return;
+    const level = boss.level;
+    const count = bulletCountFor(level);
+    for (let i = 0; i < count; i++) {
+        const angle = (i - (count - 1) / 2) * 0.5;
+        const speedX = Math.sin(angle) * 3;
+        const speedY = Math.cos(angle) * 4;
+        bossBullets.push({
+            x: boss.x + boss.width / 2 - 3,
+            y: boss.y + boss.height,
+            width: 6 + (level - 1) * 2,
+            height: 15 + (level - 1) * 3,
+            speedX, speedY,
+            color: level > 2 ? '#ff00ff' : '#ff0000'
+        });
+    }
+}
+
+function bossShootNow() {
+    if (!boss) return;
+    bossShoot();
+    boss.lastShot = Date.now();
+}
+
+function applySlowToBoss(ms) {
+    if (!boss) return;
+    boss.slowedUntil = Math.max(boss.slowedUntil || 0, Date.now() + ms);
+    log('info', `スロー付与 ${ms}ms`);
+}
+
+function toggleMine() {
+    mineOn = !mineOn;
+    const btn = document.getElementById('mineBtn');
+    btn.textContent = '機雷(Lv8+): ' + (mineOn ? 'ON' : 'OFF');
+    btn.classList.toggle('active', mineOn);
+}
+
+function toggleAbsorb() {
+    absorbOn = !absorbOn;
+    const btn = document.getElementById('absorbBtn');
+    btn.textContent = '吸収(Lv7+): ' + (absorbOn ? 'ON' : 'OFF');
+    btn.classList.toggle('active', absorbOn);
+}
+
+function toggleShockwave() {
+    shockwaveOn = !shockwaveOn;
+    const btn = document.getElementById('shockwaveBtn');
+    btn.textContent = '衝撃波(Lv5+): ' + (shockwaveOn ? 'ON' : 'OFF');
+    btn.classList.toggle('active', shockwaveOn);
+}
+
+function forceShockwave() {
+    if (!boss) return;
+    const now = Date.now();
+    bossShockwaves.push({
+        cx: boss.x + boss.width / 2,
+        cy: boss.y + boss.height / 2,
+        radius: 0,
+        expandSpeed: BOSS_SHOCKWAVE_EXPAND_SPEED,
+        maxRadius: BOSS_SHOCKWAVE_MAX_RADIUS,
+        thickness: BOSS_SHOCKWAVE_THICKNESS,
+        chargeUntil: now + BOSS_SHOCKWAVE_CHARGE_MS,
+        hit: false,
+        damage: BOSS_SHOCKWAVE_DAMAGE_LIVES
+    });
+    boss.lastShockwaveAt = now;
+    shockwavesFired++;
+    log('warn', '衝撃波を強制発動');
+}
+
+function toggleAutoShoot() {
+    autoShoot = !autoShoot;
+    const btn = document.getElementById('autoShootBtn');
+    btn.textContent = '自動射撃: ' + (autoShoot ? 'ON' : 'OFF');
+    btn.classList.toggle('active', autoShoot);
+}
+function toggleBossMovement() {
+    bossMovementOn = !bossMovementOn;
+    const btn = document.getElementById('moveBtn');
+    btn.textContent = '移動: ' + (bossMovementOn ? 'ON' : 'OFF');
+    btn.classList.toggle('active', bossMovementOn);
+}
+function toggleInvincible() {
+    invincible = !invincible;
+    const btn = document.getElementById('invincibleBtn');
+    btn.textContent = invincible ? 'ON' : 'OFF';
+    btn.classList.toggle('active', invincible);
+}
+
+// =========================================================================
+// Player firing
+// =========================================================================
+function shoot() {
+    bullets.push({
+        x: player.x + player.width / 2 - 2,
+        y: player.y,
+        width: 4, height: 12,
+        speedX: 0, speedY: -8,
+        damage: parseFloat(document.getElementById('dmgPerShot').value) || 1
+    });
+}
+
+// =========================================================================
+// Update / Draw
+// =========================================================================
+function checkCollision(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function update() {
+    // プレイヤー操作
+    if ((keys.ArrowLeft  || keys.a || keys.A) && player.x > 0)                 player.x -= player.speed;
+    if ((keys.ArrowRight || keys.d || keys.D) && player.x < W - player.width)  player.x += player.speed;
+    if ((keys.ArrowUp    || keys.w || keys.W) && player.y > H / 3)             player.y -= player.speed;
+    if ((keys.ArrowDown  || keys.s || keys.S) && player.y < H - player.height) player.y += player.speed;
+
+    if (keys[' ']) {
+        const now = Date.now();
+        if (now - lastShotMs >= SHOT_COOLDOWN_MS) { shoot(); lastShotMs = now; }
+    }
+
+    // 弾の更新
+    bullets = bullets.filter(b => {
+        b.x += b.speedX; b.y += b.speedY;
+        if (boss && checkCollision(b, boss)) {
+            boss.health -= b.damage;
+            damageDealt += b.damage;
+            spawnHitParticles(b.x, b.y);
+            if (boss.health <= 0) {
+                spawnExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2);
+                log('danger', `ボス Lv.${boss.level} 撃破！ 経過 ${(Date.now() - bossSpawnedAt)/1000}s`);
+                boss = null;
+                bossBullets = [];
+                bossShockwaves = [];
+            }
+            return false;
+        }
+        // 雑魚にも当たる
+        if (bulletHitsEnemy(b)) {
+            spawnHitParticles(b.x, b.y);
+            return false;
+        }
+        // 機雷を撃って早期爆破
+        if (bulletHitsBossMine(b)) {
+            return false;
+        }
+        // 部下に当たる
+        if (bulletHitsMinion(b)) {
+            spawnHitParticles(b.x, b.y);
+            return false;
+        }
+        return b.y > -20;
+    });
+
+    // 雑魚更新 + ボス吸収 + ボス機雷 + 部下
+    updateEnemies();
+    updateBossAbsorb();
+    updateBossMines();
+    updateBossMinions();
+
+    // ボス
+    if (boss) {
+        const slow = (boss.slowedUntil && Date.now() < boss.slowedUntil) ? 0.4 : 1;
+        if (boss.y < 50) boss.y += boss.speed * slow;
+        if (bossMovementOn) {
+            boss.x += boss.moveSpeed * boss.moveDirection * slow;
+            if (boss.x <= 0 || boss.x + boss.width >= W) boss.moveDirection *= -1;
+        }
+        if (autoShoot) {
+            const now = Date.now();
+            const isSniper = boss.level >= BOSS_SNIPER_LEVEL_THRESHOLD;
+            if (isSniper) {
+                const since = now - boss.lastShot;
+                if (!boss.sniperLocked && since >= boss.shotInterval - BOSS_SNIPER_CHARGE_MS) {
+                    boss.sniperLocked = true;
+                    boss.sniperTargetX = player.x + player.width / 2;
+                    boss.sniperTargetY = player.y + player.height / 2;
+                }
+                if (since >= boss.shotInterval) {
+                    bossSnipeShot(boss.sniperTargetX, boss.sniperTargetY);
+                    boss.sniperLocked = false;
+                    boss.lastShot = now;
+                }
+            } else {
+                if (now - boss.lastShot > boss.shotInterval) {
+                    bossShoot();
+                    boss.lastShot = now;
+                }
+            }
+        }
+        // 部下吸収（Lv.9+）
+        if (boss.level >= BOSS_MINION_LEVEL_THRESHOLD && bossMinions.length > 0) {
+            const now = Date.now();
+            if (boss.minionAbsorbStartAt === null) {
+                boss.minionAbsorbStartAt = now + BOSS_MINION_ABSORB_DELAY_MS;
+            }
+            if (now >= boss.minionAbsorbStartAt) {
+                let target = null, bestDist = Infinity;
+                for (const m of bossMinions) {
+                    const dx2 = (m.x + m.width/2) - (boss.x + boss.width/2);
+                    const dy2 = (m.y + m.height/2) - (boss.y + boss.height/2);
+                    const d2 = dx2*dx2 + dy2*dy2;
+                    if (d2 < bestDist) { bestDist = d2; target = m; }
+                }
+                if (target) {
+                    target.beingAbsorbed = true;
+                    const dx = (boss.x + boss.width/2) - (target.x + target.width/2);
+                    const dy = (boss.y + boss.height/2) - (target.y + target.height/2);
+                    const len = Math.hypot(dx, dy) || 1;
+                    target.x += dx / len * BOSS_MINION_PULL_FORCE;
+                    target.y += dy / len * BOSS_MINION_PULL_FORCE;
+                    if (checkCollision(boss, target)) {
+                        boss.health = boss.maxHealth;
+                        spawnExplosion(target.x + target.width/2, target.y + target.height/2);
+                        const consumedLevel = target.level;
+                        const consumedSlot = target.slotIndex;
+                        bossMinions = bossMinions.filter(mm => mm !== target);
+                        minionsAbsorbed++;
+                        boss.minionAbsorbStartAt = null;
+                        log('danger', '部下が吸収されてHP全回復！ → 部下を再展開');
+                        spawnSingleBossMinion(consumedLevel, consumedSlot);
+                    }
+                }
+            }
+        } else if (boss) {
+            boss.minionAbsorbStartAt = null;
+        }
+        // 衝撃波: Lv.5 以上で接近時に発動
+        if (shockwaveOn && boss.level >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD) {
+            const now = Date.now();
+            const bcx = boss.x + boss.width / 2;
+            const bcy = boss.y + boss.height / 2;
+            const pcx = player.x + player.width / 2;
+            const pcy = player.y + player.height / 2;
+            const dist = Math.hypot(pcx - bcx, pcy - bcy);
+            if (dist < BOSS_SHOCKWAVE_TRIGGER_DIST &&
+                now - (boss.lastShockwaveAt || 0) >= BOSS_SHOCKWAVE_COOLDOWN_MS) {
+                boss.lastShockwaveAt = now;
+                bossShockwaves.push({
+                    cx: bcx, cy: bcy,
+                    radius: 0,
+                    expandSpeed: BOSS_SHOCKWAVE_EXPAND_SPEED,
+                    maxRadius: BOSS_SHOCKWAVE_MAX_RADIUS,
+                    thickness: BOSS_SHOCKWAVE_THICKNESS,
+                    chargeUntil: now + BOSS_SHOCKWAVE_CHARGE_MS,
+                    hit: false,
+                    damage: BOSS_SHOCKWAVE_DAMAGE_LIVES
+                });
+                shockwavesFired++;
+                log('warn', `衝撃波発射！（距離 ${dist.toFixed(0)}px / ダメージ ${BOSS_SHOCKWAVE_DAMAGE_LIVES} ライフ）`);
+            }
+        }
+        if (!invincible && checkCollision(boss, player)) {
+            livesLost++;
+            log('danger', `ボス本体に接触！ (累計 ${livesLost})`);
+            // 軽くノックバック
+            player.y = H - 80;
+            player.x = W / 2 - 20;
+        }
+    }
+
+    // ボス衝撃波の更新
+    updateBossShockwaves();
+
+    // ボス弾
+    bossBullets = bossBullets.filter(b => {
+        b.x += b.speedX; b.y += b.speedY;
+        if (!invincible && checkCollision(b, player)) {
+            if (b.isSniper) {
+                livesLost += 999;
+                log('danger', `狙撃に被弾！ 即死！！`);
+                spawnExplosion(player.x + player.width / 2, player.y + player.height / 2);
+                shockwaveFlashUntil = Date.now() + BOSS_SHOCKWAVE_FLASH_MS;
+                player.x = W / 2 - 20;
+                player.y = H - 80;
+            } else {
+                livesLost++;
+                log('danger', `被弾！ (累計 ${livesLost})`);
+            }
+            return false;
+        }
+        return b.y < H && b.x > -50 && b.x < W + 50;
+    });
+
+    // パーティクル
+    particles = particles.filter(p => {
+        p.x += p.vx; p.y += p.vy;
+        p.life--;
+        return p.life > 0;
+    });
+}
+
+// =========================================================================
+// 雑魚（吸収検証用）
+// =========================================================================
+function spawnEnemy(typeKey) {
+    const types = {
+        small:  { width: 22, height: 22, health: 1,  points: 10, color: '#ffaa00', speed: 1.6 },
+        medium: { width: 32, height: 32, health: 3,  points: 20, color: '#ff4400', speed: 1.2 },
+        large:  { width: 48, height: 48, health: 6,  points: 50, color: '#aa00ff', speed: 0.8 }
+    };
+    const t = types[typeKey] || types.small;
+    enemies.push({
+        x: Math.random() * (W - t.width),
+        y: -t.height,
+        width: t.width,
+        height: t.height,
+        health: t.health,
+        maxHealth: t.health,
+        speed: t.speed,
+        points: t.points,
+        color: t.color
+    });
+}
+function spawnEnemySwarm(typeKey, count) {
+    for (let i = 0; i < count; i++) spawnEnemy(typeKey);
+}
+function clearEnemies() { enemies = []; }
+
+function updateEnemies() {
+    enemies = enemies.filter(e => {
+        e.y += e.speed;
+        if (boss && checkCollision(e, player)) {
+            if (!invincible) {
+                livesLost++;
+                log('danger', `雑魚と接触！ (累計 ${livesLost})`);
+                player.x = W / 2 - 20;
+                player.y = H - 80;
+            }
+            return false;
+        }
+        return e.y < H + e.height;
+    });
+}
+
+function drawEnemies() {
+    enemies.forEach(e => {
+        ctx.save();
+        ctx.fillStyle = e.color;
+        ctx.shadowColor = e.color;
+        ctx.shadowBlur = 4;
+        ctx.fillRect(e.x, e.y, e.width, e.height);
+        ctx.restore();
+        if (e.maxHealth > 1) {
+            const ratio = Math.max(0, e.health / e.maxHealth);
+            ctx.fillStyle = '#000a';
+            ctx.fillRect(e.x, e.y - 5, e.width, 3);
+            ctx.fillStyle = ratio > 0.5 ? '#0f0' : '#f44';
+            ctx.fillRect(e.x, e.y - 5, e.width * ratio, 3);
+        }
+    });
+}
+
+// プレイヤー弾と雑魚の衝突
+function bulletHitsEnemy(bullet) {
+    for (let i = 0; i < enemies.length; i++) {
+        if (checkCollision(bullet, enemies[i])) {
+            enemies[i].health -= bullet.damage;
+            if (enemies[i].health <= 0) {
+                enemies.splice(i, 1);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+// =========================================================================
+// 吸収ロジック
+// =========================================================================
+function updateBossAbsorb() {
+    if (!boss) return;
+    if (!absorbOn || boss.level < BOSS_ABSORB_LEVEL_THRESHOLD || enemies.length === 0) {
+        boss._absorbTarget = null;
+        return;
+    }
+    const now = Date.now();
+    const bcx = boss.x + boss.width / 2;
+    const bcy = boss.y + boss.height / 2;
+    let target = null, bestDist = BOSS_ABSORB_RANGE;
+    for (const e of enemies) {
+        const dist = Math.hypot(e.x + e.width/2 - bcx, e.y + e.height/2 - bcy);
+        if (dist < bestDist) { bestDist = dist; target = e; }
+    }
+    if (!target) { boss._absorbTarget = null; return; }
+    boss._absorbTarget = target;
+    const dx = bcx - (target.x + target.width / 2);
+    const dy = bcy - (target.y + target.height / 2);
+    const len = Math.hypot(dx, dy) || 1;
+    target.x += (dx / len) * BOSS_ABSORB_PULL_FORCE;
+    target.y += (dy / len) * BOSS_ABSORB_PULL_FORCE;
+    if (now - (boss.lastAbsorbAt || 0) >= BOSS_ABSORB_COOLDOWN_MS && checkCollision(boss, target)) {
+        const heal = Math.max(BOSS_ABSORB_MIN_HEAL,
+                              Math.floor((target.points || 10) * BOSS_ABSORB_HEAL_RATIO));
+        boss.health = Math.min(boss.maxHealth, boss.health + heal);
+        boss.lastAbsorbAt = now;
+        enemiesAbsorbed++;
+        totalHealed += heal;
+        spawnAbsorbBurst(target.x + target.width / 2, target.y + target.height / 2);
+        const idx = enemies.indexOf(target);
+        if (idx !== -1) enemies.splice(idx, 1);
+        boss._absorbTarget = null;
+        log('warn', `吸収！ +${heal} HP（累計 ${enemiesAbsorbed} 体 / +${totalHealed} HP）`);
+    }
+}
+
+function spawnAbsorbBurst(x, y) {
+    for (let i = 0; i < 16; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = 1 + Math.random() * 3;
+        particles.push({
+            x, y,
+            vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+            life: 25 + Math.random() * 15,
+            color: '#ff66ff',
+            size: 2
+        });
+    }
+}
+
+function drawAbsorbBeam() {
+    if (!boss || !boss._absorbTarget) return;
+    if (!enemies.includes(boss._absorbTarget)) { boss._absorbTarget = null; return; }
+    const t = boss._absorbTarget;
+    const bcx = boss.x + boss.width / 2;
+    const bcy = boss.y + boss.height / 2;
+    const tcx = t.x + t.width / 2;
+    const tcy = t.y + t.height / 2;
+    ctx.save();
+    ctx.shadowColor = '#ff44ff';
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#ff66ff';
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = 0.45 + 0.35 * Math.sin(Date.now() * 0.02);
+    ctx.beginPath();
+    ctx.moveTo(bcx, bcy);
+    ctx.lineTo(tcx, tcy);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.7;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(tcx, tcy, Math.max(t.width, t.height) * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+function drawAbsorbRange() {
+    if (!boss || !absorbOn || boss.level < BOSS_ABSORB_LEVEL_THRESHOLD) return;
+    const bcx = boss.x + boss.width / 2;
+    const bcy = boss.y + boss.height / 2;
+    ctx.save();
+    ctx.strokeStyle = '#ff44ff33';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(bcx, bcy, BOSS_ABSORB_RANGE, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+// =========================================================================
+// ボス機雷
+// =========================================================================
+function explodeBossMine(mine, killedByPlayer) {
+    if (mine.triggered) return;
+    mine.triggered = true;
+    minesExploded++;
+    const cx = mine.x + mine.size / 2;
+    const cy = mine.y + mine.size / 2;
+    spawnExplosion(cx, cy);
+    const pcx = player.x + player.width / 2;
+    const pcy = player.y + player.height / 2;
+    const dist = Math.hypot(pcx - cx, pcy - cy);
+    if (dist <= BOSS_MINE_EXPLODE_RADIUS && !invincible) {
+        livesLost += BOSS_MINE_EXPLODE_DAMAGE_LIVES;
+        shockwaveFlashUntil = Date.now() + BOSS_SHOCKWAVE_FLASH_MS;
+        log('danger', `機雷被弾！ -${BOSS_MINE_EXPLODE_DAMAGE_LIVES} ライフ`);
+    }
+    if (killedByPlayer) {
+        minesShot++;
+        log('info', `機雷を破壊（爆風）`);
+    }
+}
+
+function dropBossMine() {
+    if (!boss) return;
+    const now = Date.now();
+    const targetY = H * (
+        BOSS_MINE_TARGET_Y_MIN_RATIO +
+        Math.random() * (BOSS_MINE_TARGET_Y_MAX_RATIO - BOSS_MINE_TARGET_Y_MIN_RATIO)
+    );
+    bossMines.push({
+        x: boss.x + boss.width / 2 - BOSS_MINE_SIZE / 2,
+        y: boss.y + boss.height,
+        vx: (Math.random() - 0.5) * BOSS_MINE_HORIZONTAL_DRIFT,
+        vy: BOSS_MINE_FALL_SPEED,
+        targetY: targetY,
+        settled: false,
+        size: BOSS_MINE_SIZE,
+        width: BOSS_MINE_SIZE,        // checkCollision 用
+        height: BOSS_MINE_SIZE,
+        spawnedAt: now,
+        expiresAt: now + BOSS_MINE_LIFE_MS,
+        triggered: false
+    });
+    boss.lastMineDropAt = now;
+    minesDropped++;
+}
+
+function updateBossMines() {
+    if (boss && mineOn && boss.level >= BOSS_MINE_LEVEL_THRESHOLD) {
+        if (Date.now() - (boss.lastMineDropAt || 0) >= BOSS_MINE_DROP_COOLDOWN_MS) {
+            dropBossMine();
+        }
+    }
+    if (bossMines.length === 0) return;
+    const now = Date.now();
+    for (let i = bossMines.length - 1; i >= 0; i--) {
+        const m = bossMines[i];
+        if (!m.settled) {
+            m.y += m.vy;
+            m.x += m.vx;
+            if (m.x < 0)             { m.x = 0; m.vx = -m.vx; }
+            if (m.x > W - m.size)    { m.x = W - m.size; m.vx = -m.vx; }
+            if (m.y >= m.targetY) {
+                m.y = m.targetY;
+                m.vx = 0; m.vy = 0;
+                m.settled = true;
+            }
+        }
+        if (now >= m.expiresAt) {
+            explodeBossMine(m, false);
+            bossMines.splice(i, 1);
+            continue;
+        }
+        if (checkCollision(player, m)) {
+            explodeBossMine(m, false);
+            bossMines.splice(i, 1);
+            continue;
+        }
+        if (m.y > H + 60) bossMines.splice(i, 1);
+    }
+}
+
+function bulletHitsBossMine(bullet) {
+    for (let i = bossMines.length - 1; i >= 0; i--) {
+        if (checkCollision(bullet, bossMines[i])) {
+            explodeBossMine(bossMines[i], true);
+            bossMines.splice(i, 1);
+            return true;
+        }
+    }
+    return false;
+}
+
+function drawBossMines() {
+    if (bossMines.length === 0) return;
+    const now = Date.now();
+    ctx.save();
+    bossMines.forEach(m => {
+        // 落下中は着地予測ラインを表示（テスト用）
+        if (!m.settled) {
+            ctx.save();
+            ctx.globalAlpha = 0.4;
+            ctx.strokeStyle = '#ffaa33';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(m.x - 6, m.targetY);
+            ctx.lineTo(m.x + m.size + 6, m.targetY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+        const cx = m.x + m.size / 2;
+        const cy = m.y + m.size / 2;
+        const remaining = m.expiresAt - now;
+        let blinkInterval = 0;
+        if (remaining < BOSS_MINE_LIFE_MS - BOSS_MINE_FAST_BLINK_AT_MS) blinkInterval = 80;
+        else if (remaining < BOSS_MINE_LIFE_MS - BOSS_MINE_BLINK_AT_MS) blinkInterval = 200;
+        const visible = blinkInterval === 0 || (Math.floor(now / blinkInterval) % 2 === 0);
+        if (remaining < 3000) {
+            const t = 1 - remaining / 3000;
+            ctx.globalAlpha = 0.08 + 0.18 * t;
+            ctx.fillStyle = '#ff6633';
+            ctx.beginPath();
+            ctx.arc(cx, cy, BOSS_MINE_EXPLODE_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = visible ? 1 : 0.3;
+        ctx.fillStyle = remaining < 2000 ? '#ff3344' : '#ffaa00';
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(cx, cy, m.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#552200';
+        ctx.lineWidth = 2;
+        for (let s = 0; s < 8; s++) {
+            const a = (s / 8) * Math.PI * 2;
+            const r1 = m.size / 2;
+            const r2 = m.size / 2 + 4;
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+            ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+            ctx.stroke();
+        }
+        ctx.fillStyle = '#220000';
+        ctx.beginPath();
+        ctx.arc(cx, cy, m.size / 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.restore();
+}
+
+function updateBossShockwaves() {
+    if (bossShockwaves.length === 0) return;
+    const now = Date.now();
+    const pcx = player.x + player.width / 2;
+    const pcy = player.y + player.height / 2;
+    const playerRadius = Math.max(player.width, player.height) / 2;
+    for (let i = bossShockwaves.length - 1; i >= 0; i--) {
+        const sw = bossShockwaves[i];
+        if (now < sw.chargeUntil) continue;
+        sw.radius += sw.expandSpeed;
+        if (!sw.hit) {
+            const dist = Math.hypot(pcx - sw.cx, pcy - sw.cy);
+            if (Math.abs(dist - sw.radius) <= sw.thickness / 2 + playerRadius) {
+                sw.hit = true;
+                const dmg = sw.damage || BOSS_SHOCKWAVE_DAMAGE_LIVES;
+                if (!invincible) {
+                    livesLost += dmg;
+                    shockwaveFlashUntil = now + BOSS_SHOCKWAVE_FLASH_MS;
+                    log('danger', `衝撃波被弾！ -${dmg} ライフ (累計 ${livesLost})`);
+                } else {
+                    log('warn', '衝撃波接触（無敵で無効化）');
+                }
+            }
+        }
+        if (sw.radius > sw.maxRadius) bossShockwaves.splice(i, 1);
+    }
+}
+
+function drawBossShockwaves() {
+    const now = Date.now();
+    if (now < shockwaveFlashUntil) {
+        const t = (shockwaveFlashUntil - now) / BOSS_SHOCKWAVE_FLASH_MS;
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 60, 120, ${0.45 * t})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+    }
+    if (bossShockwaves.length === 0) return;
+    ctx.save();
+    bossShockwaves.forEach(sw => {
+        if (now < sw.chargeUntil) {
+            const t = 1 - (sw.chargeUntil - now) / BOSS_SHOCKWAVE_CHARGE_MS;
+            const r = 80 - 60 * t;
+            ctx.globalAlpha = 0.3 + 0.6 * t;
+            ctx.strokeStyle = '#ff44aa';
+            ctx.lineWidth = 3 + 4 * t;
+            ctx.setLineDash([8, 6]);
+            ctx.beginPath();
+            ctx.arc(sw.cx, sw.cy, Math.max(8, r), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            return;
+        }
+        const lifeRatio = 1 - sw.radius / sw.maxRadius;
+        ctx.globalAlpha = 0.85 * lifeRatio;
+        ctx.strokeStyle = '#ff66cc';
+        ctx.shadowColor = '#ff66cc';
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = sw.thickness;
+        ctx.beginPath();
+        ctx.arc(sw.cx, sw.cy, sw.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 0.6 * lifeRatio;
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = sw.thickness * 0.35;
+        ctx.beginPath();
+        ctx.arc(sw.cx, sw.cy, sw.radius, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.restore();
+}
+
+function spawnHitParticles(x, y) {
+    for (let i = 0; i < 6; i++) {
+        particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 3,
+            vy: (Math.random() - 0.5) * 3,
+            life: 18,
+            color: '#ffcc44',
+            size: 2
+        });
+    }
+}
+function spawnExplosion(x, y) {
+    for (let i = 0; i < 60; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = 1 + Math.random() * 5;
+        particles.push({
+            x, y,
+            vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+            life: 50 + Math.random() * 30,
+            color: ['#ff4400', '#ffcc00', '#ff0066'][Math.floor(Math.random() * 3)],
+            size: 3
+        });
+    }
+}
+
+// 任意の位置・サイズ・レベルでボスのアートワークを描画（部下も同じ見た目で使う）
+function drawBossArtwork(x, y, w, h, level, slowed) {
+    ctx.save();
+    ctx.shadowColor = slowed ? '#88ccff' : (level > 2 ? '#ff00ff' : '#ff0000');
+    ctx.shadowBlur = 10 + (level - 1) * 5;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(x + w/6, y + h/4, 2*w/3, h/2);
+    ctx.fillStyle = '#666';
+    ctx.fillRect(x + w/8, y + h/6, 3*w/4, h/3);
+    ctx.fillStyle = level > 2 ? '#ff00ff' : '#cc0000';
+    ctx.fillRect(x + w/4, y, w/2, h/4);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x - w/4, y + h/3, w/4, h/3);
+    ctx.fillRect(x + w,   y + h/3, w/4, h/3);
+    ctx.fillStyle = '#ff4400';
+    ctx.fillRect(x + w/6, y + h/2, w/3, h/6);
+    ctx.fillStyle = level > 2 ? '#ff00ff' : '#ff0000';
+    ctx.fillRect(x + w/3, y + h/6, w/3, h/6);
+    ctx.fillStyle = '#888';
+    ctx.fillRect(x + w/6, y + h/4, w/3, h/8);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+}
+
+function draw() {
+    ctx.fillStyle = '#001122';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 60; i++) ctx.fillRect((i * 51) % W, (i * 89) % H, 1, 1);
+
+    // 安全ライン（ボスの停止 y=50 と、プレイヤー可動上限 y=H/3 を可視化）
+    ctx.strokeStyle = '#00ff8833';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(W, 50); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, H / 3); ctx.lineTo(W, H / 3); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // プレイヤー
+    ctx.save();
+    ctx.fillStyle = invincible ? '#ffcc44' : '#0f8';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(player.x + player.width / 2, player.y);
+    ctx.lineTo(player.x, player.y + player.height);
+    ctx.lineTo(player.x + player.width, player.y + player.height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 弾
+    ctx.fillStyle = '#ff8';
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+
+    // 雑魚と吸収範囲
+    drawAbsorbRange();
+    drawEnemies();
+    drawAbsorbBeam();
+
+    // ボス機雷
+    drawBossMines();
+
+    // 部下と狙撃 UI
+    drawBossMinions();
+    drawMinionAbsorbWarning();
+
+    // ボス（実ゲームと同じ描画）
+    if (boss) {
+        const x = boss.x, y = boss.y, w = boss.width, h = boss.height;
+        drawBossArtwork(x, y, w, h, boss.level, boss.slowedUntil && Date.now() < boss.slowedUntil);
+
+        // HP バー
+        const barW = w, barH = 8, barX = x, barY = y - 20;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barW, barH);
+        const hpRatio = boss.health / boss.maxHealth;
+        ctx.fillStyle = hpRatio > 0.5 ? '#0f0' : hpRatio > 0.2 ? '#ff0' : '#f00';
+        ctx.fillRect(barX, barY, barW * hpRatio, barH);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barW, barH);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`BOSS Lv.${boss.level} : ${boss.points}点`, x + w/2, y + h + 20);
+
+        // 次の射撃までの目安バー
+        const nextRatio = Math.min(1, (Date.now() - boss.lastShot) / boss.shotInterval);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(barX, barY - 8, barW, 4);
+        ctx.fillStyle = nextRatio > 0.85 ? '#ff4466' : '#00ccff';
+        ctx.fillRect(barX, barY - 8, barW * nextRatio, 4);
+    }
+
+    // ボス弾
+    bossBullets.forEach(b => {
+        if (b.isSniper) {
+            // 狙撃弾は強発光 + トレイル
+            ctx.save();
+            ctx.fillStyle = b.color;
+            ctx.shadowColor = b.color;
+            ctx.shadowBlur = 18;
+            ctx.fillRect(b.x, b.y, b.width, b.height);
+            // トレイル（弾の進行方向の逆に伸びる細いライン）
+            const len = Math.hypot(b.speedX, b.speedY) || 1;
+            const tx = b.x + b.width / 2 - b.speedX / len * 24;
+            const ty = b.y + b.height / 2 - b.speedY / len * 24;
+            ctx.strokeStyle = b.color;
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(b.x + b.width / 2, b.y + b.height / 2);
+            ctx.lineTo(tx, ty);
+            ctx.stroke();
+            ctx.restore();
+        } else {
+            ctx.fillStyle = b.color;
+            ctx.shadowColor = b.color;
+            ctx.shadowBlur = 6;
+            ctx.fillRect(b.x, b.y, b.width, b.height);
+            ctx.shadowBlur = 0;
+        }
+    });
+
+    // 衝撃波の警告範囲（Lv.5以上で表示）
+    if (boss && shockwaveOn && boss.level >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD) {
+        const bcx = boss.x + boss.width / 2;
+        const bcy = boss.y + boss.height / 2;
+        ctx.save();
+        ctx.strokeStyle = '#ff44aa55';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(bcx, bcy, BOSS_SHOCKWAVE_TRIGGER_DIST, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+
+    // 衝撃波本体
+    drawBossShockwaves();
+
+    // パーティクル
+    particles.forEach(p => {
+        ctx.globalAlpha = Math.min(1, p.life / 30);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+        ctx.globalAlpha = 1;
+    });
+}
+
+// =========================================================================
+// HUD
+// =========================================================================
+function updateStats() {
+    const el = document.getElementById('stats');
+    if (!boss) {
+        el.innerHTML = `
+            <div><span class="key">状態</span><span class="val">未スポーン</span></div>
+            <div><span class="key">被弾累計</span><span class="val">${livesLost}</span></div>
+        `;
+        return;
+    }
+    const elapsed = ((Date.now() - bossSpawnedAt) / 1000).toFixed(1);
+    const dps = (damageDealt / Math.max(0.1, (Date.now() - bossSpawnedAt) / 1000)).toFixed(1);
+    const slowed = boss.slowedUntil && Date.now() < boss.slowedUntil;
+    const swReady = boss.level >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD;
+    const swCdRemaining = swReady ? Math.max(0, BOSS_SHOCKWAVE_COOLDOWN_MS - (Date.now() - (boss.lastShockwaveAt || 0))) : 0;
+    const absReady = boss.level >= BOSS_ABSORB_LEVEL_THRESHOLD;
+    const absCdRemaining = absReady ? Math.max(0, BOSS_ABSORB_COOLDOWN_MS - (Date.now() - (boss.lastAbsorbAt || 0))) : 0;
+    const mineReady = boss.level >= BOSS_MINE_LEVEL_THRESHOLD;
+    const mineCdRemaining = mineReady ? Math.max(0, BOSS_MINE_DROP_COOLDOWN_MS - (Date.now() - (boss.lastMineDropAt || 0))) : 0;
+    el.innerHTML = `
+        <div><span class="key">レベル</span><span class="val">Lv.${boss.level}</span></div>
+        <div><span class="key">HP</span><span class="val">${boss.health.toFixed(1)} / ${boss.maxHealth}</span></div>
+        <div><span class="key">サイズ</span><span class="val">${boss.width} × ${boss.height}</span></div>
+        <div><span class="key">移動速度</span><span class="val">${boss.moveSpeed.toFixed(1)} px/f</span></div>
+        <div><span class="key">射撃間隔</span><span class="val">${boss.shotInterval} ms</span></div>
+        <div><span class="key">射撃数</span><span class="val">${bulletCountFor(boss.level)} 発/回</span></div>
+        <div><span class="key">点数</span><span class="val">${boss.points}</span></div>
+        <div><span class="key">スロー</span><span class="val">${slowed ? 'YES' : 'no'}</span></div>
+        <div><span class="key">衝撃波</span><span class="val">${swReady ? `OK (CD: ${(swCdRemaining/1000).toFixed(1)}s)` : '使用不可 (Lv5+)'}</span></div>
+        <div><span class="key">衝撃波発射数</span><span class="val">${shockwavesFired}</span></div>
+        <div><span class="key">吸収</span><span class="val">${absReady ? `OK (CD: ${(absCdRemaining/1000).toFixed(1)}s)` : '使用不可 (Lv7+)'}</span></div>
+        <div><span class="key">吸収数</span><span class="val">${enemiesAbsorbed} 体 / +${totalHealed} HP</span></div>
+        <div><span class="key">機雷</span><span class="val">${mineReady ? `OK (CD: ${(mineCdRemaining/1000).toFixed(1)}s)` : '使用不可 (Lv8+)'}</span></div>
+        <div><span class="key">機雷状況</span><span class="val">設置 ${minesDropped} / 撃破 ${minesShot} / 爆発 ${minesExploded}</span></div>
+        <div><span class="key">画面上の機雷</span><span class="val">${bossMines.length}</span></div>
+        <div><span class="key">狙撃モード</span><span class="val">${boss.level >= BOSS_SNIPER_LEVEL_THRESHOLD ? `${boss.level >= BOSS_SNIPER_DOUBLE_LEVEL ? '2発(扇形)' : '1発'} / ${boss.sniperLocked ? 'ロックオン中' : '通常'}` : '使用不可 (Lv9+)'}</span></div>
+        <div><span class="key">部下</span><span class="val">${boss.level >= BOSS_MINION_LEVEL_THRESHOLD ? `生存 ${bossMinions.length}/${minionsSpawned} / 撃破 ${minionsKilled} / 吸収 ${minionsAbsorbed}` : '使用不可 (Lv9+)'}</span></div>
+        <div><span class="key">部下吸収まで</span><span class="val">${boss.level >= BOSS_MINION_LEVEL_THRESHOLD && boss.minionAbsorbStartAt !== null ? `${Math.max(0, (boss.minionAbsorbStartAt - Date.now())/1000).toFixed(1)}s` : '—'}</span></div>
+        <div><span class="key">画面上の雑魚</span><span class="val">${enemies.length}</span></div>
+        <div><span class="key">経過時間</span><span class="val">${elapsed}s</span></div>
+        <div><span class="key">与ダメ累計</span><span class="val">${damageDealt.toFixed(1)}</span></div>
+        <div><span class="key">DPS</span><span class="val">${dps}</span></div>
+        <div><span class="key">被弾累計</span><span class="val">${livesLost}</span></div>
+        <div><span class="key">画面上の弾</span><span class="val">${bossBullets.length}</span></div>
+    `;
+}
+
+const logEl = document.getElementById('log');
+function log(level, msg) {
+    const div = document.createElement('div');
+    div.className = 'entry ' + level;
+    const t = new Date().toLocaleTimeString();
+    div.textContent = `[${t}] ${msg}`;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    while (logEl.children.length > 50) logEl.removeChild(logEl.firstChild);
+}
+
+function resetAll() {
+    boss = null;
+    bossBullets = [];
+    bossShockwaves = [];
+    bossMines = [];
+    bossMinions = [];
+    shockwaveFlashUntil = 0;
+    bullets = [];
+    enemies = [];
+    particles = [];
+    livesLost = 0;
+    damageDealt = 0;
+    shockwavesFired = 0;
+    enemiesAbsorbed = 0;
+    totalHealed = 0;
+    minesDropped = 0;
+    minesShot = 0;
+    minesExploded = 0;
+    minionsSpawned = 0;
+    minionsKilled = 0;
+    minionsAbsorbed = 0;
+    log('info', 'リセット');
+}
+
+// =========================================================================
+// Main loop
+// =========================================================================
+function loop() {
+    update();
+    draw();
+    updateStats();
+    requestAnimationFrame(loop);
+}
+
+log('info', 'Boss Test Bench 起動。Lv.1〜10 ボタンでボスを出して挙動を見てください。');
+spawnBossLevel(1);
+loop();
+</script>
+</body>
+</html>
