@@ -864,11 +864,12 @@
             },
             mine: {
                 // 設置型: 撃った地点で停止し、ライフタイマー切れで自爆 / 敵接触で起爆。
+                // explodeOnImpact がそのまま起爆時の AoE 範囲とダメージになる。
                 id: 'mine', name: '機雷',
                 ammoCost: 1, maxAmmo: 8, bulletCount: 1, spread: 0, speed: 0,
-                damage: 8, range: 9999, pierce: 0, width: 14, height: 14, color: '#cccc33',
+                damage: 8, range: 9999, pierce: 0, width: 16, height: 16, color: '#ffcc33',
                 lifeFrames: 360,                                    // 約6秒で自然消滅
-                explodeOnImpact: { radius: 70, damage: 6 },
+                explodeOnImpact: { radius: 110, damage: 8 },        // 周囲を巻き込む十分な範囲
                 runTrigger: {
                     type: 'all',
                     requirements: [
@@ -1201,8 +1202,17 @@
             if (boss) pullStep(boss);
         }
 
+        // 範囲爆発の視覚エフェクト（広がる輪 + フラッシュ）
+        let explosionEffects = [];
+        function spawnExplosionEffect(x, y, radius) {
+            explosionEffects.push({ x, y, radius, life: 24, maxLife: 24 });
+        }
+
         // 範囲爆発: 中心(x,y)から radius 内の敵 / ボス に damage を与える（ランチャー / 機雷）。
+        // 視覚エフェクトと効果音もここで一括発火する。
         function applyExplosion(x, y, radius, damage) {
+            spawnExplosionEffect(x, y, radius);
+            playSound(explosionSound);
             const radiusSq = radius * radius;
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
@@ -1230,6 +1240,34 @@
                 }
             }
             recomputeUnlockedSlots();
+        }
+
+        function updateExplosionEffects() {
+            explosionEffects = explosionEffects.filter(e => { e.life--; return e.life > 0; });
+        }
+
+        function drawExplosionEffects() {
+            if (explosionEffects.length === 0) return;
+            ctx.save();
+            explosionEffects.forEach(e => {
+                const t = 1 - (e.life / e.maxLife);          // 0 → 1 で広がる
+                const r = e.radius * (0.3 + t * 0.9);
+                const alpha = 1 - t;
+                // 外輪
+                ctx.globalAlpha = alpha * 0.9;
+                ctx.strokeStyle = '#ffaa33';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+                ctx.stroke();
+                // 内側のフラッシュ
+                ctx.globalAlpha = alpha * 0.35;
+                ctx.fillStyle = '#ffdd66';
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, r * 0.55, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
         }
 
         // 命中時の状態異常付与（時空弾）。enemy / boss どちらでも slowedUntil を持たせる。
@@ -1769,7 +1807,36 @@
 
         // 弾丸描画
         function drawBullets() {
+            const now = Date.now();
             bullets.forEach(bullet => {
+                // 機雷（lifeFrames あり + 速度ゼロ）は点滅 + 残り時間で色を変えて警告
+                const isMine = (bullet.lifeFrames !== null && bullet.lifeFrames !== undefined
+                                && bullet.speedX === 0 && bullet.speedY === 0);
+                if (isMine) {
+                    const t = bullet.lifeFrames / 360;
+                    // 残量に応じて黄→橙→赤に
+                    const danger = (t < 0.3) ? '#ff3322' : (t < 0.6 ? '#ff9933' : '#ffcc33');
+                    // 残り少ないほど高速点滅
+                    const blinkRate = (t < 0.3) ? 80 : (t < 0.6 ? 160 : 320);
+                    const visible = (Math.floor(now / blinkRate) % 2) === 0;
+                    if (visible) {
+                        ctx.fillStyle = danger;
+                        ctx.shadowColor = danger;
+                        ctx.shadowBlur = 14;
+                        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                        // 中央のドット
+                        ctx.shadowBlur = 0;
+                        ctx.fillStyle = '#220000';
+                        ctx.fillRect(bullet.x + bullet.width / 2 - 2, bullet.y + bullet.height / 2 - 2, 4, 4);
+                    } else {
+                        // 点滅で消える瞬間も外枠は薄く残す
+                        ctx.strokeStyle = danger;
+                        ctx.globalAlpha = 0.3;
+                        ctx.strokeRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                        ctx.globalAlpha = 1;
+                    }
+                    return;
+                }
                 ctx.fillStyle = bullet.color;
                 ctx.shadowColor = bullet.color;
                 ctx.shadowBlur = bullet.pierceRemaining > 0 ? 14 : 5;
@@ -1952,6 +2019,7 @@
 
             // 随伴機の自動射撃
             updateDrones();
+            updateExplosionEffects();
 
             // 弾丸更新（追尾・引力・シールド遮断もここで処理）
             bullets = bullets.filter(bullet => {
@@ -2266,6 +2334,7 @@
             drawBossBullets();
             drawEnemies();
             drawBoss();
+            drawExplosionEffects();
             
             // 宝箱の描画
             if (treasureBox) {
@@ -2463,6 +2532,7 @@
             bossSpawned = false;
             bossBullets = [];
             droneCompanions = [];
+            explosionEffects = [];
             treasureBox = null; // リスタート時に宝箱もリセット
             supplyUnits = []; // 支援物資をリセット
             healthItems = []; // ライフ回復アイテムをリセット
