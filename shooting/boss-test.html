@@ -143,7 +143,7 @@
         <button onclick="boss && dropBossMine()">今、機雷を投下</button>
     </div>
 
-    <h2>2.5 イベントモード（画像差し替え）</h2>
+    <h2>2.5 イベントモード（画像差し替え + プロファイル）</h2>
     <div class="row">
         <button id="eventModeBtn" onclick="toggleEventMode()">イベントモード: OFF</button>
         <label>使用画像:</label>
@@ -153,6 +153,11 @@
             <option value="1">ボス2（シャドウ・オーバーロード）</option>
         </select>
         <span class="help" id="eventImgStatus" style="margin-left:6px;"></span>
+    </div>
+    <div class="row">
+        <button id="eventProfileBtn" onclick="toggleEventProfile()">本番プロファイル(HP×倍率/最低Lv/特殊弾): OFF</button>
+        <button onclick="boss && bossFireHoming()">今、ホーミング発射</button>
+        <button onclick="boss && bossFireGravity()">今、重力オーブ発射</button>
     </div>
 
     <h2>3. 雑魚スポーン（吸収検証用）</h2>
@@ -203,14 +208,32 @@ const ctx = canvas.getContext('2d');
 const W = canvas.width;
 const H = canvas.height;
 
-// ── イベントモード（画像差し替え）
+// ── イベントモード（画像差し替え + プロファイル）
 // 本番の shooting_game.html?mode=event と同じアセット・配置を使い、
 // drawBossArtwork() で procedural 描画の代わりに drawImage を行う。
-const EVENT_BOSS_IMAGES = [
-    { name: 'シャドウ・クルーザー',   src: 'assets/event/event-boss-1.png' },
-    { name: 'シャドウ・オーバーロード', src: 'assets/event/event-boss-2.png' }
+// プロファイル（hpMultiplier / featureLevel / extraGimmicks）も本番と同期。
+const EVENT_BOSS_PROFILES = [
+    {
+        id: 'cruiser',
+        name: 'シャドウ・クルーザー',
+        src: 'assets/event/event-boss-1.png',
+        hpMultiplier: 4,
+        featureLevel: 8,
+        extraGimmicks: ['homing']
+    },
+    {
+        id: 'overlord',
+        name: 'シャドウ・オーバーロード',
+        src: 'assets/event/event-boss-2.png',
+        hpMultiplier: 5,
+        featureLevel: 10,
+        extraGimmicks: ['homing', 'gravity']
+    }
 ];
+// 後方互換: 既存コードが参照する EVENT_BOSS_IMAGES エイリアス
+const EVENT_BOSS_IMAGES = EVENT_BOSS_PROFILES;
 let eventMode = false;
+let eventProfileMode = false; // ON にすると HP 倍率・最低 Lv・特殊弾を適用
 let eventBossOverride = null; // null=自動交互、0/1=固定インデックス
 let eventBossSpawnCount = 0;
 const eventImgs = EVENT_BOSS_IMAGES.map((meta, i) => {
@@ -420,8 +443,86 @@ function setEventBossIndex(v) {
     }
     if (boss && eventMode) {
         boss.eventBossIndex = pickEventBossIndex();
+        // プロファイル適用中なら新インデックスのプロファイルを再適用
+        if (eventProfileMode) applyEventProfileToBoss();
     }
-    log('info', `イベントボス選択: ${v === 'auto' ? '自動（交互）' : `固定 #${v}（${EVENT_BOSS_IMAGES[parseInt(v)|0].name}）`}`);
+    log('info', `イベントボス選択: ${v === 'auto' ? '自動（交互）' : `固定 #${v}（${EVENT_BOSS_PROFILES[parseInt(v)|0].name}）`}`);
+}
+
+// 本番プロファイル（HP×倍率 + 最低レベル + 特殊弾）をトグル
+function toggleEventProfile() {
+    eventProfileMode = !eventProfileMode;
+    const btn = document.getElementById('eventProfileBtn');
+    if (btn) {
+        btn.textContent = `本番プロファイル(HP×倍率/最低Lv/特殊弾): ${eventProfileMode ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('active', eventProfileMode);
+    }
+    if (boss && eventMode && eventProfileMode) {
+        applyEventProfileToBoss();
+    }
+    log('info', `本番プロファイル: ${eventProfileMode ? 'ON' : 'OFF'}`);
+}
+
+// 現在のボスにプロファイルを適用（HP・レベル・extraGimmicks）
+function applyEventProfileToBoss() {
+    if (!boss || boss.eventBossIndex < 0) return;
+    const profile = EVENT_BOSS_PROFILES[boss.eventBossIndex];
+    if (!profile) return;
+    // featureLevel まで底上げ
+    if (profile.featureLevel && boss.level < profile.featureLevel) {
+        const hpRatio = boss.health / boss.maxHealth;
+        const newLevel = profile.featureLevel;
+        boss.level = newLevel;
+        boss.width = 100 + (newLevel - 1) * 10;
+        boss.height = 80 + (newLevel - 1) * 8;
+        const baseMax = (20 + (newLevel - 1) * 10) * (profile.hpMultiplier || 1);
+        boss.maxHealth = baseMax;
+        boss.health = Math.max(1, baseMax * hpRatio);
+        boss.moveSpeed = 2 + (newLevel - 1) * 0.5;
+        boss.shotInterval = Math.max(500, 2000 - (newLevel - 1) * 200);
+        if (newLevel >= BOSS_SNIPER_LEVEL_THRESHOLD) boss.shotInterval = Math.max(boss.shotInterval, BOSS_SNIPER_MIN_INTERVAL_MS);
+        boss.points = 50 + (newLevel - 1) * 25;
+    } else if (profile.hpMultiplier) {
+        const hpRatio = boss.health / boss.maxHealth;
+        boss.maxHealth = (20 + (boss.level - 1) * 10) * profile.hpMultiplier;
+        boss.health = Math.max(1, boss.maxHealth * hpRatio);
+    }
+    boss.extraGimmicks = [...(profile.extraGimmicks || [])];
+    log('info', `プロファイル適用: ${profile.name} (HP=${boss.health.toFixed(0)}/${boss.maxHealth}, Lv.${boss.level}, extra=${boss.extraGimmicks.join(',') || '—'})`);
+}
+
+// ボスの特殊弾発射（テスト用）
+function bossFireHoming() {
+    if (!boss) return;
+    const sx = boss.x + boss.width / 2;
+    const sy = boss.y + boss.height;
+    const dx = (player.x + player.width / 2) - sx;
+    const dy = (player.y + player.height / 2) - sy;
+    const dist = Math.hypot(dx, dy) || 1;
+    const SPEED = 3.4;
+    bossBullets.push({
+        x: sx - 6, y: sy, width: 12, height: 12,
+        speedX: (dx/dist)*SPEED, speedY: (dy/dist)*SPEED,
+        maxSpeed: SPEED, color: '#ff66aa',
+        homing: true, homingForce: 0.07, lifeFrames: 280
+    });
+    log('info', 'ホーミング発射');
+}
+function bossFireGravity() {
+    if (!boss) return;
+    const sx = boss.x + boss.width / 2;
+    const sy = boss.y + boss.height;
+    const dx = (player.x + player.width / 2) - sx;
+    const dy = (player.y + player.height / 2) - sy;
+    const dist = Math.hypot(dx, dy) || 1;
+    const SPEED = 1.4;
+    bossBullets.push({
+        x: sx - 12, y: sy, width: 24, height: 24,
+        speedX: (dx/dist)*SPEED, speedY: (dy/dist)*SPEED,
+        color: '#aa66ff', isGravity: true,
+        pullRadius: 180, pullForce: 1.6, lifeFrames: 360
+    });
+    log('info', '重力オーブ発射');
 }
 
 function applyLevelToCurrentBoss() {
@@ -469,9 +570,14 @@ function spawnBossLevel(level) {
         sniperTargetX: 0,
         sniperTargetY: 0,
         minionAbsorbStartAt: null,
-        eventBossIndex: eventMode ? pickEventBossIndex() : -1
+        eventBossIndex: eventMode ? pickEventBossIndex() : -1,
+        extraGimmicks: []
     };
     if (eventMode) eventBossSpawnCount++;
+    if (eventMode && eventProfileMode) {
+        // スポーン直後にプロファイル適用
+        setTimeout(applyEventProfileToBoss, 0);
+    }
     bossBullets = [];
     bossShockwaves = [];
     bossMines = [];
@@ -672,6 +778,14 @@ function drawMinionAbsorbWarning() {
 
 function bossShoot() {
     if (!boss) return;
+
+    // プロファイル ON 時は 25% で extra ギミック弾
+    if (eventProfileMode && Array.isArray(boss.extraGimmicks) && boss.extraGimmicks.length > 0 && Math.random() < 0.25) {
+        const pick = boss.extraGimmicks[Math.floor(Math.random() * boss.extraGimmicks.length)];
+        if (pick === 'homing') return bossFireHoming();
+        if (pick === 'gravity') return bossFireGravity();
+    }
+
     const level = boss.level;
     const count = bulletCountFor(level);
     for (let i = 0; i < count; i++) {
@@ -937,7 +1051,43 @@ function update() {
 
     // ボス弾
     bossBullets = bossBullets.filter(b => {
+        // ホーミング: プレイヤーへ steer
+        if (b.homing && b.homingForce > 0) {
+            const refSpeed = b.maxSpeed || Math.hypot(b.speedX, b.speedY) || 1;
+            const tx = player.x + player.width / 2;
+            const ty = player.y + player.height / 2;
+            const dx = tx - b.x;
+            const dy = ty - b.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const dxN = (dx/d) * refSpeed;
+            const dyN = (dy/d) * refSpeed;
+            const newX = b.speedX * (1 - b.homingForce) + dxN * b.homingForce;
+            const newY = b.speedY * (1 - b.homingForce) + dyN * b.homingForce;
+            const mag = Math.hypot(newX, newY) || 1;
+            b.speedX = (newX / mag) * refSpeed;
+            b.speedY = (newY / mag) * refSpeed;
+        }
+        // 重力オーブ: プレイヤーを引き寄せる
+        if (b.isGravity && b.pullRadius > 0 && b.pullForce > 0) {
+            const cx = b.x + b.width / 2;
+            const cy = b.y + b.height / 2;
+            const pcx = player.x + player.width / 2;
+            const pcy = player.y + player.height / 2;
+            const dx = cx - pcx;
+            const dy = cy - pcy;
+            const d = Math.hypot(dx, dy);
+            if (d > 1 && d < b.pullRadius) {
+                player.x += (dx/d) * b.pullForce;
+                player.y += (dy/d) * b.pullForce;
+                player.x = Math.max(0, Math.min(W - player.width, player.x));
+                player.y = Math.max(50, Math.min(H - player.height, player.y));
+            }
+        }
         b.x += b.speedX; b.y += b.speedY;
+        if (b.lifeFrames !== undefined) {
+            b.lifeFrames -= 1;
+            if (b.lifeFrames <= 0) return false;
+        }
         if (!invincible && checkCollision(b, player)) {
             if (b.isSniper) {
                 livesLost += 999;
@@ -1506,13 +1656,11 @@ function draw() {
     // ボス弾
     bossBullets.forEach(b => {
         if (b.isSniper) {
-            // 狙撃弾は強発光 + トレイル
             ctx.save();
             ctx.fillStyle = b.color;
             ctx.shadowColor = b.color;
             ctx.shadowBlur = 18;
             ctx.fillRect(b.x, b.y, b.width, b.height);
-            // トレイル（弾の進行方向の逆に伸びる細いライン）
             const len = Math.hypot(b.speedX, b.speedY) || 1;
             const tx = b.x + b.width / 2 - b.speedX / len * 24;
             const ty = b.y + b.height / 2 - b.speedY / len * 24;
@@ -1523,6 +1671,50 @@ function draw() {
             ctx.moveTo(b.x + b.width / 2, b.y + b.height / 2);
             ctx.lineTo(tx, ty);
             ctx.stroke();
+            ctx.restore();
+        } else if (b.homing) {
+            const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+            const len = Math.hypot(b.speedX, b.speedY) || 1;
+            ctx.save();
+            ctx.shadowColor = b.color;
+            ctx.shadowBlur = 14;
+            ctx.fillStyle = b.color;
+            ctx.beginPath();
+            ctx.arc(cx, cy, b.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = b.color;
+            ctx.lineWidth = 2.5;
+            ctx.globalAlpha = 0.55;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx - b.speedX / len * 18, cy - b.speedY / len * 18);
+            ctx.stroke();
+            ctx.restore();
+        } else if (b.isGravity) {
+            const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+            const pulse = 0.55 + 0.45 * Math.sin(Date.now() * 0.012);
+            ctx.save();
+            ctx.strokeStyle = b.color;
+            ctx.globalAlpha = 0.18;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 6]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, b.pullRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = pulse;
+            ctx.shadowColor = b.color;
+            ctx.shadowBlur = 22;
+            ctx.fillStyle = b.color;
+            ctx.beginPath();
+            ctx.arc(cx, cy, b.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.85;
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(cx - 3, cy - 3, 2.5, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
         } else {
             ctx.fillStyle = b.color;
