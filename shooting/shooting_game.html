@@ -2849,8 +2849,9 @@
             // スコアが100の時と500の倍数のボス以外はライフ回復アイテムも生成
             if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみライフ回復アイテムを生成しない
             
-            // 低確率でライフ回復アイテムを生成（弾薬補給より低い確率、難易度に応じて確率調整）
-            const spawnRate = 0.0001 * speedMultiplier; // 難易度に応じて生成確率を調整
+            // 低確率でライフ回復アイテムを生成（弾薬補給より低い確率、難易度に応じて確率調整）。
+            //   1 ランあたり期待 2 個前後になるよう調整（補給の 1/10 程度）。
+            const spawnRate = 0.0003 * speedMultiplier;
             if (Math.random() < spawnRate) {
                 healthItems.push({
                     x: Math.random() * (canvas.width - 30),
