@@ -1500,6 +1500,9 @@
 
         function isWeaponUsable(weapon) {
             if (!weapon) return false;
+            // イベントモードはランごとの覚醒条件 (runTrigger) を無効化。
+            // 装備しているスロットなら即座に使えるようにして、ボス戦特化のステージ性を出す。
+            if (isEventMode) return true;
             return evaluateRunTrigger(weapon.runTrigger);
         }
 
