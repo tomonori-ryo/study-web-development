@@ -345,6 +345,7 @@
                             <option value="score">ハイスコア閾値</option>
                             <option value="totalScore">累計スコア閾値</option>
                             <option value="totalGames">累計プレイ回数</option>
+                            <option value="ranking">ランキング N 位以内</option>
                         </optgroup>
                         <optgroup label="ボス / 武器">
                             <option value="bossLevel">倒したボスの最高Lv</option>
@@ -733,6 +734,10 @@
                 conditionValueLabel.textContent = '累計プレイ回数（数値）';
                 input.placeholder = '例: 10';
                 input.type = 'number'; input.min = '0';
+            } else if (t === 'ranking') {
+                conditionValueLabel.textContent = 'ランキング順位（1〜100。値が小さいほど高難度）';
+                input.placeholder = '例: 10';
+                input.type = 'number'; input.min = '1';
             } else if (t === 'bossLevel') {
                 conditionValueLabel.textContent = '倒したボスの最高Lv（1〜10）';
                 input.placeholder = '例: 7';
@@ -850,7 +855,7 @@
             const type = conditionTypeSelect.value;
             const rawValue = String(fd.get('conditionValue') || '');
             // タイプ別の値の扱い
-            const numericTypes  = ['score', 'totalScore', 'totalGames', 'bossLevel', 'eventClear', 'multiTitle'];
+            const numericTypes  = ['score', 'totalScore', 'totalGames', 'bossLevel', 'eventClear', 'multiTitle', 'ranking'];
             const noValueTypes  = ['allWeapons', 'noDamageRun'];
             let value;
             if (noValueTypes.includes(type))      value = true;
@@ -892,6 +897,7 @@
                     if      (c.type === 'score')          condText = `ハイスコア ${c.value} 以上`;
                     else if (c.type === 'totalScore')     condText = `累計スコア ${c.value} 以上`;
                     else if (c.type === 'totalGames')     condText = `累計プレイ ${c.value} 回以上`;
+                    else if (c.type === 'ranking')        condText = `ランキング ${c.value} 位以内`;
                     else if (c.type === 'bossLevel')      condText = `Lv${c.value} 以上のボス撃破`;
                     else if (c.type === 'weaponUnlocked') condText = `武器 ${c.value} 解放`;
                     else if (c.type === 'allWeapons')     condText = `全武器解放`;

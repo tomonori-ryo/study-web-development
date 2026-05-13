@@ -165,7 +165,8 @@ class FirebaseDataManager {
       
       if (userDoc.exists) {
         const userData = userDoc.data();
-        const newHighScore = Math.max(userData.highScore || 0, score);
+        const oldHighScore = userData.highScore || 0;
+        const newHighScore = Math.max(oldHighScore, score);
         const newTotalGames = (userData.totalGames || 0) + 1;
         const newTotalScore = (userData.totalScore || 0) + score;
         const currentTitles = Array.isArray(userData.titles) ? [...userData.titles] : [];
@@ -183,6 +184,21 @@ class FirebaseDataManager {
         }
         if (progress.allWeaponsUnlocked) {
           unlockedTitleSet.add(FIXED_TITLES.weaponMaster);
+        }
+
+        // ランキング判定: ハイスコアが伸びた時だけ再計算（読み取りコスト抑制）。
+        //   トップ 100 名をスキャンして自分の位置を求め、過去最良 (=小さい) 順位を保存。
+        //   100 位より外にいる場合は更新しない。
+        if (newHighScore > oldHighScore) {
+          try {
+            const newRank = await this.computeRank(user.uid, newHighScore);
+            if (newRank) {
+              const prev = Number(progress.bestRank);
+              progress.bestRank = (prev && prev > 0) ? Math.min(prev, newRank) : newRank;
+            }
+          } catch (e) {
+            console.warn('rank compute failed:', e);
+          }
         }
 
         const nextTitles = Array.from(unlockedTitleSet);
@@ -236,6 +252,15 @@ class FirebaseDataManager {
         const existing = Number(currentProgress[k]) || 0;
         if (!isNaN(incoming)) nextProgress[k] = Math.max(existing, incoming);
       });
+      // 単調減少するフィールド: 値が小さいほど良い指標（順位など）
+      const MIN_MONOTONIC_FIELDS = ['bestRank'];
+      MIN_MONOTONIC_FIELDS.forEach(k => {
+        const incoming = Number(progressPatch[k]);
+        const existing = Number(currentProgress[k]);
+        if (!isNaN(incoming) && incoming > 0) {
+          nextProgress[k] = (existing && existing > 0) ? Math.min(existing, incoming) : incoming;
+        }
+      });
 
       // 個別の武器解放フラグが揃ったら allWeaponsUnlocked を立てる
       if (nextProgress.rapidUnlocked && nextProgress.shotgunUnlocked && nextProgress.laserUnlocked) {
@@ -283,6 +308,30 @@ class FirebaseDataManager {
       return null;
     } catch (error) {
       throw error;
+    }
+  }
+
+  // 指定ユーザーの現在のランキング順位を返す。トップ scanLimit 名の中に
+  // 自分が見つかれば 1 始まりの順位を、見つからなければ null を返す。
+  // ランキング称号は基本的に「トップ N 位以内」を判定するので 100 件で十分。
+  async computeRank(uid, highScore, scanLimit = 100) {
+    try {
+      const snapshot = await this.db.collection('users')
+        .orderBy('highScore', 'desc')
+        .limit(scanLimit)
+        .get();
+      let position = 0;
+      let found = null;
+      snapshot.forEach(doc => {
+        position += 1;
+        if (doc.id === uid) found = position;
+      });
+      // スコアが 0 の人にランキング称号を付けたくないので保険
+      if (highScore <= 0) return null;
+      return found;
+    } catch (e) {
+      console.warn('computeRank error:', e);
+      return null;
     }
   }
 
@@ -620,6 +669,7 @@ class FirebaseDataManager {
   //     'eventClear'     : progress 中の eventBossSkin* フラグが value 個以上
   //     'noDamageRun'    : progress.noDamageRunDone === true（value 不要）
   //     'multiTitle'     : 現在所持している称号数 >= value（自分自身は除外）
+  //     'ranking'        : progress.bestRank <= value（順位は小さいほど良い、未取得時は不成立）
   async evaluateDynamicTitles(userRef, userData) {
     try {
       const titles = await this.listTitles();
@@ -631,6 +681,7 @@ class FirebaseDataManager {
       const totalGames = userData.totalGames || 0;
       const totalScore = userData.totalScore || 0;
       const maxBossLv  = Number(progress.maxBossLevelDefeated) || 0;
+      const bestRank   = Number(progress.bestRank) || 0; // 0 = まだ計測されていない
       const eventSkinCount = Object.keys(progress).filter(k => k.startsWith('eventBossSkin') && !!progress[k]).length;
 
       // multiTitle 評価のために 2 パス: まず通常の称号を解禁、次に multiTitle を判定。
@@ -655,6 +706,7 @@ class FirebaseDataManager {
           case 'allWeapons':     ok = !!progress.allWeaponsUnlocked; break;
           case 'eventClear':     ok = eventSkinCount >= (Number(cond.value) || 0); break;
           case 'noDamageRun':    ok = !!progress.noDamageRunDone; break;
+          case 'ranking':        ok = bestRank > 0 && bestRank <= (Number(cond.value) || 0); break;
           default: ok = false;
         }
         if (ok) set.add(t.label);
