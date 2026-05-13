@@ -3298,41 +3298,39 @@
                 ctx.fillText('ライフ', x + w/2, y + h + 15);
             });
 
-            // 時間ボーナスメッセージの描画
+            // 通知メッセージのスタック描画
+            // 複数の通知が同時にアクティブな場合、画面中央上部から順に縦に積んで
+            // 重ならないように表示する。優先度（描画順）は以下:
+            //   1. 武器解禁 / ボス撃破（水色・24px） — 最も重要
+            //   2. 時間ボーナス（緑・24px）
+            //   3. 武器変更 / エラー（黄色・20px） — 低優先・短時間
+            const notifications = [];
+            if (weaponMessageTimer > 0) {
+                notifications.push({ text: weaponMessage, color: '#00ffff', size: 24 });
+            }
             if (timeBonusTimer > 0) {
-                ctx.fillStyle = '#00ff00';
-                ctx.font = '24px Arial';
-                ctx.textAlign = 'center';
-                ctx.shadowColor = '#000000';
-                ctx.shadowBlur = 4;
-                ctx.fillText(timeBonusMessage, canvas.width / 2, canvas.height / 2 - 50);
-                ctx.shadowBlur = 0;
-                timeBonusTimer--;
+                notifications.push({ text: timeBonusMessage, color: '#00ff00', size: 24 });
+            }
+            if (weaponChangeTimer > 0) {
+                notifications.push({ text: weaponChangeMessage, color: '#ffff00', size: 20 });
             }
 
-            // 武器解禁メッセージの描画
-            if (weaponMessageTimer > 0) {
-                ctx.fillStyle = '#00ffff'; // 水色
-                ctx.font = '24px Arial';
+            const NOTIF_BASE_Y = canvas.height / 2 - 60;
+            const NOTIF_LINE_HEIGHT = 36;
+            notifications.forEach((n, idx) => {
+                ctx.fillStyle = n.color;
+                ctx.font = `${n.size}px Arial`;
                 ctx.textAlign = 'center';
                 ctx.shadowColor = '#000000';
                 ctx.shadowBlur = 4;
-                ctx.fillText(weaponMessage, canvas.width / 2, canvas.height / 2 - 50);
+                ctx.fillText(n.text, canvas.width / 2, NOTIF_BASE_Y + idx * NOTIF_LINE_HEIGHT);
                 ctx.shadowBlur = 0;
-                weaponMessageTimer--;
-            }
-            
-            // 武器変更メッセージの描画
-            if (weaponChangeTimer > 0) {
-                ctx.fillStyle = '#ffff00'; // 黄色
-                ctx.font = '20px Arial';
-                ctx.textAlign = 'center';
-                ctx.shadowColor = '#000000';
-                ctx.shadowBlur = 4;
-                ctx.fillText(weaponChangeMessage, canvas.width / 2, canvas.height / 2 + 50);
-                ctx.shadowBlur = 0;
-                weaponChangeTimer--;
-            }
+            });
+
+            // タイマー減算は描画位置に関わらず常時行う
+            if (timeBonusTimer > 0) timeBonusTimer--;
+            if (weaponMessageTimer > 0) weaponMessageTimer--;
+            if (weaponChangeTimer > 0) weaponChangeTimer--;
         }
 
         // ゲームオーバー
