@@ -914,6 +914,7 @@
         let bladeSound = null;        // ブレード専用 SE
         let eventBossSound = null;    // イベントボス出現 SE
         let pickupSound = null;       // 弾薬取得 SE（補給物資 / 宝箱）
+        let healSound = null;         // ライフ回復 SE
 
         // サウンド初期化
         function initSounds() {
@@ -935,7 +936,7 @@
 
             // ブレード専用 SE。ファイルが無ければ play() が静かに失敗するだけなので
             // 既存の SE には影響しない。
-            bladeSound = new Audio('brade.mp3');
+            bladeSound = new Audio('drade.mp3');
             bladeSound.volume = 0.4;
 
             // イベントボス出現 SE
@@ -945,6 +946,10 @@
             // 弾薬取得 SE（補給物資 / 宝箱）
             pickupSound = new Audio('薬莢2.mp3');
             pickupSound.volume = 0.5;
+
+            // ライフ回復 SE
+            healSound = new Audio('回復魔法1.mp3');
+            healSound.volume = 0.5;
         }
 
         // サウンド再生関数
@@ -3823,7 +3828,7 @@
                         lives++;
                         livesElement.textContent = `ライフ: ${lives}`;
                     }
-                    playSound(explosionSound); // ライフ回復取得音
+                    playSound(healSound); // ライフ回復取得音（回復魔法SE）
                     return false; // 画面外に出たら消去
                 }
                 return true;
