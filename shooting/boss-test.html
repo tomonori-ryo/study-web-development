@@ -145,6 +145,9 @@
 
     <h2>2.5 イベントモード（画像差し替え + プロファイル）</h2>
     <div class="row">
+        <span class="help" id="adminEventStatus" style="margin-left:6px; color:#88ddff;"></span>
+    </div>
+    <div class="row">
         <button id="eventModeBtn" onclick="toggleEventMode()">イベントモード: OFF</button>
         <label>使用画像:</label>
         <select id="eventBossSelect" onchange="setEventBossIndex(this.value)">
@@ -188,6 +191,12 @@
     </div>
 </div>
 
+<!-- Firebase SDK（?adminEventId= で admin 作成イベントを取り込むため） -->
+<script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+
 <script>
 // =========================================================================
 // Boss Test Bench
@@ -212,7 +221,8 @@ const H = canvas.height;
 // 本番の shooting_game.html?mode=event と同じアセット・配置を使い、
 // drawBossArtwork() で procedural 描画の代わりに drawImage を行う。
 // プロファイル（hpMultiplier / featureLevel / extraGimmicks）も本番と同期。
-const EVENT_BOSS_PROFILES = [
+// 既定プロファイル。?adminEventId=X を URL に付けると Firestore のイベントで上書きされる。
+let EVENT_BOSS_PROFILES = [
     {
         id: 'cruiser',
         name: 'シャドウ・クルーザー',
@@ -233,26 +243,111 @@ const EVENT_BOSS_PROFILES = [
     }
 ];
 // 後方互換: 既存コードが参照する EVENT_BOSS_IMAGES エイリアス
-const EVENT_BOSS_IMAGES = EVENT_BOSS_PROFILES;
+let EVENT_BOSS_IMAGES = EVENT_BOSS_PROFILES;
 let eventMode = false;
 let eventProfileMode = false; // ON にすると HP 倍率・最低 Lv・特殊弾を適用
 let eventBossOverride = null; // null=自動交互、0/1=固定インデックス
 let eventBossSpawnCount = 0;
-const eventImgs = EVENT_BOSS_IMAGES.map((meta, i) => {
-    const img = new Image();
-    img.onload = () => {
-        meta.loaded = true;
-        const s = document.getElementById('eventImgStatus');
-        if (s) s.textContent = `画像: ${EVENT_BOSS_IMAGES.filter(m => m.loaded).length}/${EVENT_BOSS_IMAGES.length} 読み込み済み`;
-    };
-    img.onerror = () => {
-        meta.failed = true;
-        const s = document.getElementById('eventImgStatus');
-        if (s) s.textContent = `⚠️ 画像読み込み失敗（procedural 表示）`;
-    };
-    img.src = meta.src;
-    return img;
-});
+let eventImgs = [];
+function buildEventImgs() {
+    eventImgs = EVENT_BOSS_IMAGES.map((meta) => {
+        meta.loaded = false;
+        meta.failed = false;
+        const img = new Image();
+        img.onload = () => {
+            meta.loaded = true;
+            const s = document.getElementById('eventImgStatus');
+            if (s) s.textContent = `画像: ${EVENT_BOSS_IMAGES.filter(m => m.loaded).length}/${EVENT_BOSS_IMAGES.length} 読み込み済み`;
+        };
+        img.onerror = () => {
+            meta.failed = true;
+            const s = document.getElementById('eventImgStatus');
+            if (s) s.textContent = `⚠️ 画像読み込み失敗（procedural 表示）`;
+        };
+        img.src = meta.src;
+        return img;
+    });
+}
+buildEventImgs();
+
+// admin.html から ?adminEventId=X で開かれた場合、Firestore のイベントを取得して
+// EVENT_BOSS_PROFILES を上書きする。imgs / select オプションも再構築。
+async function loadAdminEventOverride() {
+    const params = new URLSearchParams(window.location.search);
+    const adminEventId = params.get('adminEventId');
+    const useActive    = params.get('adminEventActive') === '1';
+    if (!adminEventId && !useActive) return;
+    if (typeof firebaseDataManager === 'undefined') {
+        log('error', 'Firebase が読み込まれていません');
+        return;
+    }
+    const statusEl = document.getElementById('adminEventStatus');
+    try {
+        let ev;
+        if (adminEventId) {
+            const doc = await firebaseDataManager.db.collection('events').doc(adminEventId).get();
+            if (!doc.exists) {
+                if (statusEl) statusEl.textContent = `イベントが見つかりません: ${adminEventId}`;
+                return;
+            }
+            ev = { id: doc.id, ...doc.data() };
+        } else {
+            ev = await firebaseDataManager.getActiveEvent();
+            if (!ev) {
+                if (statusEl) statusEl.textContent = '公開中イベントなし';
+                return;
+            }
+        }
+        if (!Array.isArray(ev.bosses) || !ev.bosses.length) {
+            if (statusEl) statusEl.textContent = `「${ev.title || ev.id}」にボスが定義されていません`;
+            return;
+        }
+        EVENT_BOSS_PROFILES = ev.bosses.map((b, i) => ({
+            id: b.id || `boss-${i + 1}`,
+            name: b.name || `ボス ${i + 1}`,
+            src: b.image || '',
+            hpMultiplier: Number(b.hpMultiplier) || 1,
+            featureLevel: Number(b.featureLevel) || 8,
+            bulletCount:  Number(b.bulletCount)  || 3,
+            extraGimmicks: Array.isArray(b.extraGimmicks) ? b.extraGimmicks : [],
+            featuresOverride: (b.featuresOverride && typeof b.featuresOverride === 'object') ? b.featuresOverride : null
+        }));
+        EVENT_BOSS_IMAGES = EVENT_BOSS_PROFILES;
+        buildEventImgs();
+
+        // select オプションを差し替え
+        const sel = document.getElementById('eventBossSelect');
+        if (sel) {
+            sel.innerHTML = `<option value="auto">自動（交互）</option>` +
+                EVENT_BOSS_PROFILES.map((b, i) => `<option value="${i}">ボス${i+1}（${b.name}）</option>`).join('');
+        }
+
+        // イベントモード + プロファイル ON を自動で有効化
+        if (!eventMode) toggleEventMode();
+        if (!eventProfileMode) toggleEventProfile();
+
+        // 最初のボスの featuresOverride を UI トグルに反映（shockwave / absorb / mines のみ対応）
+        const firstBoss = EVENT_BOSS_PROFILES[0];
+        if (firstBoss && firstBoss.featuresOverride) {
+            const fo = firstBoss.featuresOverride;
+            if (typeof fo.shockwave === 'boolean' && fo.shockwave !== shockwaveOn) toggleShockwave();
+            if (typeof fo.absorption === 'boolean' && fo.absorption !== absorbOn)   toggleAbsorb();
+            if (typeof fo.mines === 'boolean' && fo.mines !== mineOn)               toggleMine();
+            const others = [];
+            if (typeof fo.sniper === 'boolean')  others.push(`sniper=${fo.sniper ? 'ON' : 'OFF'}`);
+            if (typeof fo.minions === 'boolean') others.push(`minions=${fo.minions ? 'ON' : 'OFF'}`);
+            if (others.length) {
+                log('info', `※ 個別トグル ${others.join(', ')} は boss-test では Lv 依存のため、Lv ボタンで調整してください`);
+            }
+        }
+
+        if (statusEl) statusEl.textContent = `🎉 admin イベント反映: 「${ev.title || ev.id}」 (${EVENT_BOSS_PROFILES.length} 体)`;
+        log('info', `admin イベント反映: ${ev.title || ev.id}`);
+    } catch (err) {
+        console.error(err);
+        if (statusEl) statusEl.textContent = `読み込みエラー: ${err.message}`;
+    }
+}
 function pickEventBossIndex() {
     if (eventBossOverride === 0 || eventBossOverride === 1) return eventBossOverride;
     return eventBossSpawnCount % EVENT_BOSS_IMAGES.length;
@@ -1853,7 +1948,12 @@ function loop() {
 }
 
 log('info', 'Boss Test Bench 起動。Lv.1〜10 ボタンでボスを出して挙動を見てください。');
-spawnBossLevel(1);
+
+// admin で作ったイベントを開きたい場合は ?adminEventId=<id> を付ける。
+// loop は即時開始（Firestore は非同期取得後に反映）。
+loadAdminEventOverride().finally(() => {
+    spawnBossLevel(1);
+});
 loop();
 </script>
 </body>
