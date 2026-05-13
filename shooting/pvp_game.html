@@ -592,14 +592,31 @@
         const weaponElement = document.getElementById('weapon');
 
         // キャンバスサイズを画面サイズに設定
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+        //   モバイルのアドレスバー開閉での連続発火を rAF で 1 回に丸めて、
+        //   同じサイズなら再代入もスキップしてカクつきを抑える。
+        function applyCanvasSize() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            if (canvas.width === w && canvas.height === h) return;
+            canvas.width = w;
+            canvas.height = h;
         }
-        
+        let resizeRafId = 0;
+        function resizeCanvas() {
+            if (resizeRafId) return;
+            resizeRafId = requestAnimationFrame(() => {
+                resizeRafId = 0;
+                applyCanvasSize();
+            });
+        }
+
         // 初期キャンバスサイズ設定
-        resizeCanvas();
+        applyCanvasSize();
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => {
+            resizeCanvas();
+            setTimeout(resizeCanvas, 300);
+        });
 
         // 武器選択UIの初期化
         function initWeaponSelector() {
@@ -1075,14 +1092,17 @@
         let playerStartY = 0;
 
         // タッチイベント
+        //   preventDefault() を呼ぶため { passive: false } を必ず指定。
+        //   passive 扱いだと preventDefault が無視され、スクロールやピンチが暴発する。
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
+            if (!touch) return;
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
             touchMoved = false;
             lastTouchTime = Date.now();
-            
+
             // ドラッグ開始
             isDragging = false;
             dragStartX = touch.clientX;
@@ -1090,46 +1110,45 @@
             const player = isPlayer1 ? player1 : player2;
             playerStartX = player.x;
             playerStartY = player.y;
-        });
+        }, { passive: false });
 
         canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
+            if (!touch) return;
             touchEndX = touch.clientX;
             touchEndY = touch.clientY;
             touchMoved = true;
-            
+
             // ドラッグ移動
-            if (touchMoved) {
-                const deltaX = touch.clientX - dragStartX;
-                const deltaY = touch.clientY - dragStartY;
-                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                
-                if (distance > 10) { // 最小ドラッグ距離
-                    isDragging = true;
-                    
-                    // プレイヤーの位置をリアルタイムで更新
-                    const player = isPlayer1 ? player1 : player2;
-                    const newX = playerStartX + deltaX;
-                    const newY = playerStartY + deltaY;
-                    
-                    // 画面境界内に制限（常に自分が下半分）
-                    player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
-                    player.y = Math.max(
-                        canvas.height / 2, // 常に下半分から
-                        Math.min(
-                            canvas.height - player.height, 
-                            newY
-                        )
-                    );
-                }
+            const deltaX = touch.clientX - dragStartX;
+            const deltaY = touch.clientY - dragStartY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (distance > 10) { // 最小ドラッグ距離
+                isDragging = true;
+
+                // プレイヤーの位置をリアルタイムで更新
+                const player = isPlayer1 ? player1 : player2;
+                const newX = playerStartX + deltaX;
+                const newY = playerStartY + deltaY;
+
+                // 画面境界内に制限（常に自分が下半分）
+                player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
+                player.y = Math.max(
+                    canvas.height / 2, // 常に下半分から
+                    Math.min(
+                        canvas.height - player.height,
+                        newY
+                    )
+                );
             }
-        });
+        }, { passive: false });
 
         canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
             const touchDuration = Date.now() - lastTouchTime;
-            
+
             if (!isDragging && touchDuration < 200) {
                 // 短時間のタップで攻撃
                 shoot();
@@ -1137,7 +1156,7 @@
             
             // ドラッグ終了
             isDragging = false;
-        });
+        }, { passive: false });
 
         // 弾丸発射
         function shoot() {

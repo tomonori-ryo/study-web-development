@@ -940,23 +940,42 @@
         }
 
         // キャンバスサイズを画面サイズに設定
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            
-            // プレイヤーの位置を調整（画面サイズが変わった場合）
+        //   モバイルのアドレスバー開閉で resize は秒間に複数回発火しうるので、
+        //   ・実サイズが変わっていないときは早期 return
+        //   ・rAF で同フレーム内の連続発火を 1 回にまとめる
+        //   の 2 段階で間引いてカクつきを抑える。
+        function applyCanvasSize() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            if (canvas.width === w && canvas.height === h) return;
+            canvas.width = w;
+            canvas.height = h;
+            // プレイヤーの位置を新画面サイズにクランプ
             if (typeof player !== 'undefined' && player) {
                 player.x = Math.min(player.x, canvas.width - player.width);
                 player.y = Math.min(player.y, canvas.height - player.height);
             }
         }
-        
+        let resizeRafId = 0;
+        function resizeCanvas() {
+            if (resizeRafId) return;
+            resizeRafId = requestAnimationFrame(() => {
+                resizeRafId = 0;
+                applyCanvasSize();
+            });
+        }
+
         // 初期キャンバスサイズ設定
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-        
-        // リサイズイベントリスナーを設定
+
+        // リサイズ系イベント。orientationchange は値が確定するまでわずかな遅延があるため、
+        // 直後と少し遅らせた 2 回適用する。
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => {
+            resizeCanvas();
+            setTimeout(resizeCanvas, 300);
+        });
 
         // 武器選択UIの初期化（単一カード表示版）。
         // 常に左下に「現在の武器」を 1 枚だけ表示する。カードクリック / Tab で次の武器に循環。
@@ -2259,61 +2278,64 @@
         let playerStartY = 0;
 
         // タッチイベント
+        //   preventDefault() を呼ぶため { passive: false } を必ず指定。
+        //   これが無いとモバイル Chrome/Safari は passive 扱いにして preventDefault を
+        //   無視し、スクロールやピンチズームが暴発してドラッグが効かなくなる。
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
+            if (!touch) return;
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
             touchMoved = false;
             lastTouchTime = Date.now();
-            
+
             // ドラッグ開始
             isDragging = false;
             dragStartX = touch.clientX;
             dragStartY = touch.clientY;
             playerStartX = player.x;
             playerStartY = player.y;
-        });
+        }, { passive: false });
 
         canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
+            if (!touch) return;
             touchEndX = touch.clientX;
             touchEndY = touch.clientY;
             touchMoved = true;
-            
+
             // ドラッグ移動
-            if (touchMoved) {
-                const deltaX = touch.clientX - dragStartX;
-                const deltaY = touch.clientY - dragStartY;
-                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                
-                if (distance > 10) { // 最小ドラッグ距離
-                    isDragging = true;
-                    
-                    // プレイヤーの位置をリアルタイムで更新
-                    const newX = playerStartX + deltaX;
-                    const newY = playerStartY + deltaY;
-                    
-                    // 画面境界内に制限
-                    player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
-                    player.y = Math.max(canvas.height * PLAYER_MAX_UP_RATIO, Math.min(canvas.height - player.height, newY));
-                }
+            const deltaX = touch.clientX - dragStartX;
+            const deltaY = touch.clientY - dragStartY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (distance > 10) { // 最小ドラッグ距離
+                isDragging = true;
+
+                // プレイヤーの位置をリアルタイムで更新
+                const newX = playerStartX + deltaX;
+                const newY = playerStartY + deltaY;
+
+                // 画面境界内に制限
+                player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
+                player.y = Math.max(canvas.height * PLAYER_MAX_UP_RATIO, Math.min(canvas.height - player.height, newY));
             }
-        });
+        }, { passive: false });
 
         canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
             const touchDuration = Date.now() - lastTouchTime;
-            
+
             if (!isDragging && touchDuration < 200) {
                 // 短時間のタップで攻撃
                 shoot();
             }
-            
+
             // ドラッグ終了
             isDragging = false;
-        });
+        }, { passive: false });
 
         // 弾丸発射
         function shoot() {
@@ -4087,6 +4109,28 @@
             
             // 武器選択UIを更新
             updateWeaponSelector();
+        });
+
+        // ── タブ非表示・画面ロック時の補正 ─────────────────────────────
+        // gameStartTime は Date.now() 基準なので、バックグラウンド中も時計は進む。
+        // requestAnimationFrame は止まるため、放置すると復帰した瞬間に "残り時間 0" で
+        // ゲームオーバーになる。ここで離脱時刻を記録しておき、戻った時にその分だけ
+        // gameStartTime を未来へずらして「裏にいた時間」を相殺する。
+        let pauseStartedAt = 0;
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (gameRunning && !pauseStartedAt) {
+                    pauseStartedAt = Date.now();
+                }
+            } else if (pauseStartedAt) {
+                const pausedFor = Date.now() - pauseStartedAt;
+                pauseStartedAt = 0;
+                if (gameRunning && pausedFor > 0) {
+                    gameStartTime += pausedFor;
+                    // dt も巻き戻して 1 フレーム目で大量更新が走らないようにする
+                    lastFrameTimestamp = performance.now();
+                }
+            }
         });
 
         // ゲームループ
