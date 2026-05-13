@@ -244,6 +244,30 @@
             border: 1px dashed rgba(255,255,255,0.15);
             border-radius: 10px;
         }
+
+        /* 統計カード */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        .stat-box {
+            background: rgba(0, 255, 255, 0.08);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 14px 16px;
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            color: #88c8d8;
+            margin-bottom: 6px;
+        }
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.02em;
+        }
     </style>
 </head>
 <body>
@@ -261,6 +285,18 @@
         <div id="adminStatus">権限確認中…</div>
 
         <div id="adminMain" style="display:none;">
+            <!-- 統計サマリー -->
+            <section class="card" id="statsCard">
+                <h2>📊 全体統計</h2>
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">総ユーザー数</div>
+                        <div class="stat-value" id="statTotalUsers">…</div>
+                    </div>
+                </div>
+                <p class="note" style="margin-top:8px;">Firestore の users コレクションから取得しています。読み取りコスト節約のため、画面ロード時に 1 回だけ取得します。</p>
+            </section>
+
             <!-- イベント管理 -->
             <section class="card">
                 <h2>🎉 イベント管理</h2>
@@ -435,8 +471,21 @@
             statusEl.className = 'ok';
             statusEl.textContent = `管理者としてログイン中: ${user.email}`;
             mainEl.style.display = 'block';
-            await Promise.all([refreshEvents(), refreshTitles()]);
+            await Promise.all([refreshEvents(), refreshTitles(), refreshStats()]);
         });
+
+        // ─────── 全体統計 ───────
+        async function refreshStats() {
+            const totalUsersEl = document.getElementById('statTotalUsers');
+            if (!totalUsersEl) return;
+            try {
+                const n = await firebaseDataManager.getUserCount();
+                totalUsersEl.textContent = (n === null) ? '取得失敗' : Number(n).toLocaleString();
+            } catch (e) {
+                console.warn('refreshStats failed:', e);
+                totalUsersEl.textContent = '取得失敗';
+            }
+        }
 
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             try { await firebase.auth().signOut(); }
