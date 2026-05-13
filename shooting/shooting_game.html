@@ -903,8 +903,12 @@
         }
 
         // ゲーム状態
+        // イベントモードは時間制限なし + HP/ギミック強化ボス相手なのでライフを多めに付与
+        const EVENT_STARTING_LIVES = 10;
+        const DEFAULT_STARTING_LIVES = 3;
+        const STARTING_LIVES = isEventMode ? EVENT_STARTING_LIVES : DEFAULT_STARTING_LIVES;
         let score = 0;
-        let lives = 3;
+        let lives = STARTING_LIVES;
         let gameRunning = true;
         let gameTime = 120; // 120秒制限
         const PLAYER_MAX_UP_RATIO = 0.35; // プレイヤーが上に進める割合（小さいほどボスに接近可能）
@@ -3824,7 +3828,7 @@
         // リスタート
         restartBtn.addEventListener('click', () => {
             score = 0;
-            lives = 3;
+            lives = STARTING_LIVES;
             bullets = [];
             enemies = [];
             boss = null;
@@ -3920,6 +3924,8 @@
             updateWeaponSelector();
             updateAmmoHud();
             weaponElement.textContent = `武器: ${equippedWeapons[currentWeapon].name}`;
+            // ライフ表示も初期化時点で正しい値に揃える（イベントモードは 10）
+            livesElement.textContent = `ライフ: ${lives}`;
 
             // イベントモードバナーの初期表示
             updateEventBanner();
