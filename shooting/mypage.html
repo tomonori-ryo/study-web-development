@@ -426,6 +426,13 @@
             margin-right: 0.35rem;
             font-size: 1rem;
         }
+        .title-badge .icon-img {
+            width: 1.1rem; height: 1.1rem;
+            margin-right: 0.4rem;
+            object-fit: contain;
+            vertical-align: middle;
+            border-radius: 4px;
+        }
 
         .title-badge.legendary {
             border-color: rgba(255, 220, 120, 0.95);
@@ -748,6 +755,25 @@
             'ランキング準王': { icon: '🥈', tier: 'epic', rank: true },
             'ランキング三傑': { icon: '🥉', tier: 'epic', rank: true }
         };
+        // 管理画面で作成した動的称号のアイコン (label -> { icon, image })
+        // loadDynamicTitleIcons() で Firestore から取得して埋める
+        const DYNAMIC_TITLE_META = {};
+        async function loadDynamicTitleIcons() {
+            try {
+                if (typeof firebaseDataManager === 'undefined') return;
+                const titles = await firebaseDataManager.listTitles();
+                titles.forEach(t => {
+                    if (!t.label) return;
+                    DYNAMIC_TITLE_META[t.label] = {
+                        icon:  t.iconEmoji || '🎖️',
+                        image: t.iconImage || '',
+                        tier:  'common'
+                    };
+                });
+            } catch (e) {
+                console.warn('動的称号アイコン取得失敗:', e);
+            }
+        }
         let currentFixedTitles = [];
         let currentWeaponProgress = {};
         const DEFAULT_WEAPON_LOADOUT = ['normal', 'rapid', 'shotgun', 'laser'];
@@ -790,7 +816,8 @@
         }
 
         function getTitleMeta(title) {
-            return TITLE_META[title] || { icon: '🎖️', tier: 'common' };
+            // 動的称号（admin が作成）を最優先、次に固定の TITLE_META、最後にフォールバック
+            return DYNAMIC_TITLE_META[title] || TITLE_META[title] || { icon: '🎖️', tier: 'common' };
         }
 
         function getUnlockedWeaponIds(progress) {
@@ -1068,7 +1095,11 @@
                     isRank ? 'rank' : '',
                     meta.tier === 'legendary' ? 'legendary' : ''
                 ].filter(Boolean).join(' ');
-                return `<li class="title-badge ${extraClasses}" data-title="${plainTitle}"><span class="icon">${meta.icon}</span>${title}</li>`;
+                // 画像アイコンが指定されていれば <img>、無ければ絵文字
+                const iconHtml = meta.image
+                    ? `<img class="icon-img" src="${meta.image}" alt="">`
+                    : `<span class="icon">${meta.icon}</span>`;
+                return `<li class="title-badge ${extraClasses}" data-title="${plainTitle}">${iconHtml}${title}</li>`;
             }).join('');
         }
 
@@ -1146,6 +1177,8 @@
                         if (btn) btn.style.display = 'inline-block';
                     }
                 } catch (e) { /* ignore */ }
+                // 動的称号アイコンを先にロード（renderTitles で参照されるため）
+                await loadDynamicTitleIcons();
                 await loadUserData();
                 await loadRanking();
                 console.log('データ読み込み完了');

@@ -320,6 +320,24 @@
                     <label>表示ラベル（プレイヤーに見える名前）</label>
                     <input type="text" name="label" required placeholder="例: シャドウキラー">
                 </div>
+
+                <div class="field">
+                    <label>絵文字（任意）</label>
+                    <input type="text" name="iconEmoji" maxlength="8" placeholder="例: 👑 / ⚔️">
+                </div>
+                <div class="field">
+                    <label>アイコン画像（任意・絵文字より優先）</label>
+                    <div class="image-uploader">
+                        <img class="image-preview" id="titleIconPreview" alt="" src="">
+                        <div class="uploader-fields">
+                            <input type="hidden" name="iconImage" id="titleIconImageHidden">
+                            <input type="file" accept="image/*" id="titleIconFile" style="font-size: 0.8rem;">
+                            <button type="button" class="btn btn-sm btn-ghost" id="clearTitleIconBtn">画像クリア</button>
+                            <div class="upload-status" id="titleIconStatus">画像を選択するとアップロードされます (最大 2MB)</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="field">
                     <label>条件タイプ</label>
                     <select name="conditionType" id="conditionTypeSelect" required>
@@ -717,8 +735,25 @@
             currentEditingTitleId = t ? t.id : null;
             document.getElementById('titleModalTitle').textContent = t ? `称号編集: ${t.label || t.id}` : '新規称号';
             titleForm.reset();
+            const iconImageHidden = document.getElementById('titleIconImageHidden');
+            const iconPreview     = document.getElementById('titleIconPreview');
+            const iconStatus      = document.getElementById('titleIconStatus');
+            iconImageHidden.value = '';
+            iconPreview.src = '';
+            iconPreview.style.display = 'none';
+            iconStatus.className = 'upload-status';
+            iconStatus.textContent = '画像を選択するとアップロードされます (最大 2MB)';
+
             if (t) {
                 titleForm.label.value = t.label || '';
+                if (titleForm.iconEmoji) titleForm.iconEmoji.value = t.iconEmoji || '';
+                if (t.iconImage) {
+                    iconImageHidden.value = t.iconImage;
+                    iconPreview.src = t.iconImage;
+                    iconPreview.style.display = 'inline-block';
+                    iconStatus.textContent = 'アップロード済み画像';
+                    iconStatus.className = 'upload-status ok';
+                }
                 conditionTypeSelect.value = (t.condition && t.condition.type) || 'score';
                 titleForm.conditionValue.value = (t.condition && t.condition.value) || '';
             }
@@ -726,6 +761,45 @@
             titleModal.classList.add('open');
             titleModal.setAttribute('aria-hidden', 'false');
         }
+
+        // アイコン画像アップロード
+        document.getElementById('titleIconFile').addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const hidden = document.getElementById('titleIconImageHidden');
+            const preview = document.getElementById('titleIconPreview');
+            const status  = document.getElementById('titleIconStatus');
+            if (file.size > 2 * 1024 * 1024) {
+                status.textContent = '2MB 以下にしてください';
+                status.className = 'upload-status error';
+                return;
+            }
+            status.textContent = 'アップロード中…';
+            status.className = 'upload-status';
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'inline-block';
+            try {
+                const { url } = await firebaseDataManager.uploadTitleIcon(file);
+                hidden.value = url;
+                preview.src = url;
+                status.textContent = '✓ アップロード完了';
+                status.className = 'upload-status ok';
+            } catch (err) {
+                console.error(err);
+                status.textContent = '✗ ' + err.message;
+                status.className = 'upload-status error';
+            }
+        });
+        document.getElementById('clearTitleIconBtn').addEventListener('click', () => {
+            document.getElementById('titleIconImageHidden').value = '';
+            const preview = document.getElementById('titleIconPreview');
+            preview.src = '';
+            preview.style.display = 'none';
+            document.getElementById('titleIconFile').value = '';
+            const status = document.getElementById('titleIconStatus');
+            status.textContent = '画像をクリアしました';
+            status.className = 'upload-status';
+        });
         function closeTitleModal() {
             titleModal.classList.remove('open');
             titleModal.setAttribute('aria-hidden', 'true');
@@ -742,6 +816,8 @@
             const value = numericTypes.includes(type) ? Number(rawValue) : rawValue;
             const data = {
                 label: fd.get('label') || '',
+                iconEmoji: (fd.get('iconEmoji') || '').toString().trim(),
+                iconImage: (fd.get('iconImage') || '').toString(),
                 condition: { type, value }
             };
             try {
@@ -777,9 +853,17 @@
                     else if (c.type === 'weaponUnlocked') condText = `武器 ${c.value} 解放`;
                     else if (c.type === 'eventBoss')      condText = `イベント progress: ${c.value}`;
                     else if (c.type === 'progressFlag')   condText = `progress.${c.value} = true`;
+                    let iconHtml;
+                    if (t.iconImage) {
+                        iconHtml = `<img src="${esc(t.iconImage)}" alt="" style="width:24px; height:24px; vertical-align:middle; object-fit:contain; margin-right:4px; border-radius:4px;">`;
+                    } else if (t.iconEmoji) {
+                        iconHtml = `<span style="margin-right:4px;">${esc(t.iconEmoji)}</span>`;
+                    } else {
+                        iconHtml = '🏅 ';
+                    }
                     row.innerHTML = `
                         <div class="row-main">
-                            <div class="row-title">🏅 ${esc(t.label || t.id)}</div>
+                            <div class="row-title">${iconHtml}${esc(t.label || t.id)}</div>
                             <div class="row-sub">${esc(condText)} ・ ID: ${esc(t.id)}</div>
                         </div>
                         <div class="row-actions">
