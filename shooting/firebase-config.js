@@ -402,6 +402,35 @@ class FirebaseDataManager {
     }
   }
 
+  // 総ユーザー数を取得。
+  //   v9.7+ の集計クエリ (count().get()) があれば 1 ドキュメント読み取りで済むが、
+  //   この compat SDK は 9.0.0 系なので、フルスキャンにフォールバックする。
+  //   小規模利用なら問題ないが、ユーザーが増えてきたら後日 aggregation に切り替える。
+  async getUserCount() {
+    try {
+      // 1) 集計クエリが使えるなら最優先
+      const coll = this.db.collection('users');
+      if (typeof coll.count === 'function') {
+        try {
+          const agg = await coll.count().get();
+          if (agg && typeof agg.data === 'function') {
+            const data = agg.data();
+            return Number(data.count) || 0;
+          }
+        } catch (e) {
+          // 失敗したら下のフルスキャンへフォールバック
+          console.warn('users count() aggregation failed, falling back to scan:', e);
+        }
+      }
+      // 2) フォールバック: 全件取得して size を返す
+      const snapshot = await coll.get();
+      return snapshot.size;
+    } catch (e) {
+      console.warn('getUserCount failed:', e);
+      return null;
+    }
+  }
+
   // ランキング取得
   async getRanking() {
     try {
