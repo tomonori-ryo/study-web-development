@@ -584,20 +584,27 @@ class FirebaseDataManager {
 
   // 画像アップロード（管理者専用）。File を受け取って Storage に保存し
   // ダウンロード可能な永続URLを返す。
-  async uploadEventBossImage(file, opts = {}) {
+  async uploadImageToFolder(folder, file, opts = {}) {
     if (!this.storage) throw new Error('Firebase Storage SDK が初期化されていません');
     const user = this.auth.currentUser;
     if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
 
     const safeName = (file.name || 'image').replace(/[^\w.\-]/g, '_');
     const ts = Date.now();
-    const path = `event-bosses/${ts}_${safeName}`;
+    const path = `${folder}/${ts}_${safeName}`;
     const ref = this.storage.ref().child(path);
     const metadata = { contentType: file.type || 'image/png' };
     const task = await ref.put(file, metadata);
     const url = await task.ref.getDownloadURL();
     if (typeof opts.onComplete === 'function') opts.onComplete(url);
     return { url, path };
+  }
+  // 互換: 既存呼び出し名
+  async uploadEventBossImage(file, opts = {}) {
+    return this.uploadImageToFolder('event-bosses', file, opts);
+  }
+  async uploadTitleIcon(file, opts = {}) {
+    return this.uploadImageToFolder('title-icons', file, opts);
   }
 
   // 動的称号: ユーザーデータを元に、未解放の称号を解禁

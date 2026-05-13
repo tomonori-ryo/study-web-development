@@ -18,6 +18,14 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // 称号アイコン画像: 誰でも読み取り可、書き込みは管理者のみ（2MB 上限）
+    match /title-icons/{file=**} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // それ以外はデフォルト deny
     match /{path=**} {
       allow read, write: if false;
