@@ -498,6 +498,11 @@
         <div class="run-status-title">ラン進捗</div>
         <div id="runStatusBody"></div>
     </div>
+    <div id="eventBanner" style="display:none; position:absolute; top:8px; left:50%; transform:translateX(-50%); background:linear-gradient(90deg, rgba(60, 0, 90, 0.85), rgba(0, 90, 130, 0.85)); color:#fff; padding:6px 14px; border-radius:20px; font-size:clamp(11px, 1.6vw, 14px); z-index:60; border:1px solid rgba(255,255,255,0.25); letter-spacing:0.05em; backdrop-filter:blur(4px);">
+        <span style="opacity:0.7;">🎪 期間限定イベント</span>
+        <span id="eventBannerTitle" style="font-weight:bold; margin-left:6px;">影艦隊襲来</span>
+        <span id="eventBannerProgress" style="margin-left:10px; opacity:0.9; font-size:0.92em;"></span>
+    </div>
     <div id="bossWarning">⚠️ ボス出現！ ⚠️</div>
     <div id="gameOver">
         <div>ゲームオーバー</div>
@@ -577,6 +582,147 @@
         const highScoreElement = document.querySelector('.high-score');
         const weaponSelectorToggle = document.getElementById('weaponSelectorToggle');
         const weaponSelector = document.getElementById('weaponSelector');
+
+        // ─────────────────────────────────────────────
+        // 期間限定イベントモード
+        // URL パラメータ ?mode=event でメインゲームの上に「ボスだけ画像差し替え + 進捗追跡」を被せる。
+        // ゲーム本体のロジックには干渉せず、描画とクリア判定だけ拡張する。
+        // ─────────────────────────────────────────────
+        const EVENT_CONFIG = {
+            id: 'shadow-fleet-2026',
+            title: '影艦隊襲来',
+            subtitle: '期間限定イベント',
+            // イベント期間（ISO 8601）。期間外でもプレイ自体は可能だが、スキン報酬は付与しない。
+            endsAt: '2026-12-31T23:59:59+09:00',
+            // 2 種類のイベントボス。`image` パスとスキン解放キーを定義。
+            bosses: [
+                { id: 'shadow-cruiser',   skinKey: 'eventBossSkinShadowCruiser',   image: 'assets/event/event-boss-1.png', name: 'シャドウ・クルーザー' },
+                { id: 'shadow-overlord',  skinKey: 'eventBossSkinShadowOverlord',  image: 'assets/event/event-boss-2.png', name: 'シャドウ・オーバーロード' }
+            ]
+        };
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const isEventMode = urlParams.get('mode') === 'event';
+
+        // ボス画像（イベントモード時のみロード）
+        const eventBossImages = [];
+        let eventImagesReady = false;
+        if (isEventMode) {
+            let loaded = 0;
+            EVENT_CONFIG.bosses.forEach((b, i) => {
+                const img = new Image();
+                img.onload = () => {
+                    loaded++;
+                    if (loaded === EVENT_CONFIG.bosses.length) eventImagesReady = true;
+                };
+                img.onerror = () => {
+                    // 画像が読めなくても本体描画にフォールバックするので継続
+                    loaded++;
+                    if (loaded === EVENT_CONFIG.bosses.length) eventImagesReady = true;
+                };
+                img.src = b.image;
+                eventBossImages[i] = img;
+            });
+        }
+
+        // 期間内かどうか
+        function isEventActive() {
+            try {
+                return Date.now() < new Date(EVENT_CONFIG.endsAt).getTime();
+            } catch (e) {
+                return true;
+            }
+        }
+
+        // イベントバナーの進捗テキストを更新（「スキン 1/2 獲得」のような表示）
+        function updateEventBanner() {
+            const banner = document.getElementById('eventBanner');
+            if (!banner) return;
+            if (!isEventMode) { banner.style.display = 'none'; return; }
+            banner.style.display = 'block';
+
+            const titleEl = document.getElementById('eventBannerTitle');
+            if (titleEl) titleEl.textContent = EVENT_CONFIG.title;
+
+            let skins = {};
+            try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+            const unlocked = EVENT_CONFIG.bosses.filter(b => skins[b.skinKey]).length;
+            const total = EVENT_CONFIG.bosses.length;
+
+            const progEl = document.getElementById('eventBannerProgress');
+            if (progEl) {
+                if (!isEventActive()) {
+                    progEl.textContent = `(期間終了)`;
+                } else if (unlocked === total) {
+                    progEl.textContent = `✓ コンプリート！`;
+                } else {
+                    progEl.textContent = `スキン ${unlocked}/${total} 獲得`;
+                }
+            }
+        }
+
+        // 出現回数カウンタ（このランで何体目のボスかを記録）。
+        // ラン内では交互（1体目=boss1, 2体目=boss2, …）に出る。
+        let eventBossSpawnCount = 0;
+        function pickEventBossIndex() {
+            // 0 始まり: 1体目=0, 2体目=1, 3体目=0, …
+            return eventBossSpawnCount % EVENT_CONFIG.bosses.length;
+        }
+
+        // イベント進捗: どのボスを既に倒したか（永続）
+        function readEventProgress() {
+            try {
+                return JSON.parse(localStorage.getItem('eventProgress') || '{}') || {};
+            } catch (e) { return {}; }
+        }
+        function writeEventProgress(progress) {
+            try { localStorage.setItem('eventProgress', JSON.stringify(progress)); } catch (e) {}
+        }
+
+        // ボス撃破時にスキン解放を付与（期間内のみ）
+        function grantEventSkin(bossIndex) {
+            if (!isEventMode || !isEventActive()) return;
+            const boss = EVENT_CONFIG.bosses[bossIndex];
+            if (!boss) return;
+
+            // ローカル: eventSkinsUnlocked[boss.skinKey] = true
+            let skins = {};
+            try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+            const newlyUnlocked = !skins[boss.skinKey];
+            skins[boss.skinKey] = true;
+            try { localStorage.setItem('eventSkinsUnlocked', JSON.stringify(skins)); } catch (e) {}
+
+            // ラン内の進捗（mypage 表示でも使う）
+            const progress = readEventProgress();
+            progress[EVENT_CONFIG.id] = progress[EVENT_CONFIG.id] || {};
+            progress[EVENT_CONFIG.id][boss.id] = (progress[EVENT_CONFIG.id][boss.id] || 0) + 1;
+            writeEventProgress(progress);
+
+            // Firebase 同期（ログイン時のみ）
+            try {
+                if (typeof firebaseDataManager !== 'undefined'
+                    && typeof firebase !== 'undefined'
+                    && firebase.auth
+                    && firebase.auth().currentUser) {
+                    firebaseDataManager.updateProgress({ [boss.skinKey]: true }).catch(() => {});
+                }
+            } catch (e) {}
+
+            // 初取得なら通知
+            if (newlyUnlocked) {
+                weaponMessage = `🎁 ${boss.name}のスキンを獲得！`;
+                weaponMessageTimer = 240;
+            }
+
+            // 全ボス制覇判定
+            const allCleared = EVENT_CONFIG.bosses.every(b => skins[b.skinKey]);
+            if (allCleared && !skins.__eventCleared) {
+                skins.__eventCleared = true;
+                try { localStorage.setItem('eventSkinsUnlocked', JSON.stringify(skins)); } catch (e) {}
+                weaponMessage = `🏆 イベント「${EVENT_CONFIG.title}」クリア！マイページでスキンを確認！`;
+                weaponMessageTimer = 360;
+            }
+        }
 
         // オーディオ要素
         let shootSound = null;
@@ -2121,7 +2267,11 @@
             ctx.save();
             bossMinions.forEach(m => {
                 // ボス Lv.1/Lv.2 と同じアートワーク（サイズだけ縮小）
-                drawBossArtwork(m.x, m.y, m.width, m.height, m.level);
+                // イベントモードでは部下に「もう一方のボス画像」を使うと見分けやすくなる
+                const minionImgIdx = isEventMode
+                    ? (boss && boss.eventBossIndex >= 0 ? (boss.eventBossIndex + 1) % EVENT_CONFIG.bosses.length : 0)
+                    : -1;
+                drawBossArtwork(m.x, m.y, m.width, m.height, m.level, { eventBossIndex: minionImgIdx });
                 // HPバー
                 const hpRatio = m.health / m.maxHealth;
                 ctx.fillStyle = '#222';
@@ -2223,8 +2373,11 @@
                     sniperLocked: false,
                     sniperTargetX: 0,
                     sniperTargetY: 0,
-                    minionAbsorbStartAt: null
+                    minionAbsorbStartAt: null,
+                    // イベントモード時、このボスがどの画像を使うかのインデックス
+                    eventBossIndex: isEventMode ? pickEventBossIndex() : -1
                 };
+                if (isEventMode) eventBossSpawnCount++;
 
                 // 狙撃モード(Lv.9+): 単発高精度なので最低発射間隔を確保
                 if (bossLevel >= BOSS_SNIPER_LEVEL_THRESHOLD) {
@@ -2239,7 +2392,12 @@
 
                 // ボス警告表示（レベルに応じてメッセージ変更）
                 const levelText = bossLevel > 1 ? `レベル${bossLevel} ` : '';
-                bossWarningElement.textContent = `⚠️ ${levelText}ボス出現！ ⚠️`;
+                if (isEventMode && boss.eventBossIndex >= 0) {
+                    const evBoss = EVENT_CONFIG.bosses[boss.eventBossIndex];
+                    bossWarningElement.textContent = `⚠️ ${evBoss.name} 出現！ ⚠️`;
+                } else {
+                    bossWarningElement.textContent = `⚠️ ${levelText}ボス出現！ ⚠️`;
+                }
                 bossWarningElement.style.display = 'block';
                 setTimeout(() => {
                     bossWarningElement.style.display = 'none';
@@ -2564,7 +2722,25 @@
         // ボス描画
         // 任意の位置・サイズ・レベル指定でボス見た目を描画する共通関数
         // 部下も同じ見た目を採用（メインボスとの差は「サイズが小さい」だけ）
-        function drawBossArtwork(x, y, w, h, level) {
+        function drawBossArtwork(x, y, w, h, level, opts) {
+            // イベントモードのときは画像で差し替え。`opts.eventBossIndex` が指定されていれば
+            // そのインデックスのイベントボス画像を使う（メインボス／部下で別画像を割り当てる用途）。
+            if (isEventMode && eventImagesReady) {
+                const idx = (opts && typeof opts.eventBossIndex === 'number' && opts.eventBossIndex >= 0)
+                    ? opts.eventBossIndex
+                    : pickEventBossIndex();
+                const img = eventBossImages[idx];
+                if (img && img.complete && img.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.shadowColor = idx === 1 ? '#88aaff' : '#66ddff';
+                    ctx.shadowBlur = 12 + (level - 1) * 4;
+                    ctx.drawImage(img, x, y, w, h);
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                    return;
+                }
+            }
+
             ctx.save();
             ctx.shadowColor = level > 2 ? '#ff00ff' : '#ff0000';
             ctx.shadowBlur = 10 + (level - 1) * 5;
@@ -2631,7 +2807,7 @@
             }
 
             // ボス本体の描画（共通アートワークを使用）
-            drawBossArtwork(x, y, w, h, bossLevel);
+            drawBossArtwork(x, y, w, h, bossLevel, { eventBossIndex: boss.eventBossIndex });
             
             // ボスのHPバー
             const barWidth = w;
@@ -3046,6 +3222,12 @@
                     if (boss.health <= 0) {
                         score += boss.points;
                         scoreElement.textContent = `スコア: ${score}`;
+
+                        // イベントモード: 倒したボス種に応じたスキンを解放
+                        if (isEventMode && boss.eventBossIndex >= 0) {
+                            grantEventSkin(boss.eventBossIndex);
+                            updateEventBanner();
+                        }
                         
                         // ボス撃破時に宝箱をドロップ（倒した地点と同じ横座標、プレイヤーが行ける最も上の地点）
                         treasureBox = {
@@ -3421,6 +3603,8 @@
             timeBonusMessage = '';
             timeBonusTimer = 0;
             bossLevel = 1; // ボスレベルをリセット
+            eventBossSpawnCount = 0; // イベントモードのボス出現カウンタもリセット
+            updateEventBanner();
             loadWeaponLoadout();
             weaponMessage = ''; // リスタート時に武器メッセージもリセット
             weaponMessageTimer = 0;
@@ -3495,7 +3679,10 @@
             updateWeaponSelector();
             updateAmmoHud();
             weaponElement.textContent = `武器: ${equippedWeapons[currentWeapon].name}`;
-            
+
+            // イベントモードバナーの初期表示
+            updateEventBanner();
+
             gameLoop();
         }
 
