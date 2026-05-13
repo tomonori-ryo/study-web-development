@@ -913,6 +913,7 @@
         let bossExplosionSound = null;
         let bladeSound = null;        // ブレード専用 SE
         let eventBossSound = null;    // イベントボス出現 SE
+        let pickupSound = null;       // 弾薬取得 SE（補給物資 / 宝箱）
 
         // サウンド初期化
         function initSounds() {
@@ -940,6 +941,10 @@
             // イベントボス出現 SE
             eventBossSound = new Audio('eventboss.mp3');
             eventBossSound.volume = 0.6;
+
+            // 弾薬取得 SE（補給物資 / 宝箱）
+            pickupSound = new Audio('薬莢2.mp3');
+            pickupSound.volume = 0.5;
         }
 
         // サウンド再生関数
@@ -3781,7 +3786,7 @@
                 refillAllAmmoToMax();
                 updateAmmoHud();
                 updateWeaponSelector();
-                playSound(explosionSound); // 宝箱取得音
+                playSound(pickupSound); // 宝箱取得音（薬莢SE）
                 treasureBox = null; // 宝箱を消去
             }
 
@@ -3799,7 +3804,7 @@
                     recomputeUnlockedSlots();
                     updateAmmoHud();
                     updateWeaponSelector();
-                    playSound(explosionSound); // 補給取得音
+                    playSound(pickupSound); // 補給取得音（薬莢SE）
                     return false; // 画面外に出たら消去
                 }
                 return true;
