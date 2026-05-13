@@ -139,7 +139,129 @@
         .tab-content.active {
             display: block;
         }
-        
+
+        /* 情報ボタン（遊び方 / 操作方法）— タブから単独ボタン＋ポップアップ化 */
+        .info-buttons {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: clamp(0.6rem, 2vw, 1rem);
+            max-width: min(600px, 90vw);
+            margin: 0 auto;
+        }
+        .info-trigger {
+            background: linear-gradient(45deg, #4444ff, #6666ff);
+            color: white;
+            border: none;
+            padding: clamp(12px, 3vw, 20px) clamp(24px, 6vw, 40px);
+            font-size: clamp(1rem, 4vw, 1.4rem);
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            box-shadow: 0 0 20px rgba(68, 68, 255, 0.5);
+        }
+        .info-trigger:hover {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 0 30px rgba(68, 68, 255, 0.8);
+        }
+        .info-trigger:focus-visible {
+            outline: 3px solid #00ffff;
+            outline-offset: 3px;
+        }
+
+        /* ポップアップ */
+        .popup-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            z-index: 1500;
+        }
+        .popup-overlay.open {
+            display: flex;
+            animation: popupFadeIn 0.18s ease;
+        }
+        @keyframes popupFadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+        .popup-card {
+            position: relative;
+            background: linear-gradient(160deg, rgba(20, 20, 50, 0.95), rgba(10, 10, 30, 0.95));
+            border: 2px solid rgba(0, 255, 255, 0.4);
+            border-radius: 16px;
+            padding: clamp(1.4rem, 4vw, 2.2rem) clamp(1.2rem, 3.5vw, 2rem);
+            max-width: min(560px, 92vw);
+            width: 100%;
+            max-height: 88vh;
+            overflow-y: auto;
+            color: #fff;
+            box-shadow: 0 20px 60px rgba(0, 255, 255, 0.2);
+            animation: popupRise 0.22s ease;
+        }
+        @keyframes popupRise {
+            from { transform: translateY(20px) scale(0.96); opacity: 0; }
+            to   { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        .popup-close {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            font-size: 2rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 50%;
+            transition: background 0.18s ease, transform 0.18s ease;
+        }
+        .popup-close:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: rotate(90deg);
+        }
+        .popup-body h3 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: #00ffff;
+            font-size: clamp(1.2rem, 4vw, 1.5rem);
+            text-align: center;
+        }
+        .popup-list {
+            margin: 0;
+            padding-left: 1.3rem;
+            line-height: 1.7;
+            font-size: clamp(0.92rem, 2.6vw, 1.02rem);
+        }
+        .popup-list li + li { margin-top: 0.4rem; }
+        .popup-controls .control-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.55rem 0.2rem;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
+        }
+        .popup-controls .control-item:last-child { border-bottom: none; }
+        .popup-controls .key {
+            display: inline-block;
+            padding: 2px 8px;
+            margin: 0 2px;
+            background: rgba(0, 255, 255, 0.18);
+            border: 1px solid rgba(0, 255, 255, 0.45);
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #aaffff;
+        }
+
         .instructions {
             background: transparent;
             padding: 0;
@@ -621,41 +743,44 @@
         
 
         
-        <div class="tab-container">
-            <div class="tab-buttons">
-                <button class="tab-button active" data-tab="instructions">🎮 ゲームの遊び方</button>
-                <button class="tab-button" data-tab="controls">🕹️ 操作方法</button>
-            </div>
-            <div class="tab-content active" id="instructions">
-                <div class="instructions">
-                    <h3>ゲームの遊び方</h3>
-                    <ul>
-                        <li>敵を倒してスコアを稼ぐシンプルなシューティングです。</li>
-                        <li>制限時間は100秒。スコア100点ごとに +30秒されます。</li>
-                        <li>ボスを倒すと新武器を解禁（通常弾→連射弾→散弾→レーザー）。</li>
-                        <li>宝箱で弾薬回復、ピンクアイテムでライフ回復ができます。</li>
-                        <li>スコアはログイン時に自動保存され、ランキングに反映されます。</li>
-                    </ul>
+        <div class="info-buttons">
+            <button type="button" class="info-trigger" data-info="instructions">🎮 ゲームの遊び方</button>
+            <button type="button" class="info-trigger" data-info="controls">🕹️ 操作方法</button>
+        </div>
+
+        <template id="popupContent-instructions">
+            <h3>🎮 ゲームの遊び方</h3>
+            <ul class="popup-list">
+                <li>敵を倒してスコアを稼ぐシンプルなシューティングです。</li>
+                <li>制限時間は120秒。スコア100点ごとに +30秒されます。</li>
+                <li>ボスを倒すと新武器を解禁（通常弾→連射弾→散弾→レーザー → 各種特殊弾）。</li>
+                <li>宝箱で弾薬回復、ピンクアイテムでライフ回復ができます。</li>
+                <li>スコアはログイン時に自動保存され、ランキングに反映されます。</li>
+            </ul>
+        </template>
+
+        <template id="popupContent-controls">
+            <h3>🕹️ 操作方法</h3>
+            <div class="popup-controls">
+                <div class="control-item">
+                    <span>移動</span>
+                    <span><span class="key">↑↓←→</span> / <span class="key">WASD</span>（スマホはドラッグ）</span>
+                </div>
+                <div class="control-item">
+                    <span>攻撃</span>
+                    <span><span class="key">Space</span>（スマホは自動射撃 / タップ）</span>
+                </div>
+                <div class="control-item">
+                    <span>武器切替</span>
+                    <span><span class="key">1</span>〜<span class="key">4</span> / <span class="key">Tab</span>（<span class="key">Shift</span>+<span class="key">Tab</span> で逆順）</span>
                 </div>
             </div>
-            <div class="tab-content" id="controls">
-                <div class="instructions">
-                    <h3>操作方法</h3>
-                    <div class="controls">
-                        <div class="control-item">
-                            <span>移動</span>
-                            <span><span class="key">↑↓←→</span> / <span class="key">WASD</span></span>
-                        </div>
-                        <div class="control-item">
-                            <span>攻撃</span>
-                            <span><span class="key">Space</span>（スマホはタップ）</span>
-                        </div>
-                        <div class="control-item">
-                            <span>武器切替</span>
-                            <span><span class="key">1</span>〜<span class="key">4</span> / <span class="key">Tab</span>（<span class="key">Shift</span>+<span class="key">Tab</span>で戻る）</span>
-                        </div>
-                    </div>
-                </div>
+        </template>
+
+        <div class="popup-overlay" id="popupOverlay" role="dialog" aria-modal="true" aria-hidden="true">
+            <div class="popup-card" role="document">
+                <button type="button" class="popup-close" id="popupClose" aria-label="閉じる">×</button>
+                <div class="popup-body" id="popupBody"></div>
             </div>
         </div>
     </div>
@@ -918,34 +1043,38 @@
             });
         }
         
-        // タブ切り替え
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', () => {
-                const targetTab = button.dataset.tab;
-                console.log('タブ切り替え:', targetTab); // デバッグ用
-                
-                // すべてのタブボタンからactiveクラスを削除
-                document.querySelectorAll('.tab-button').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                
-                // クリックされたボタンにactiveクラスを追加
-                button.classList.add('active');
-                
-                // すべてのタブコンテンツからactiveクラスを削除
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active');
-                });
-                
-                // 対象のタブコンテンツにactiveクラスを追加
-                const targetContent = document.getElementById(targetTab);
-                if (targetContent) {
-                    targetContent.classList.add('active');
-                } else {
-                    console.error('タブコンテンツが見つかりません:', targetTab);
-                }
+        // 情報ポップアップ（遊び方 / 操作方法）
+        (function setupInfoPopup() {
+            const overlay = document.getElementById('popupOverlay');
+            const body    = document.getElementById('popupBody');
+            const closeBtn = document.getElementById('popupClose');
+            if (!overlay || !body || !closeBtn) return;
+
+            function openPopup(infoId) {
+                const tpl = document.getElementById(`popupContent-${infoId}`);
+                if (!tpl) return;
+                body.innerHTML = '';
+                body.appendChild(tpl.content.cloneNode(true));
+                overlay.classList.add('open');
+                overlay.setAttribute('aria-hidden', 'false');
+                // フォーカスを閉じるボタンへ
+                requestAnimationFrame(() => closeBtn.focus());
+            }
+            function closePopup() {
+                overlay.classList.remove('open');
+                overlay.setAttribute('aria-hidden', 'true');
+                body.innerHTML = '';
+            }
+
+            document.querySelectorAll('.info-trigger').forEach(btn => {
+                btn.addEventListener('click', () => openPopup(btn.dataset.info));
             });
-        });
+            closeBtn.addEventListener('click', closePopup);
+            overlay.addEventListener('click', e => { if (e.target === overlay) closePopup(); });
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && overlay.classList.contains('open')) closePopup();
+            });
+        })();
         
         // ゲームプレビューが存在する場合のみイベントリスナーを追加
         const gamePreview = document.querySelector('.game-preview');
@@ -1309,19 +1438,6 @@
                 // 認証ボタンを更新
                 updateAuthButton();
                 
-                // タブ機能の初期化
-                const tabButtons = document.querySelectorAll('.tab-button');
-                const tabContents = document.querySelectorAll('.tab-content');
-                
-                console.log('タブボタン数:', tabButtons.length);
-                console.log('タブコンテンツ数:', tabContents.length);
-                
-                // 初期状態の確認
-                const activeTab = document.querySelector('.tab-button.active');
-                const activeContent = document.querySelector('.tab-content.active');
-                
-                console.log('アクティブなタブ:', activeTab ? activeTab.dataset.tab : 'なし');
-                console.log('アクティブなコンテンツ:', activeContent ? activeContent.id : 'なし');
                 
                 // ゲームから戻ってきた場合のモーダル表示
                 const showLoginModal = localStorage.getItem('showLoginModal');
