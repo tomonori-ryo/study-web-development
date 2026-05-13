@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>戦闘機シューティングゲーム - ホーム</title>
+    <!-- アプリ起動時はホーム画面から始めるためのフラグ。
+         他ページはこのフラグが無い場合にホームへリダイレクトする。 -->
+    <script>try { sessionStorage.setItem('appLaunched', '1'); } catch (e) {}</script>
     <style>
         body {
             margin: 0;
