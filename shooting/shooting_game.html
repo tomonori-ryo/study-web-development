@@ -351,6 +351,27 @@
         .weapon-selector-toggle {
             display: none !important;
         }
+
+        /* 操作ヒント（カードの下） */
+        .weapon-switch-hint {
+            margin-top: 4px;
+            padding: 2px 4px 0;
+            font-size: clamp(9px, 1.6vw, 11px);
+            color: rgba(255, 255, 255, 0.55);
+            text-align: center;
+            letter-spacing: 0.02em;
+            user-select: none;
+        }
+
+        /* デフォルトは PC ヒント表示 */
+        .weapon-switch-hint .hint-pc { display: inline; }
+        .weapon-switch-hint .hint-mobile { display: none; }
+
+        /* ホバー不可 & 粗ポインタ = タッチデバイス */
+        @media (hover: none) and (pointer: coarse) {
+            .weapon-switch-hint .hint-pc { display: none; }
+            .weapon-switch-hint .hint-mobile { display: inline; }
+        }
         
         /* レスポンシブ対応 */
         @media (max-width: 768px) {
@@ -528,6 +549,10 @@
                 <div class="weapon-details">弾薬: 5発</div>
             </div>
         </div>
+        <div id="weaponSwitchHint" class="weapon-switch-hint">
+            <span class="hint-pc">⌨ Tab で切替</span>
+            <span class="hint-mobile">👆 タップで切替</span>
+        </div>
     </div>
 
     <!-- Firebase SDK -->
@@ -623,6 +648,12 @@
         
         // 武器選択UIの更新（現在武器のカードだけ表示）
         function updateWeaponSelector() {
+            // 切替ヒントは「使用可能な武器が 2 種類以上ある時だけ」表示する。
+            const hint = document.getElementById('weaponSwitchHint');
+            if (hint) {
+                hint.style.display = (unlockedWeapons && unlockedWeapons.length > 1) ? 'block' : 'none';
+            }
+
             const weaponDisplays = document.querySelectorAll('.weapon-display');
             weaponDisplays.forEach(display => {
                 const slotNum = parseInt(display.dataset.slot);
