@@ -332,6 +332,76 @@ class FirebaseDataManager {
     }
   }
 
+  // アプリ起動時にランキング称号を最新化する。
+  //   - 自分のスコアでは順位は上がりようがないが、他人の更新で「降格」「圏外」になり得るので、
+  //     ホーム画面が開かれたタイミングで再評価する。
+  //   - 降格 or 圏外を検出した場合のみ通知ペイロードを返す（昇格は通知しない）。
+  //   - DB の progress.currentRank が即時更新されるため、同じ変動で再度ポップアップが
+  //     表示されることはない（自然なデデュプ）。
+  //
+  // 戻り値: null | { type: 'demoted' | 'lost', oldRank, newRank, lostTitle, newTitle }
+  async refreshRankingTitleOnStartup() {
+    try {
+      const user = this.auth.currentUser;
+      if (!user) return null;
+      const userRef = this.db.collection('users').doc(user.uid);
+      const userDoc = await userRef.get();
+      if (!userDoc.exists) return null;
+
+      const userData = userDoc.data();
+      const highScore = userData.highScore || 0;
+      if (highScore <= 0) return null; // 未プレイのユーザーは対象外
+
+      const progress = { ...(userData.progress || {}) };
+      const oldRank = Number(progress.currentRank) || 0;
+
+      const newRankRaw = await this.computeRank(user.uid, highScore);
+      const inBand = !!(newRankRaw && newRankRaw >= 1 && newRankRaw <= RANKING_TITLE_LIMIT);
+      const newRank = inBand ? newRankRaw : 0;
+
+      // 変化なし: 早期 return
+      if (oldRank === newRank) return null;
+
+      const isDemotion = oldRank > 0 && (!inBand || newRank > oldRank);
+
+      // ランキング称号ラベル群を、後段の称号書き換え用に取得
+      const titles = await this.listTitles();
+      const findTitleByRank = (rank) => {
+        if (!rank) return null;
+        const t = titles.find(tt => tt && tt.condition && tt.condition.type === 'ranking' && Number(tt.condition.value) === rank);
+        return t ? t.label : null;
+      };
+      const lostTitle = isDemotion ? findTitleByRank(oldRank) : null;
+      const newTitle  = inBand     ? findTitleByRank(newRank) : null;
+
+      // currentRank を反映して再評価。圏外なら削除。
+      if (inBand) progress.currentRank = newRank;
+      else delete progress.currentRank;
+
+      await userRef.update({
+        progress,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      // evaluateDynamicTitles 側で ranking 系は剥奪→再付与されるので、ここで明示的にラベル操作は不要
+      await this.evaluateDynamicTitles(userRef, { ...userData, progress });
+
+      if (isDemotion) {
+        return {
+          type: inBand ? 'demoted' : 'lost',
+          oldRank,
+          newRank: inBand ? newRank : null,
+          lostTitle,
+          newTitle
+        };
+      }
+      // 昇格は通知しない
+      return null;
+    } catch (e) {
+      console.warn('refreshRankingTitleOnStartup failed:', e);
+      return null;
+    }
+  }
+
   // ランキング取得
   async getRanking() {
     try {

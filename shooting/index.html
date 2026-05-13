@@ -250,6 +250,112 @@
             font-size: clamp(0.9rem, 2.5vw, 1rem);
         }
         .popup-controls .control-item:last-child { border-bottom: none; }
+        /* ── ランキング降格通知ポップアップ ───────────────────────────── */
+        .rank-popup .popup-card {
+            background: linear-gradient(160deg, rgba(50, 10, 10, 0.96), rgba(80, 25, 25, 0.96));
+            border: 2px solid rgba(255, 90, 90, 0.55);
+            box-shadow: 0 0 80px rgba(255, 70, 70, 0.45), inset 0 0 60px rgba(255, 60, 60, 0.18);
+            animation: popupRise 0.28s ease, rankShake 0.55s ease 0.28s;
+        }
+        @keyframes rankShake {
+            0%   { transform: translateX(0) rotate(0); }
+            18%  { transform: translateX(-8px) rotate(-1deg); }
+            36%  { transform: translateX(7px) rotate(1deg); }
+            54%  { transform: translateX(-4px) rotate(-0.6deg); }
+            72%  { transform: translateX(3px) rotate(0.4deg); }
+            100% { transform: translateX(0) rotate(0); }
+        }
+        .rank-popup .rank-headline {
+            font-size: clamp(1.4rem, 4.5vw, 1.8rem);
+            text-align: center;
+            color: #ffd1d1;
+            text-shadow: 0 0 12px rgba(255, 60, 60, 0.8);
+            margin: 0 0 0.6rem;
+            letter-spacing: 0.04em;
+        }
+        .rank-popup .rank-sub {
+            text-align: center;
+            color: rgba(255, 220, 220, 0.85);
+            font-size: clamp(0.95rem, 2.8vw, 1.05rem);
+            margin-bottom: 1.2rem;
+        }
+        .rank-popup .rank-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.8rem;
+            margin: 1rem auto 1.2rem;
+            font-size: clamp(1.1rem, 3.4vw, 1.4rem);
+        }
+        .rank-popup .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            font-weight: 700;
+            font-size: 1.3rem;
+            border: 2px solid;
+            box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.1);
+        }
+        .rank-popup .rank-badge.old {
+            background: linear-gradient(160deg, rgba(255, 215, 70, 0.25), rgba(255, 160, 30, 0.15));
+            border-color: rgba(255, 215, 70, 0.7);
+            color: #ffe79a;
+            text-shadow: 0 0 10px rgba(255, 220, 80, 0.7);
+        }
+        .rank-popup .rank-badge.new {
+            background: linear-gradient(160deg, rgba(200, 200, 200, 0.12), rgba(120, 120, 120, 0.18));
+            border-color: rgba(180, 180, 180, 0.55);
+            color: #d6d6d6;
+            animation: rankNewPulse 1.2s ease infinite alternate;
+        }
+        .rank-popup .rank-badge.lost {
+            background: rgba(40, 40, 40, 0.4);
+            border-color: rgba(120, 120, 120, 0.4);
+            color: rgba(220, 220, 220, 0.4);
+            font-size: 0.95rem;
+            text-decoration: line-through;
+        }
+        @keyframes rankNewPulse {
+            from { box-shadow: 0 0 0 rgba(255, 90, 90, 0.0); }
+            to   { box-shadow: 0 0 22px rgba(255, 120, 120, 0.55); }
+        }
+        .rank-popup .rank-arrow-icon {
+            font-size: 1.6rem;
+            color: rgba(255, 200, 200, 0.85);
+            animation: rankArrowSlide 1s ease infinite alternate;
+        }
+        @keyframes rankArrowSlide {
+            from { transform: translateX(-4px); opacity: 0.6; }
+            to   { transform: translateX(4px);  opacity: 1; }
+        }
+        .rank-popup .rank-title-lost {
+            text-align: center;
+            font-size: 0.95rem;
+            color: rgba(255, 200, 200, 0.85);
+            margin: 0.4rem 0 0.9rem;
+        }
+        .rank-popup .rank-title-lost strong { color: #ffec99; }
+        .rank-popup .rank-cta {
+            display: block;
+            margin: 1.2rem auto 0;
+            padding: 0.8rem 1.6rem;
+            background: linear-gradient(135deg, #ff6868, #b22020);
+            color: #fff;
+            border: none;
+            border-radius: 28px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 1rem;
+            box-shadow: 0 6px 20px rgba(255, 60, 60, 0.4);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .rank-popup .rank-cta:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 26px rgba(255, 60, 60, 0.55);
+        }
         .popup-controls .key {
             display: inline-block;
             padding: 2px 8px;
@@ -783,6 +889,25 @@
                 <div class="popup-body" id="popupBody"></div>
             </div>
         </div>
+
+        <!-- ランキング降格・圏外通知用ポップアップ。
+             起動時に refreshRankingTitleOnStartup() が変動を検出したときだけ表示。-->
+        <div class="popup-overlay rank-popup" id="rankPopup" role="alertdialog" aria-modal="true" aria-hidden="true">
+            <div class="popup-card" role="document">
+                <button type="button" class="popup-close" id="rankPopupClose" aria-label="閉じる">×</button>
+                <div class="popup-body">
+                    <h3 class="rank-headline" id="rankHeadline">⚠ ランキング変動</h3>
+                    <p class="rank-sub" id="rankSub"></p>
+                    <div class="rank-arrow">
+                        <span class="rank-badge old" id="rankBadgeOld">—</span>
+                        <span class="rank-arrow-icon">➜</span>
+                        <span class="rank-badge new" id="rankBadgeNew">—</span>
+                    </div>
+                    <p class="rank-title-lost" id="rankTitleInfo"></p>
+                    <button type="button" class="rank-cta" id="rankCtaPlay">再挑戦してランクを取り戻す</button>
+                </div>
+            </div>
+        </div>
     </div>
     
     
@@ -1107,6 +1232,71 @@
                 if (e.key === 'Escape' && overlay.classList.contains('open')) closePopup();
             });
         })();
+
+        // ─── ランキング降格・圏外通知ポップアップ ─────────────────────────────
+        // refreshRankingTitleOnStartup() の戻り値を渡すと開く。
+        //   change = { type: 'demoted' | 'lost', oldRank, newRank, lostTitle, newTitle }
+        function showRankChangePopup(change) {
+            if (!change) return;
+            const overlay  = document.getElementById('rankPopup');
+            const closeBtn = document.getElementById('rankPopupClose');
+            const cta      = document.getElementById('rankCtaPlay');
+            const headline = document.getElementById('rankHeadline');
+            const sub      = document.getElementById('rankSub');
+            const oldBadge = document.getElementById('rankBadgeOld');
+            const newBadge = document.getElementById('rankBadgeNew');
+            const titleInfo = document.getElementById('rankTitleInfo');
+            if (!overlay) return;
+
+            const isLost = change.type === 'lost';
+            headline.textContent = isLost ? '⚠ ランキング圏外になりました' : '⚠ 順位が下がりました';
+            sub.textContent = isLost
+                ? 'TOP 5 の称号を失いました…'
+                : '他のプレイヤーに追い抜かれました';
+
+            oldBadge.textContent = `${change.oldRank}位`;
+            oldBadge.className = 'rank-badge old';
+
+            if (isLost) {
+                newBadge.textContent = '圏外';
+                newBadge.className = 'rank-badge lost';
+            } else {
+                newBadge.textContent = `${change.newRank}位`;
+                newBadge.className = 'rank-badge new';
+            }
+
+            // 称号名の差分を補足表示
+            const parts = [];
+            if (change.lostTitle) parts.push(`「<strong>${escapeHtml(change.lostTitle)}</strong>」を喪失`);
+            if (change.newTitle && !isLost) parts.push(`新たに「<strong>${escapeHtml(change.newTitle)}</strong>」を獲得`);
+            titleInfo.innerHTML = parts.length ? parts.join('<br>') : '';
+
+            overlay.classList.add('open');
+            overlay.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => closeBtn.focus());
+
+            const close = () => {
+                overlay.classList.remove('open');
+                overlay.setAttribute('aria-hidden', 'true');
+            };
+            closeBtn.onclick = close;
+            overlay.onclick = e => { if (e.target === overlay) close(); };
+            cta.onclick = () => {
+                close();
+                window.location.href = 'shooting_game.html';
+            };
+            document.addEventListener('keydown', function onEsc(e) {
+                if (e.key === 'Escape' && overlay.classList.contains('open')) {
+                    close();
+                    document.removeEventListener('keydown', onEsc);
+                }
+            });
+        }
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
         
         // ゲームプレビューが存在する場合のみイベントリスナーを追加
         const gamePreview = document.querySelector('.game-preview');
@@ -1469,8 +1659,19 @@
                 
                 // 認証ボタンを更新
                 updateAuthButton();
-                
-                
+
+                // ランキング称号の最新化（ログイン済みかつスコアがある場合のみ）
+                //   降格 or 圏外を検出したらポップアップで通知。同じ変動は DB 反映後の比較で
+                //   自動的に再表示されない。
+                if (currentUser) {
+                    try {
+                        const change = await firebaseDataManager.refreshRankingTitleOnStartup();
+                        if (change) showRankChangePopup(change);
+                    } catch (e) {
+                        console.warn('ランキング再評価に失敗:', e);
+                    }
+                }
+
                 // ゲームから戻ってきた場合のモーダル表示
                 const showLoginModal = localStorage.getItem('showLoginModal');
                 const showRegisterModal = localStorage.getItem('showRegisterModal');
