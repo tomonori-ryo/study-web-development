@@ -584,6 +584,57 @@
         const weaponSelector = document.getElementById('weaponSelector');
 
         // ─────────────────────────────────────────────
+        // プレイヤースキン
+        //   classic / stealth / neon / crimson は procedural（色配色だけ違う）。
+        //   shadow-cruiser / shadow-overlord はイベント報酬の画像スキン。
+        //   localStorage.playerSkin に id を保存。アンロックが必要なスキンは
+        //   eventSkinsUnlocked[skinKey] を見て分岐する。
+        // ─────────────────────────────────────────────
+        const PLAYER_SKIN_CATALOG = {
+            classic:  { id: 'classic',  name: 'クラシック',   type: 'procedural', body: '#0066cc', wing: '#0066cc', nose: '#ffffff', engine: '#ff6600', cockpit: '#00ccff', glow: '#00ccff', unlock: null },
+            stealth:  { id: 'stealth',  name: 'ステルス',     type: 'procedural', body: '#2a2a2a', wing: '#404040', nose: '#999999', engine: '#ff3030', cockpit: '#dd2222', glow: '#ff3030', unlock: null },
+            neon:     { id: 'neon',     name: 'ネオン',       type: 'procedural', body: '#aa00ff', wing: '#aa00ff', nose: '#ffffff', engine: '#00ffff', cockpit: '#ff66ff', glow: '#ff66ff', unlock: null },
+            crimson:  { id: 'crimson',  name: 'クリムゾン',   type: 'procedural', body: '#cc1133', wing: '#cc1133', nose: '#ffd700', engine: '#ffaa00', cockpit: '#ffd700', glow: '#ffaa00', unlock: null },
+            'shadow-cruiser':  { id: 'shadow-cruiser',  name: 'シャドウ・クルーザー',     type: 'image', src: 'assets/event/event-boss-1.png', glow: '#66ddff', unlock: 'eventBossSkinShadowCruiser' },
+            'shadow-overlord': { id: 'shadow-overlord', name: 'シャドウ・オーバーロード', type: 'image', src: 'assets/event/event-boss-2.png', glow: '#88aaff', unlock: 'eventBossSkinShadowOverlord' }
+        };
+        const DEFAULT_PLAYER_SKIN = 'classic';
+
+        function isPlayerSkinUnlocked(skinId) {
+            const skin = PLAYER_SKIN_CATALOG[skinId];
+            if (!skin) return false;
+            if (!skin.unlock) return true; // unlock 条件なし = 常時可
+            let skins = {};
+            try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+            return !!skins[skin.unlock];
+        }
+
+        function loadSelectedPlayerSkin() {
+            let id = DEFAULT_PLAYER_SKIN;
+            try { id = localStorage.getItem('playerSkin') || DEFAULT_PLAYER_SKIN; } catch (e) {}
+            if (!PLAYER_SKIN_CATALOG[id] || !isPlayerSkinUnlocked(id)) {
+                id = DEFAULT_PLAYER_SKIN;
+            }
+            return id;
+        }
+
+        let currentPlayerSkinId = DEFAULT_PLAYER_SKIN; // 起動時に loadSelectedPlayerSkin() で確定
+        const playerSkinImages = {}; // image 型スキン用のキャッシュ
+
+        function getPlayerSkin() {
+            return PLAYER_SKIN_CATALOG[currentPlayerSkinId] || PLAYER_SKIN_CATALOG[DEFAULT_PLAYER_SKIN];
+        }
+        function ensurePlayerSkinImage(skin) {
+            if (skin.type !== 'image' || !skin.src) return null;
+            if (!playerSkinImages[skin.id]) {
+                const img = new Image();
+                img.src = skin.src;
+                playerSkinImages[skin.id] = img;
+            }
+            return playerSkinImages[skin.id];
+        }
+
+        // ─────────────────────────────────────────────
         // 期間限定イベントモード
         // URL パラメータ ?mode=event でメインゲームの上に「ボスだけ画像差し替え + 進捗追跡」を被せる。
         // ゲーム本体のロジックには干渉せず、描画とクリア判定だけ拡張する。
@@ -2672,42 +2723,59 @@
             const y = player.y;
             const w = player.width;
             const h = player.height;
-            
-            // 武器変更時のエフェクト
-            if (weaponChangeTimer > 0) {
+            const skin = getPlayerSkin();
+
+            // 武器変更時のグロー（既存挙動）。スキンの glow をフォールバックに使う
+            const glowing = weaponChangeTimer > 0;
+            if (glowing) {
                 ctx.shadowColor = equippedWeapons[currentWeapon].color;
                 ctx.shadowBlur = 15;
             }
-            
-            // 戦闘機の本体（青）
-            ctx.fillStyle = '#0066cc';
+
+            if (skin.type === 'image') {
+                // 画像スキン: 上下反転（ボス画像なので機首を上向きにする）して描画
+                const img = ensurePlayerSkinImage(skin);
+                if (img && img.complete && img.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.shadowColor = skin.glow || '#66ddff';
+                    ctx.shadowBlur = glowing ? 18 : 10;
+                    // y 軸反転で機首を上方向に
+                    ctx.translate(x + w / 2, y + h / 2);
+                    ctx.scale(1, -1);
+                    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+                    ctx.restore();
+                } else {
+                    // 画像未読み込み時は classic 配色で procedural fallback
+                    drawPlayerProcedural(x, y, w, h, PLAYER_SKIN_CATALOG[DEFAULT_PLAYER_SKIN]);
+                }
+            } else {
+                drawPlayerProcedural(x, y, w, h, skin);
+            }
+
+            if (glowing) ctx.shadowBlur = 0;
+        }
+
+        // 各色を受け取って procedural な戦闘機を描く（既存の見た目をパラメータ化）
+        function drawPlayerProcedural(x, y, w, h, skin) {
+            // 本体
+            ctx.fillStyle = skin.body;
             ctx.fillRect(x + w/4, y + h/3, w/2, h/2);
-            
-            // 戦闘機の機首（白）
-            ctx.fillStyle = '#ffffff';
+            // 機首
+            ctx.fillStyle = skin.nose;
             ctx.fillRect(x + w/3, y, w/3, h/3);
-            
-            // 戦闘機の翼（青）
-            ctx.fillStyle = '#0066cc';
+            // 翼
+            ctx.fillStyle = skin.wing;
             ctx.fillRect(x, y + h/3, w/4, h/3);
             ctx.fillRect(x + 3*w/4, y + h/3, w/4, h/3);
-            
-            // 戦闘機の尾翼（青）
-            ctx.fillStyle = '#0066cc';
+            // 尾翼
+            ctx.fillStyle = skin.wing;
             ctx.fillRect(x + w/3, y + 2*h/3, w/3, h/3);
-            
-            // エンジン部分（オレンジ）
-            ctx.fillStyle = '#ff6600';
+            // エンジン
+            ctx.fillStyle = skin.engine;
             ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
-            
-            // コックピット（水色）
-            ctx.fillStyle = '#00ccff';
+            // コックピット
+            ctx.fillStyle = skin.cockpit;
             ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
-            
-            // 武器変更時のエフェクトをリセット
-            if (weaponChangeTimer > 0) {
-                ctx.shadowBlur = 0;
-            }
         }
 
         // 弾丸描画
@@ -3926,6 +3994,12 @@
             weaponElement.textContent = `武器: ${equippedWeapons[currentWeapon].name}`;
             // ライフ表示も初期化時点で正しい値に揃える（イベントモードは 10）
             livesElement.textContent = `ライフ: ${lives}`;
+
+            // 選択中の自機スキンをロード。アンロックされていない場合は classic に戻る
+            currentPlayerSkinId = loadSelectedPlayerSkin();
+            // 画像スキンは事前ロード
+            const skin = getPlayerSkin();
+            if (skin.type === 'image') ensurePlayerSkinImage(skin);
 
             // イベントモードバナーの初期表示
             updateEventBanner();

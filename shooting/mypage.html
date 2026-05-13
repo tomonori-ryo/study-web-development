@@ -339,6 +339,70 @@
             color: #ff6699;
         }
 
+        /* 自機スキン用 */
+        .player-skin-card .title-note {
+            color: #cccccc;
+            font-size: 0.85rem;
+            margin-top: -0.4rem;
+            margin-bottom: 0.6rem;
+            text-align: center;
+        }
+        .ship-skin-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 12px 10px 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        .ship-skin-card:hover:not(.locked) {
+            transform: translateY(-2px);
+            border-color: rgba(0, 220, 255, 0.5);
+            box-shadow: 0 10px 24px rgba(0, 220, 255, 0.2);
+        }
+        .ship-skin-card.selected {
+            border-color: #00ffaa;
+            background: rgba(0, 255, 170, 0.08);
+            box-shadow: 0 0 16px rgba(0, 255, 170, 0.3);
+        }
+        .ship-skin-card.locked {
+            opacity: 0.5;
+            filter: grayscale(0.6);
+            cursor: not-allowed;
+        }
+        .ship-skin-card canvas, .ship-skin-card img {
+            width: 100%;
+            max-width: 110px;
+            aspect-ratio: 1/1;
+            object-fit: contain;
+            image-rendering: pixelated;
+            background: radial-gradient(circle at center, #0d1b2a 0%, #000 80%);
+            border-radius: 8px;
+            padding: 4px;
+            display: block;
+            margin: 0 auto;
+        }
+        .ship-skin-card .ship-skin-name {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #ffffff;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .ship-skin-card .ship-skin-status {
+            margin-top: 4px;
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        .ship-skin-card.selected .ship-skin-status {
+            color: #00ffaa;
+            font-weight: bold;
+        }
+        .ship-skin-card.locked .ship-skin-status {
+            color: #ff7799;
+        }
+
         .titles-list {
             display: flex;
             flex-wrap: wrap;
@@ -611,6 +675,14 @@
                 <p class="title-note">期間限定イベントをクリアすると、対象ボスのスキンがここに追加されます。</p>
                 <div id="eventSkinsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 12px;"></div>
             </div>
+
+            <!-- 自機スキン -->
+            <div class="card player-skin-card">
+                <h2>🚀 自機スキン</h2>
+                <p class="title-note">ゲームで使用する自機の見た目を選択できます。イベント報酬のスキンも装着可能。</p>
+                <div id="playerSkinsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px;"></div>
+                <p class="title-note" style="margin-top:12px; font-size: 0.78rem;">選択は次回ゲーム開始時から反映されます。</p>
+            </div>
             
             <!-- アカウント設定カード -->
             <div class="card account-card">
@@ -834,6 +906,122 @@
             { skinKey: 'eventBossSkinShadowOverlord', name: 'シャドウ・オーバーロード', image: 'assets/event/event-boss-2.png', description: '影艦隊襲来 / Boss 2' }
         ];
 
+        // ─────── 自機スキンカタログ（shooting_game.html と同期） ───────
+        const PLAYER_SKIN_CATALOG = {
+            classic:  { id: 'classic',  name: 'クラシック', type: 'procedural', body: '#0066cc', wing: '#0066cc', nose: '#ffffff', engine: '#ff6600', cockpit: '#00ccff', unlock: null },
+            stealth:  { id: 'stealth',  name: 'ステルス',   type: 'procedural', body: '#2a2a2a', wing: '#404040', nose: '#999999', engine: '#ff3030', cockpit: '#dd2222', unlock: null },
+            neon:     { id: 'neon',     name: 'ネオン',     type: 'procedural', body: '#aa00ff', wing: '#aa00ff', nose: '#ffffff', engine: '#00ffff', cockpit: '#ff66ff', unlock: null },
+            crimson:  { id: 'crimson',  name: 'クリムゾン', type: 'procedural', body: '#cc1133', wing: '#cc1133', nose: '#ffd700', engine: '#ffaa00', cockpit: '#ffd700', unlock: null },
+            'shadow-cruiser':  { id: 'shadow-cruiser',  name: 'シャドウ・クルーザー',     type: 'image', src: 'assets/event/event-boss-1.png', unlock: 'eventBossSkinShadowCruiser' },
+            'shadow-overlord': { id: 'shadow-overlord', name: 'シャドウ・オーバーロード', type: 'image', src: 'assets/event/event-boss-2.png', unlock: 'eventBossSkinShadowOverlord' }
+        };
+        const DEFAULT_PLAYER_SKIN = 'classic';
+        const PLAYER_SKIN_ORDER = ['classic', 'stealth', 'neon', 'crimson', 'shadow-cruiser', 'shadow-overlord'];
+
+        function isPlayerSkinUnlockedMy(skin) {
+            if (!skin.unlock) return true;
+            let skins = {};
+            try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+            // Firebase の currentWeaponProgress も併用
+            const fromFirebase = !!(currentWeaponProgress && currentWeaponProgress[skin.unlock]);
+            return !!skins[skin.unlock] || fromFirebase;
+        }
+
+        function getSelectedPlayerSkinId() {
+            const id = (localStorage.getItem('playerSkin') || DEFAULT_PLAYER_SKIN);
+            if (!PLAYER_SKIN_CATALOG[id]) return DEFAULT_PLAYER_SKIN;
+            return id;
+        }
+        function setSelectedPlayerSkin(id) {
+            const skin = PLAYER_SKIN_CATALOG[id];
+            if (!skin) return;
+            if (!isPlayerSkinUnlockedMy(skin)) return; // ロック中は選択不可
+            try { localStorage.setItem('playerSkin', id); } catch (e) {}
+            // Firebase 同期
+            try {
+                if (typeof firebaseDataManager !== 'undefined'
+                    && typeof firebase !== 'undefined'
+                    && firebase.auth && firebase.auth().currentUser) {
+                    firebaseDataManager.updateProgress({ playerSkin: id }).catch(() => {});
+                }
+            } catch (e) {}
+        }
+
+        // プレビュー描画（procedural は小さなキャンバスに drawPlayerProcedural と同じ手順）
+        function renderShipPreviewCanvas(canvas, skin) {
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height;
+            ctx.clearRect(0, 0, W, H);
+            // 中央寄せのバウンディングボックス
+            const w = W * 0.7;
+            const h = H * 0.8;
+            const x = (W - w) / 2;
+            const y = (H - h) / 2;
+            // 本体
+            ctx.fillStyle = skin.body;
+            ctx.fillRect(x + w/4, y + h/3, w/2, h/2);
+            ctx.fillStyle = skin.nose;
+            ctx.fillRect(x + w/3, y, w/3, h/3);
+            ctx.fillStyle = skin.wing;
+            ctx.fillRect(x, y + h/3, w/4, h/3);
+            ctx.fillRect(x + 3*w/4, y + h/3, w/4, h/3);
+            ctx.fillStyle = skin.wing;
+            ctx.fillRect(x + w/3, y + 2*h/3, w/3, h/3);
+            ctx.fillStyle = skin.engine;
+            ctx.fillRect(x + w/4, y + h/2, w/2, h/6);
+            ctx.fillStyle = skin.cockpit;
+            ctx.fillRect(x + w/3, y + h/4, w/3, h/6);
+        }
+
+        function renderPlayerSkins() {
+            const grid = document.getElementById('playerSkinsGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const selectedId = getSelectedPlayerSkinId();
+
+            PLAYER_SKIN_ORDER.forEach(id => {
+                const skin = PLAYER_SKIN_CATALOG[id];
+                if (!skin) return;
+                const unlocked = isPlayerSkinUnlockedMy(skin);
+                const selected = unlocked && id === selectedId;
+                const card = document.createElement('div');
+                card.className = `ship-skin-card ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}`;
+                card.dataset.skinId = id;
+
+                if (skin.type === 'image') {
+                    // 画像はゲーム内では上下反転（機首が上）になるが、プレビューは見やすさ優先で正向き
+                    const img = document.createElement('img');
+                    img.src = skin.src;
+                    img.alt = skin.name;
+                    img.loading = 'lazy';
+                    card.appendChild(img);
+                } else {
+                    const cv = document.createElement('canvas');
+                    cv.width = 110; cv.height = 110;
+                    card.appendChild(cv);
+                    renderShipPreviewCanvas(cv, skin);
+                }
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'ship-skin-name';
+                nameDiv.textContent = skin.name;
+                card.appendChild(nameDiv);
+
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'ship-skin-status';
+                statusDiv.textContent = !unlocked ? '🔒 イベントで獲得' : (selected ? '✓ 装着中' : 'タップで装着');
+                card.appendChild(statusDiv);
+
+                if (unlocked) {
+                    card.addEventListener('click', () => {
+                        setSelectedPlayerSkin(id);
+                        renderPlayerSkins(); // 再描画して選択状態を反映
+                    });
+                }
+                grid.appendChild(card);
+            });
+        }
+
         function renderEventSkins(progress) {
             const grid = document.getElementById('eventSkinsGrid');
             if (!grid) return;
@@ -996,6 +1184,12 @@
                     renderWeaponLoadoutSelects(savedLoadout, currentWeaponProgress);
                     renderTitles(currentFixedTitles, '');
                     renderEventSkins(currentWeaponProgress);
+
+                    // Firebase に保存された playerSkin を localStorage に反映（別端末との同期用）
+                    if (remoteProgress.playerSkin && PLAYER_SKIN_CATALOG[remoteProgress.playerSkin]) {
+                        try { localStorage.setItem('playerSkin', remoteProgress.playerSkin); } catch (e) {}
+                    }
+                    renderPlayerSkins();
                 }
             } catch (error) {
                 console.error('ユーザーデータ読み込みエラー:', error);
@@ -1026,6 +1220,7 @@
                 renderWeaponLoadoutSelects(getStoredWeaponLoadout() || DEFAULT_WEAPON_LOADOUT, currentWeaponProgress);
                 renderTitles(currentFixedTitles, '');
                 renderEventSkins(currentWeaponProgress);
+                renderPlayerSkins();
             }
         }
         
