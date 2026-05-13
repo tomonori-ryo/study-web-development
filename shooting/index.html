@@ -817,7 +817,8 @@
         }
 
         // ─────── 期間限定イベント ───────
-        const EVENT_META = {
+        // 既定のイベントメタ情報（Firestore に active イベントがあれば maybeOverrideEventMeta で上書き）
+        let EVENT_META = {
             id: 'shadow-fleet-2026',
             title: '影艦隊襲来',
             endsAt: '2026-12-31T23:59:59+09:00',
@@ -841,6 +842,33 @@
                 }
             ]
         };
+
+        // Firestore に active イベントがあれば EVENT_META を上書きする。
+        // 管理画面（admin.html）でイベントを更新したらここに反映される。
+        async function maybeOverrideEventMeta() {
+            try {
+                if (typeof firebaseDataManager === 'undefined') return;
+                const active = await firebaseDataManager.getActiveEvent();
+                if (!active || !Array.isArray(active.bosses) || !active.bosses.length) return;
+                EVENT_META = {
+                    id: active.slug || active.id,
+                    title: active.title || EVENT_META.title,
+                    endsAt: active.endsAt || EVENT_META.endsAt,
+                    bossCount: active.bosses.length,
+                    bosses: active.bosses.map((b, i) => ({
+                        id: b.id || `boss-${i + 1}`,
+                        skinKey: b.skinKey || '',
+                        name: b.name || `ボス ${i + 1}`,
+                        image: b.image || '',
+                        description: b.description || '',
+                        color: 'linear-gradient(135deg, #2a3850, #4a6080)'
+                    }))
+                };
+                renderEventInfo();
+            } catch (e) {
+                console.warn('event meta override failed:', e);
+            }
+        }
 
         function startEvent() {
             showEventBossSelectModal();
@@ -998,7 +1026,11 @@
             else if (badge) badge.style.display = 'none';
         }
         // ページロード後に呼ぶ（DOMContentLoaded で十分早い）
-        document.addEventListener('DOMContentLoaded', renderEventInfo);
+        document.addEventListener('DOMContentLoaded', () => {
+            renderEventInfo();
+            // 認証完了を待たずに公開イベントとして取得（events コレクションが公開読み取り可能な前提）
+            maybeOverrideEventMeta();
+        });
 
         // モード選択モーダルを表示
         function showModeSelectModal() {

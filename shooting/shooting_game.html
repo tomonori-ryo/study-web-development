@@ -639,7 +639,9 @@
         // URL パラメータ ?mode=event でメインゲームの上に「ボスだけ画像差し替え + 進捗追跡」を被せる。
         // ゲーム本体のロジックには干渉せず、描画とクリア判定だけ拡張する。
         // ─────────────────────────────────────────────
-        const EVENT_CONFIG = {
+        // 既定のイベント設定。Firestore に active=true なドキュメントがあれば
+        //   maybeOverrideEventFromFirestore() でこれを上書きする。
+        let EVENT_CONFIG = {
             id: 'shadow-fleet-2026',
             title: '影艦隊襲来',
             subtitle: '期間限定イベント',
@@ -684,31 +686,80 @@
         const urlParams = new URLSearchParams(window.location.search);
         const isEventMode = urlParams.get('mode') === 'event';
         const eventBossSelectionRaw = (urlParams.get('boss') || 'all').toLowerCase();
-        const EVENT_BOSS_SELECTION = ['cruiser', 'overlord', 'all'].includes(eventBossSelectionRaw)
-            ? (eventBossSelectionRaw === 'cruiser' ? 'shadow-cruiser'
-               : eventBossSelectionRaw === 'overlord' ? 'shadow-overlord'
-               : 'all')
-            : 'all';
+        // legacy: 'cruiser'/'overlord' を旧ボスIDにマッピング。
+        //   admin が任意のIDで作ったイベントは boss=<そのID> または 'all' を使う想定。
+        //   EVENT_CONFIG override 後にも resolveEventBossSelection() で再評価する。
+        function resolveEventBossSelection() {
+            const raw = eventBossSelectionRaw;
+            if (raw === 'all' || !raw) return 'all';
+            // 1) EVENT_CONFIG.bosses[].id と直接一致
+            if (EVENT_CONFIG.bosses.some(b => b.id === raw)) return raw;
+            // 2) 旧URL互換
+            if (raw === 'cruiser'  && EVENT_CONFIG.bosses.some(b => b.id === 'shadow-cruiser'))  return 'shadow-cruiser';
+            if (raw === 'overlord' && EVENT_CONFIG.bosses.some(b => b.id === 'shadow-overlord')) return 'shadow-overlord';
+            return 'all';
+        }
+        let EVENT_BOSS_SELECTION = resolveEventBossSelection();
 
         // ボス画像（イベントモード時のみロード）
-        const eventBossImages = [];
+        let eventBossImages = [];
         let eventImagesReady = false;
-        if (isEventMode) {
+        function preloadEventBossImages() {
+            eventBossImages = [];
+            eventImagesReady = false;
+            const total = EVENT_CONFIG.bosses.length;
+            if (!total) { eventImagesReady = true; return; }
             let loaded = 0;
             EVENT_CONFIG.bosses.forEach((b, i) => {
+                if (!b.image) {
+                    loaded++;
+                    if (loaded === total) eventImagesReady = true;
+                    return;
+                }
                 const img = new Image();
                 img.onload = () => {
                     loaded++;
-                    if (loaded === EVENT_CONFIG.bosses.length) eventImagesReady = true;
+                    if (loaded === total) eventImagesReady = true;
                 };
                 img.onerror = () => {
                     // 画像が読めなくても本体描画にフォールバックするので継続
                     loaded++;
-                    if (loaded === EVENT_CONFIG.bosses.length) eventImagesReady = true;
+                    if (loaded === total) eventImagesReady = true;
                 };
                 img.src = b.image;
                 eventBossImages[i] = img;
             });
+        }
+        if (isEventMode) preloadEventBossImages();
+
+        // Firestore に active イベントがあれば EVENT_CONFIG を差し替え。
+        // 管理画面で作成・編集したイベントをゲームに反映する。
+        async function maybeOverrideEventFromFirestore() {
+            try {
+                if (typeof firebaseDataManager === 'undefined') return;
+                const active = await firebaseDataManager.getActiveEvent();
+                if (!active || !Array.isArray(active.bosses) || !active.bosses.length) return;
+                EVENT_CONFIG = {
+                    id: active.slug || active.id,
+                    title: active.title || EVENT_CONFIG.title,
+                    subtitle: EVENT_CONFIG.subtitle,
+                    endsAt: active.endsAt || EVENT_CONFIG.endsAt,
+                    bosses: active.bosses.map(b => ({
+                        id: b.id || '',
+                        skinKey: b.skinKey || '',
+                        image: b.image || '',
+                        name: b.name || 'ボス',
+                        flavor: b.description || '',
+                        hpMultiplier: Number(b.hpMultiplier) || 1,
+                        featureLevel: Number(b.featureLevel) || 8,
+                        bulletCount: Number(b.bulletCount) || 3,
+                        extraGimmicks: Array.isArray(b.extraGimmicks) ? b.extraGimmicks : []
+                    }))
+                };
+                if (isEventMode) preloadEventBossImages();
+            } catch (e) {
+                console.warn('event override failed:', e);
+            }
         }
 
         // 期間内かどうか
@@ -4007,8 +4058,15 @@
             gameLoop();
         }
 
-        // ゲーム開始
-        initGame();
+        // ゲーム開始: イベントモード時は Firestore のアクティブイベントを取得してから initGame
+        (async function bootstrap() {
+            if (isEventMode) {
+                await maybeOverrideEventFromFirestore();
+                // override が走ったら boss selection を再評価
+                EVENT_BOSS_SELECTION = resolveEventBossSelection();
+            }
+            initGame();
+        })();
     </script>
 </body>
 </html> 
