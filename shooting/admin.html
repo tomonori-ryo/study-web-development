@@ -239,6 +239,7 @@
             <div class="admin-actions">
                 <a class="btn btn-ghost" href="index.html">🏠 ホーム</a>
                 <a class="btn btn-ghost" href="mypage.html">👤 マイページ</a>
+                <a class="btn btn-ghost" href="boss-test.html" target="_blank" rel="noopener">🧪 ボス挙動テスト</a>
                 <button type="button" class="btn btn-ghost" id="logoutBtn">ログアウト</button>
             </div>
         </header>
@@ -645,10 +646,19 @@
                         </div>
                         <div class="row-actions">
                             <button type="button" class="btn btn-sm" data-action="edit">編集</button>
+                            <button type="button" class="btn btn-sm btn-success" data-action="test-bench" title="挙動テスト場(boss-test.html)で開く">🧪 挙動テスト</button>
+                            <button type="button" class="btn btn-sm btn-success" data-action="play" title="ゲーム本体でプレビュー">🚀 ゲームで試す</button>
                             <button type="button" class="btn btn-sm btn-danger" data-action="delete">削除</button>
                         </div>
                     `;
                     row.querySelector('[data-action="edit"]').addEventListener('click', () => openEventModal(ev));
+                    row.querySelector('[data-action="test-bench"]').addEventListener('click', () => {
+                        window.open(`boss-test.html?adminEventId=${encodeURIComponent(ev.id)}`, '_blank');
+                    });
+                    row.querySelector('[data-action="play"]').addEventListener('click', () => {
+                        // active でなくても previewEventId でフェッチ可能。boss=all で複数ボスを交互
+                        window.open(`shooting_game.html?mode=event&boss=all&previewEventId=${encodeURIComponent(ev.id)}`, '_blank');
+                    });
                     row.querySelector('[data-action="delete"]').addEventListener('click', async () => {
                         if (!confirm(`イベント "${ev.title || ev.id}" を削除しますか？`)) return;
                         try { await firebaseDataManager.deleteEvent(ev.id); refreshEvents(); }

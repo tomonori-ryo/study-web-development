@@ -734,10 +734,18 @@
 
         // Firestore に active イベントがあれば EVENT_CONFIG を差し替え。
         // 管理画面で作成・編集したイベントをゲームに反映する。
+        //   ?previewEventId=<id> を渡せば active 状態に関わらずそのイベントを試せる（admin から）
         async function maybeOverrideEventFromFirestore() {
             try {
                 if (typeof firebaseDataManager === 'undefined') return;
-                const active = await firebaseDataManager.getActiveEvent();
+                const previewId = urlParams.get('previewEventId');
+                let active = null;
+                if (previewId) {
+                    const doc = await firebaseDataManager.db.collection('events').doc(previewId).get();
+                    if (doc.exists) active = { id: doc.id, ...doc.data() };
+                } else {
+                    active = await firebaseDataManager.getActiveEvent();
+                }
                 if (!active || !Array.isArray(active.bosses) || !active.bosses.length) return;
                 EVENT_CONFIG = {
                     id: active.slug || active.id,
