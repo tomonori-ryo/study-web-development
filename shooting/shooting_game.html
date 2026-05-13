@@ -595,14 +595,44 @@
             // イベント期間（ISO 8601）。期間外でもプレイ自体は可能だが、スキン報酬は付与しない。
             endsAt: '2026-12-31T23:59:59+09:00',
             // 2 種類のイベントボス。`image` パスとスキン解放キーを定義。
+            // hpMultiplier  : メインゲームの HP に掛ける倍率
+            // featureLevel  : ボスのレベルをこの値以上に固定（特殊行動の解放ライン）
+            // extraGimmicks : 通常の Lv ベース機能に加えて使える特殊弾の種類
             bosses: [
-                { id: 'shadow-cruiser',   skinKey: 'eventBossSkinShadowCruiser',   image: 'assets/event/event-boss-1.png', name: 'シャドウ・クルーザー' },
-                { id: 'shadow-overlord',  skinKey: 'eventBossSkinShadowOverlord',  image: 'assets/event/event-boss-2.png', name: 'シャドウ・オーバーロード' }
+                {
+                    id: 'shadow-cruiser',
+                    skinKey: 'eventBossSkinShadowCruiser',
+                    image: 'assets/event/event-boss-1.png',
+                    name: 'シャドウ・クルーザー',
+                    flavor: '軍事兵器の精密射撃 / 機雷・狙撃に特化',
+                    hpMultiplier: 4,
+                    featureLevel: 8,    // 機雷まで解放
+                    extraGimmicks: ['homing']
+                },
+                {
+                    id: 'shadow-overlord',
+                    skinKey: 'eventBossSkinShadowOverlord',
+                    image: 'assets/event/event-boss-2.png',
+                    name: 'シャドウ・オーバーロード',
+                    flavor: '神秘の超能力 / 部下召喚・吸収・重力',
+                    hpMultiplier: 5,
+                    featureLevel: 10,   // 部下・狙撃まで解放
+                    extraGimmicks: ['homing', 'gravity']
+                }
             ]
         };
 
+        // boss=cruiser|overlord|all で出現させるボスを切替え。
+        // all  : 両方を交互に出す（旧来挙動）
+        // それ以外: そのボス専用ステージ（同じボスが永続して出続け、HP / 機能が強化される）
         const urlParams = new URLSearchParams(window.location.search);
         const isEventMode = urlParams.get('mode') === 'event';
+        const eventBossSelectionRaw = (urlParams.get('boss') || 'all').toLowerCase();
+        const EVENT_BOSS_SELECTION = ['cruiser', 'overlord', 'all'].includes(eventBossSelectionRaw)
+            ? (eventBossSelectionRaw === 'cruiser' ? 'shadow-cruiser'
+               : eventBossSelectionRaw === 'overlord' ? 'shadow-overlord'
+               : 'all')
+            : 'all';
 
         // ボス画像（イベントモード時のみロード）
         const eventBossImages = [];
@@ -641,32 +671,51 @@
             if (!isEventMode) { banner.style.display = 'none'; return; }
             banner.style.display = 'block';
 
-            const titleEl = document.getElementById('eventBannerTitle');
-            if (titleEl) titleEl.textContent = EVENT_CONFIG.title;
-
             let skins = {};
             try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
-            const unlocked = EVENT_CONFIG.bosses.filter(b => skins[b.skinKey]).length;
-            const total = EVENT_CONFIG.bosses.length;
+            const targets = selectedEventBosses();
+            const unlocked = targets.filter(b => skins[b.skinKey]).length;
+            const total = targets.length;
+
+            // 単体ステージはタイトルにボス名を表示し、複数体は「影艦隊襲来」のまま
+            const titleEl = document.getElementById('eventBannerTitle');
+            if (titleEl) {
+                titleEl.textContent = EVENT_BOSS_SELECTION === 'all'
+                    ? EVENT_CONFIG.title
+                    : `${targets[0].name} 戦`;
+            }
 
             const progEl = document.getElementById('eventBannerProgress');
             if (progEl) {
                 if (!isEventActive()) {
                     progEl.textContent = `(期間終了)`;
                 } else if (unlocked === total) {
-                    progEl.textContent = `✓ コンプリート！`;
-                } else {
+                    progEl.textContent = `✓ ${EVENT_BOSS_SELECTION === 'all' ? 'コンプリート！' : 'スキン獲得済み'}`;
+                } else if (EVENT_BOSS_SELECTION === 'all') {
                     progEl.textContent = `スキン ${unlocked}/${total} 獲得`;
+                } else {
+                    progEl.textContent = `スキン未取得 / 撃破でゲット`;
                 }
             }
         }
 
         // 出現回数カウンタ（このランで何体目のボスかを記録）。
-        // ラン内では交互（1体目=boss1, 2体目=boss2, …）に出る。
+        // EVENT_BOSS_SELECTION === 'all' のとき、ラン内は交互に出る。
+        // 単体指定（cruiser / overlord）の場合は常に該当ボスが出る。
         let eventBossSpawnCount = 0;
         function pickEventBossIndex() {
-            // 0 始まり: 1体目=0, 2体目=1, 3体目=0, …
+            if (EVENT_BOSS_SELECTION !== 'all') {
+                const idx = EVENT_CONFIG.bosses.findIndex(b => b.id === EVENT_BOSS_SELECTION);
+                return idx >= 0 ? idx : 0;
+            }
             return eventBossSpawnCount % EVENT_CONFIG.bosses.length;
+        }
+
+        // 現在のイベントモードで「絞り込まれているボスたち」（コレクション通知用）
+        function selectedEventBosses() {
+            if (EVENT_BOSS_SELECTION === 'all') return EVENT_CONFIG.bosses;
+            const b = EVENT_CONFIG.bosses.find(b => b.id === EVENT_BOSS_SELECTION);
+            return b ? [b] : EVENT_CONFIG.bosses;
         }
 
         // イベント進捗: どのボスを既に倒したか（永続）
@@ -2321,9 +2370,89 @@
         }
 
         // ボス弾丸発射
+        // ─────────────────────────────────────────────
+        // イベントボスの追加弾種
+        //   homing : 単発の追尾ミサイル（プレイヤーを steer して追いかける）
+        //   gravity: 半透明の重力オーブ（pullRadius 内のプレイヤーを引き寄せる）
+        // 通常ゲームには使わない。boss.extraGimmicks にキーが含まれるときだけ発射される。
+        // ─────────────────────────────────────────────
+        const BOSS_HOMING_SPEED = 3.4;
+        const BOSS_HOMING_FORCE = 0.07;
+        const BOSS_HOMING_LIFE = 280;  // フレーム
+
+        const BOSS_GRAVITY_SPEED = 1.4;
+        const BOSS_GRAVITY_LIFE = 360;
+        const BOSS_GRAVITY_PULL_RADIUS = 180;
+        const BOSS_GRAVITY_PULL_FORCE = 1.6;
+
+        function fireBossHomingMissile() {
+            if (!boss) return;
+            const sx = boss.x + boss.width / 2;
+            const sy = boss.y + boss.height;
+            const dx = (player.x + player.width / 2) - sx;
+            const dy = (player.y + player.height / 2) - sy;
+            const dist = Math.hypot(dx, dy) || 1;
+            bossBullets.push({
+                x: sx - 6,
+                y: sy,
+                width: 12,
+                height: 12,
+                speedX: (dx / dist) * BOSS_HOMING_SPEED,
+                speedY: (dy / dist) * BOSS_HOMING_SPEED,
+                maxSpeed: BOSS_HOMING_SPEED,
+                color: '#ff66aa',
+                homing: true,
+                homingForce: BOSS_HOMING_FORCE,
+                lifeFrames: BOSS_HOMING_LIFE
+            });
+            playSound(bossShootSound);
+        }
+
+        function fireBossGravityOrb() {
+            if (!boss) return;
+            // 軽くプレイヤー方向へ飛ばすが、引き寄せ効果のほうがメイン
+            const sx = boss.x + boss.width / 2;
+            const sy = boss.y + boss.height;
+            const dx = (player.x + player.width / 2) - sx;
+            const dy = (player.y + player.height / 2) - sy;
+            const dist = Math.hypot(dx, dy) || 1;
+            bossBullets.push({
+                x: sx - 12,
+                y: sy,
+                width: 24,
+                height: 24,
+                speedX: (dx / dist) * BOSS_GRAVITY_SPEED,
+                speedY: (dy / dist) * BOSS_GRAVITY_SPEED,
+                color: '#aa66ff',
+                isGravity: true,
+                pullRadius: BOSS_GRAVITY_PULL_RADIUS,
+                pullForce: BOSS_GRAVITY_PULL_FORCE,
+                lifeFrames: BOSS_GRAVITY_LIFE
+            });
+            playSound(bossShootSound);
+        }
+
         function bossShoot() {
             if (!boss) return;
-            
+
+            // イベントモード: ボス毎に確率で特殊弾を撃つ（メインゲームには無影響）
+            if (isEventMode && Array.isArray(boss.extraGimmicks) && boss.extraGimmicks.length > 0) {
+                const roll = Math.random();
+                // 25% で extra のいずれかを使う。残りは通常ファン。
+                if (roll < 0.25) {
+                    const pick = boss.extraGimmicks[Math.floor(Math.random() * boss.extraGimmicks.length)];
+                    if (pick === 'homing') {
+                        fireBossHomingMissile();
+                        // ホーミングは単発でも脅威なのですぐ return
+                        return;
+                    }
+                    if (pick === 'gravity') {
+                        fireBossGravityOrb();
+                        return;
+                    }
+                }
+            }
+
             // レベルに応じて弾丸数を増加（Lv.6 で 6 発に到達したら以降は据え置き。
             // それ以上の難易度上昇は「衝撃波(Lv.5+)」「雑魚吸収(Lv.7+)」で表現する）
             const bulletCount = Math.min(3 + Math.floor(bossLevel / 2), 6);
@@ -2355,14 +2484,29 @@
                 
                 // ボスの難易度レベルを計算（500点間隔でレベルアップ）
                 bossLevel = Math.floor(score / 500) + 1;
-                
+
+                // イベントモード: ボスプロファイルで bossLevel を底上げし、特殊機能を解放する
+                let eventBossProfile = null;
+                if (isEventMode) {
+                    const idx = pickEventBossIndex();
+                    eventBossProfile = EVENT_CONFIG.bosses[idx];
+                    if (eventBossProfile && eventBossProfile.featureLevel) {
+                        // プロファイルが要求するレベル以上に固定（衝撃波・吸収・機雷・狙撃などを即解放）
+                        bossLevel = Math.max(bossLevel, eventBossProfile.featureLevel);
+                    }
+                }
+
+                const baseHealth = 20 + (bossLevel - 1) * 10;
+                const hpMultiplier = (isEventMode && eventBossProfile) ? (eventBossProfile.hpMultiplier || 1) : 1;
+                const eventHealth = Math.round(baseHealth * hpMultiplier);
+
                 boss = {
                     x: canvas.width / 2 - 50,
                     y: -100,
                     width: 100 + (bossLevel - 1) * 10, // レベルに応じてサイズ増加
                     height: 80 + (bossLevel - 1) * 8,
-                    health: 20 + (bossLevel - 1) * 10, // レベルに応じてHP増加
-                    maxHealth: 20 + (bossLevel - 1) * 10,
+                    health: eventHealth,
+                    maxHealth: eventHealth,
                     speed: 1 * speedMultiplier,
                     moveSpeed: (2 + (bossLevel - 1) * 0.5) * speedMultiplier, // レベルに応じて移動速度増加
                     moveDirection: 1, // 移動方向（1:右、-1:左）
@@ -2375,7 +2519,10 @@
                     sniperTargetY: 0,
                     minionAbsorbStartAt: null,
                     // イベントモード時、このボスがどの画像を使うかのインデックス
-                    eventBossIndex: isEventMode ? pickEventBossIndex() : -1
+                    eventBossIndex: isEventMode ? pickEventBossIndex() : -1,
+                    // イベントモード時の追加ギミック（ホーミング / 重力など）
+                    extraGimmicks: (isEventMode && eventBossProfile && Array.isArray(eventBossProfile.extraGimmicks))
+                        ? [...eventBossProfile.extraGimmicks] : []
                 };
                 if (isEventMode) eventBossSpawnCount++;
 
@@ -2658,6 +2805,58 @@
                     ctx.lineTo(tx, ty);
                     ctx.stroke();
                     ctx.restore();
+                } else if (bullet.homing) {
+                    // 追尾ミサイル: 鋭い菱形＋短いトレイル
+                    const cx = bullet.x + bullet.width / 2;
+                    const cy = bullet.y + bullet.height / 2;
+                    const len = Math.hypot(bullet.speedX, bullet.speedY) || 1;
+                    ctx.save();
+                    ctx.shadowColor = bullet.color;
+                    ctx.shadowBlur = 16;
+                    ctx.fillStyle = bullet.color;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, bullet.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    // トレイル
+                    ctx.strokeStyle = bullet.color;
+                    ctx.lineWidth = 2.5;
+                    ctx.globalAlpha = 0.55;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    ctx.lineTo(cx - bullet.speedX / len * 18, cy - bullet.speedY / len * 18);
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (bullet.isGravity) {
+                    // 重力オーブ: 中央のコア + 引力レンジを示す薄い円
+                    const cx = bullet.x + bullet.width / 2;
+                    const cy = bullet.y + bullet.height / 2;
+                    const pulse = 0.55 + 0.45 * Math.sin(Date.now() * 0.012);
+                    ctx.save();
+                    // 引力レンジ
+                    ctx.strokeStyle = bullet.color;
+                    ctx.globalAlpha = 0.18;
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([6, 6]);
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, bullet.pullRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    // オーブ本体
+                    ctx.globalAlpha = pulse;
+                    ctx.shadowColor = bullet.color;
+                    ctx.shadowBlur = 22;
+                    ctx.fillStyle = bullet.color;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, bullet.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    // ハイライト
+                    ctx.globalAlpha = 0.85;
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(cx - 3, cy - 3, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
                 } else {
                     ctx.fillStyle = bullet.color;
                     ctx.shadowColor = bullet.color;
@@ -2841,24 +3040,28 @@
         function update() {
             if (!gameRunning) return;
 
-            // 時間更新
-            const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
-            const remainingTime = Math.max(0, gameTime - elapsed);
-            timeElement.textContent = `残り時間: ${remainingTime}秒`;
+            // 時間更新（イベントモードは時間制限なし。「∞」表示にしてタイムアウトもスキップ）
+            if (isEventMode) {
+                timeElement.textContent = `時間: ∞`;
+            } else {
+                const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+                const remainingTime = Math.max(0, gameTime - elapsed);
+                timeElement.textContent = `残り時間: ${remainingTime}秒`;
 
-            // 時間切れ
-            if (remainingTime <= 0) {
-                gameOver('timeout');
-                return;
-            }
+                // 時間切れ
+                if (remainingTime <= 0) {
+                    gameOver('timeout');
+                    return;
+                }
 
-            // スコアによる時間ボーナス
-            if (score > lastTimeBonusScore + 100) {
-                gameTime += 30; // 30秒追加
-                lastTimeBonusScore = score;
-                timeBonusMessage = '+30秒ボーナス！';
-                timeBonusTimer = 120; // 2秒間表示
-                timeElement.textContent = `残り時間: ${gameTime}秒`;
+                // スコアによる時間ボーナス
+                if (score > lastTimeBonusScore + 100) {
+                    gameTime += 30; // 30秒追加
+                    lastTimeBonusScore = score;
+                    timeBonusMessage = '+30秒ボーナス！';
+                    timeBonusTimer = 120; // 2秒間表示
+                    timeElement.textContent = `残り時間: ${gameTime}秒`;
+                }
             }
 
             // プレイヤー移動（矢印キー + WASD）
@@ -2955,9 +3158,36 @@
 
             // ボス弾丸更新
             bossBullets = bossBullets.filter(bullet => {
+                // ホーミング: プレイヤーへ steer
+                if (bullet.homing && bullet.homingForce > 0) {
+                    steerBulletTowards(bullet, player, bullet.homingForce);
+                }
+                // 重力オーブ: 半径内のプレイヤーを引き寄せる
+                if (bullet.isGravity && bullet.pullRadius > 0 && bullet.pullForce > 0) {
+                    const cx = bullet.x + bullet.width / 2;
+                    const cy = bullet.y + bullet.height / 2;
+                    const pcx = player.x + player.width / 2;
+                    const pcy = player.y + player.height / 2;
+                    const dx = cx - pcx;
+                    const dy = cy - pcy;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > 1 && dist < bullet.pullRadius) {
+                        player.x += (dx / dist) * bullet.pullForce;
+                        player.y += (dy / dist) * bullet.pullForce;
+                        // 画面外に出ないようクランプ
+                        player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+                        player.y = Math.max(canvas.height * PLAYER_MAX_UP_RATIO,
+                                            Math.min(canvas.height - player.height, player.y));
+                    }
+                }
                 bullet.x += bullet.speedX;
                 bullet.y += bullet.speedY;
-                return bullet.y < canvas.height && bullet.x > 0 && bullet.x < canvas.width;
+                // 寿命切れ
+                if (bullet.lifeFrames !== undefined) {
+                    bullet.lifeFrames -= 1;
+                    if (bullet.lifeFrames <= 0) return false;
+                }
+                return bullet.y < canvas.height && bullet.x > -50 && bullet.x < canvas.width + 50;
             });
 
             // ボス更新
