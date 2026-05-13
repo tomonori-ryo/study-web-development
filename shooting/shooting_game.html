@@ -607,6 +607,9 @@
                     flavor: '軍事兵器の精密射撃 / 機雷・狙撃に特化',
                     hpMultiplier: 4,
                     featureLevel: 8,    // 機雷まで解放
+                    // 通常弾のファン射撃数（標準式の min(3+floor(L/2),6) を上書き）
+                    // 機雷・狙撃・追尾ミサイルで補うので弾数は絞り目
+                    bulletCount: 3,
                     extraGimmicks: ['homing']
                 },
                 {
@@ -617,6 +620,8 @@
                     flavor: '神秘の超能力 / 部下召喚・吸収・重力',
                     hpMultiplier: 5,
                     featureLevel: 10,   // 部下・狙撃まで解放
+                    // 部下・重力・吸収などギミックが豊富なので通常弾はさらに少なめ
+                    bulletCount: 2,
                     extraGimmicks: ['homing', 'gravity']
                 }
             ]
@@ -2455,7 +2460,10 @@
 
             // レベルに応じて弾丸数を増加（Lv.6 で 6 発に到達したら以降は据え置き。
             // それ以上の難易度上昇は「衝撃波(Lv.5+)」「雑魚吸収(Lv.7+)」で表現する）
-            const bulletCount = Math.min(3 + Math.floor(bossLevel / 2), 6);
+            // イベントボスはプロファイルで弾数を上書きできる（弾幕を絞ってギミックに寄せるため）
+            const bulletCount = (isEventMode && boss.eventBulletCount && boss.eventBulletCount > 0)
+                ? boss.eventBulletCount
+                : Math.min(3 + Math.floor(bossLevel / 2), 6);
             
             for (let i = 0; i < bulletCount; i++) {
                 const angle = (i - (bulletCount - 1) / 2) * 0.5; // 角度を計算
@@ -2522,7 +2530,10 @@
                     eventBossIndex: isEventMode ? pickEventBossIndex() : -1,
                     // イベントモード時の追加ギミック（ホーミング / 重力など）
                     extraGimmicks: (isEventMode && eventBossProfile && Array.isArray(eventBossProfile.extraGimmicks))
-                        ? [...eventBossProfile.extraGimmicks] : []
+                        ? [...eventBossProfile.extraGimmicks] : [],
+                    // イベントモード時の通常ファン射撃数（プロファイル指定があれば差し替え）
+                    eventBulletCount: (isEventMode && eventBossProfile && eventBossProfile.bulletCount > 0)
+                        ? eventBossProfile.bulletCount : null
                 };
                 if (isEventMode) eventBossSpawnCount++;
 
