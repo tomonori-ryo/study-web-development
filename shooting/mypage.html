@@ -756,18 +756,24 @@
     <script src="firebase-config.js"></script>
     
     <script>
+        // 既定のランク称号（admin で個別の ranking 称号を作っていない場合のフォールバック）。
+        // ハードコードなので削除されず、admin で作った動的称号と二重に表示されることもある。
         const RANK_TITLES = {
             1: 'ランキング王者',
             2: 'ランキング準王',
-            3: 'ランキング三傑'
+            3: 'ランキング三傑',
+            4: 'ランキング四天王',
+            5: 'ランキング五星'
         };
         const TITLE_META = {
             'ルーキー': { icon: '🌱', tier: 'common' },
             'スコア100突破': { icon: '🎯', tier: 'rare' },
             'ウェポンマスター': { icon: '⚔️', tier: 'legendary' },
-            'ランキング王者': { icon: '🥇', tier: 'legendary', rank: true },
-            'ランキング準王': { icon: '🥈', tier: 'epic', rank: true },
-            'ランキング三傑': { icon: '🥉', tier: 'epic', rank: true }
+            'ランキング王者':   { icon: '🥇', tier: 'legendary', rank: true },
+            'ランキング準王':   { icon: '🥈', tier: 'epic', rank: true },
+            'ランキング三傑':   { icon: '🥉', tier: 'epic', rank: true },
+            'ランキング四天王': { icon: '🎖️', tier: 'rare', rank: true },
+            'ランキング五星':   { icon: '⭐',  tier: 'rare', rank: true }
         };
         // 管理画面で作成した動的称号のアイコン (label -> { icon, image })
         // loadDynamicTitleIcons() で Firestore から取得して埋める
@@ -1310,27 +1316,29 @@
             try {
                 const rankingList = document.getElementById('rankingList');
                 const currentPlayerName = localStorage.getItem('playerName') || 'プレイヤー';
-                
+                const currentUid = (firebase.auth().currentUser && firebase.auth().currentUser.uid) || localStorage.getItem('firebaseUid') || '';
+
                 // Firebaseからランキングを取得
                 const ranking = await firebaseDataManager.getRanking();
-                
-                // ランキングを表示
+
+                // ランキングを表示。username が改名・差異で一致しないケースに備え、uid で照合する。
                 rankingList.innerHTML = '';
                 let currentUserRank = 0;
                 ranking.forEach((player, index) => {
                     const li = document.createElement('li');
                     li.className = 'ranking-item';
-                    if (player.username === currentPlayerName) {
+                    const isMe = (currentUid && player.id === currentUid) || (player.username === currentPlayerName);
+                    if (isMe) {
                         li.classList.add('current');
                         currentUserRank = index + 1;
                     }
-                    
+
                     li.innerHTML = `
                         <span class="rank">#${index + 1}</span>
                         <span class="player-name">${player.username}</span>
                         <span class="player-score">${player.highScore}</span>
                     `;
-                    
+
                     rankingList.appendChild(li);
                 });
 
