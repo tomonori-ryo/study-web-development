@@ -159,6 +159,48 @@
         }
         .gimmicks label { color: #ddd; display: flex; gap: 4px; align-items: center; }
 
+        /* 画像アップロード */
+        .image-uploader {
+            display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap;
+            background: rgba(0,0,0,0.25);
+            padding: 8px; border-radius: 6px;
+        }
+        .image-preview {
+            width: 64px; height: 64px;
+            background: #000;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+        .image-uploader .uploader-fields {
+            flex: 1; min-width: 160px;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .upload-status {
+            font-size: 0.75rem; color: #aaccdd;
+        }
+        .upload-status.error { color: #ffaaaa; }
+        .upload-status.ok    { color: #88ffaa; }
+
+        /* attack トグル: ON / OFF / Auto */
+        .attack-toggle-grid {
+            display: grid; gap: 6px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            background: rgba(0,0,0,0.25);
+            padding: 8px; border-radius: 6px;
+        }
+        .attack-toggle-grid .attack-cell {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 0.82rem; gap: 4px;
+        }
+        .attack-toggle-grid select {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: white; border-radius: 4px;
+            padding: 2px 6px; font-size: 0.82rem;
+        }
+
         /* Modal */
         .modal {
             position: fixed; inset: 0;
@@ -282,7 +324,10 @@
                     <select name="conditionType" id="conditionTypeSelect" required>
                         <option value="score">ハイスコア閾値</option>
                         <option value="totalGames">累計プレイ回数</option>
+                        <option value="bossLevel">倒したボスの最高Lv</option>
+                        <option value="weaponUnlocked">武器解放</option>
                         <option value="eventBoss">イベントボス撃破</option>
+                        <option value="progressFlag">進捗フラグ (汎用)</option>
                     </select>
                 </div>
                 <div class="field" id="conditionValueField">
@@ -301,6 +346,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-storage-compat.js"></script>
     <script src="firebase-config.js"></script>
 
     <script>
@@ -316,6 +362,14 @@
             { value: 'assets/event/event-boss-2.png',         label: 'シャドウ・オーバーロード' }
         ];
         const GIMMICK_OPTIONS = ['homing', 'gravity'];
+        // featureLevel に依存しない個別攻撃トグル。null=自動(featureLevelに従う), true=有効, false=無効
+        const ATTACK_TOGGLES = [
+            { key: 'shockwave',   label: '衝撃波',   note: '通常Lv5+' },
+            { key: 'absorption',  label: '雑魚吸収', note: '通常Lv7+' },
+            { key: 'mines',       label: '機雷',     note: '通常Lv8+' },
+            { key: 'sniper',      label: '狙撃',     note: '通常Lv9-10' },
+            { key: 'minions',     label: '部下召喚', note: '通常Lv9-10' }
+        ];
 
         // ─────── 認証ゲート ───────
         firebase.auth().onAuthStateChanged(async user => {
@@ -379,6 +433,12 @@
             const wrap = document.createElement('div');
             wrap.className = 'boss-mini';
             wrap.dataset.idx = String(idx);
+            // 画像 URL を判定: プリセットにあればプリセット選択肢、なければ "custom"
+            const currentImage = (b && b.image) || '';
+            const isPreset = BOSS_IMAGE_PRESETS.some(p => p.value === currentImage);
+            const featuresOverride = (b && b.featuresOverride) || {};
+            const blankImageDataUrl = 'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2264%22%20height%3D%2264%22%2F%3E';
+
             wrap.innerHTML = `
                 <h4>ボス #${idx + 1}
                     <button type="button" class="btn btn-sm btn-danger" data-action="remove-boss">削除</button>
@@ -397,12 +457,6 @@
                         <input type="text" name="b_skinKey" value="${esc((b && b.skinKey) || '')}" placeholder="eventBossSkinShadowCruiser">
                     </div>
                     <div>
-                        <label>画像パス</label>
-                        <select name="b_image">
-                            ${BOSS_IMAGE_PRESETS.map(p => `<option value="${esc(p.value)}" ${((b && b.image) === p.value) ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
                         <label>HP倍率</label>
                         <input type="number" name="b_hpMultiplier" step="0.5" min="1" value="${(b && Number(b.hpMultiplier)) || 4}">
                     </div>
@@ -414,18 +468,103 @@
                         <label>弾数</label>
                         <input type="number" name="b_bulletCount" min="1" max="12" value="${(b && Number(b.bulletCount)) || 3}">
                     </div>
+
                     <div style="grid-column: 1 / -1;">
-                        <label>攻撃ギミック</label>
+                        <label>画像（プリセット / アップロード）</label>
+                        <div class="image-uploader">
+                            <img class="image-preview" data-role="preview" src="${esc(currentImage) || blankImageDataUrl}" alt="">
+                            <div class="uploader-fields">
+                                <select name="b_image_preset" data-role="preset">
+                                    ${BOSS_IMAGE_PRESETS.map(p => `<option value="${esc(p.value)}" ${(isPreset && currentImage === p.value) ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
+                                    <option value="__custom__" ${(!isPreset && currentImage) ? 'selected' : ''}>${(!isPreset && currentImage) ? '🌐 アップロード済み' : '🌐 カスタムURL'}</option>
+                                </select>
+                                <input type="hidden" name="b_image" value="${esc(currentImage)}">
+                                <input type="file" accept="image/*" data-role="file" style="font-size: 0.8rem;">
+                                <div class="upload-status" data-role="status">画像を選択するとアップロードされます (最大 5MB)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="grid-column: 1 / -1;">
+                        <label>確率発射: 特殊弾ギミック</label>
                         <div class="gimmicks">
                             ${GIMMICK_OPTIONS.map(g => `<label><input type="checkbox" name="b_gimmick_${g}" ${(b && Array.isArray(b.extraGimmicks) && b.extraGimmicks.includes(g)) ? 'checked' : ''}> ${g}</label>`).join('')}
                         </div>
                     </div>
+
+                    <div style="grid-column: 1 / -1;">
+                        <label>個別攻撃トグル（"自動" は featureLevel 依存）</label>
+                        <div class="attack-toggle-grid">
+                            ${ATTACK_TOGGLES.map(a => {
+                                const v = (a.key in featuresOverride) ? featuresOverride[a.key] : null;
+                                const valStr = (v === true) ? 'on' : (v === false) ? 'off' : 'auto';
+                                return `
+                                    <div class="attack-cell">
+                                        <span title="${esc(a.note)}">${esc(a.label)}</span>
+                                        <select name="b_feat_${a.key}">
+                                            <option value="auto" ${valStr==='auto'?'selected':''}>自動</option>
+                                            <option value="on"   ${valStr==='on'  ?'selected':''}>ON</option>
+                                            <option value="off"  ${valStr==='off' ?'selected':''}>OFF</option>
+                                        </select>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+
                     <div style="grid-column: 1 / -1;">
                         <label>説明</label>
                         <input type="text" name="b_description" value="${esc((b && b.description) || '')}" placeholder="軍事兵器の精密射撃 / 機雷・狙撃・追尾ミサイル">
                     </div>
                 </div>
             `;
+
+            // プリセット選択 / アップロードの結線
+            const presetSel = wrap.querySelector('[data-role="preset"]');
+            const hiddenInp = wrap.querySelector('input[name="b_image"]');
+            const preview   = wrap.querySelector('[data-role="preview"]');
+            const fileInp   = wrap.querySelector('[data-role="file"]');
+            const statusEl  = wrap.querySelector('[data-role="status"]');
+
+            presetSel.addEventListener('change', () => {
+                const v = presetSel.value;
+                if (v === '__custom__') {
+                    statusEl.textContent = 'ファイルを選択してアップロードしてください';
+                    statusEl.className = 'upload-status';
+                    return;
+                }
+                hiddenInp.value = v;
+                preview.src = v || blankImageDataUrl;
+                statusEl.textContent = v ? `プリセット: ${v}` : '画像なし';
+                statusEl.className = 'upload-status';
+            });
+
+            fileInp.addEventListener('change', async () => {
+                const file = fileInp.files && fileInp.files[0];
+                if (!file) return;
+                if (file.size > 5 * 1024 * 1024) {
+                    statusEl.textContent = '5MB 以下のファイルにしてください';
+                    statusEl.className = 'upload-status error';
+                    return;
+                }
+                statusEl.textContent = 'アップロード中…';
+                statusEl.className = 'upload-status';
+                // ローカルプレビュー（即時）
+                preview.src = URL.createObjectURL(file);
+                try {
+                    const { url } = await firebaseDataManager.uploadEventBossImage(file);
+                    hiddenInp.value = url;
+                    preview.src = url;
+                    presetSel.value = '__custom__';
+                    statusEl.textContent = '✓ アップロード完了';
+                    statusEl.className = 'upload-status ok';
+                } catch (e) {
+                    console.error(e);
+                    statusEl.textContent = '✗ ' + e.message;
+                    statusEl.className = 'upload-status error';
+                }
+            });
+
             bossEditList.appendChild(wrap);
         }
         bossEditList.addEventListener('click', e => {
@@ -442,6 +581,13 @@
             bossEditList.querySelectorAll('.boss-mini').forEach(el => {
                 const get = name => (el.querySelector(`[name="${name}"]`) || {}).value || '';
                 const gimmicks = GIMMICK_OPTIONS.filter(g => el.querySelector(`[name="b_gimmick_${g}"]`).checked);
+                // 攻撃トグル: auto は省略（undefined）、on/off は boolean に
+                const featuresOverride = {};
+                ATTACK_TOGGLES.forEach(a => {
+                    const v = get(`b_feat_${a.key}`);
+                    if (v === 'on')  featuresOverride[a.key] = true;
+                    if (v === 'off') featuresOverride[a.key] = false;
+                });
                 bosses.push({
                     id: get('b_id'),
                     name: get('b_name'),
@@ -451,7 +597,8 @@
                     hpMultiplier: Number(get('b_hpMultiplier')) || 1,
                     featureLevel: Number(get('b_featureLevel')) || 8,
                     bulletCount:  Number(get('b_bulletCount'))  || 3,
-                    extraGimmicks: gimmicks
+                    extraGimmicks: gimmicks,
+                    featuresOverride
                 });
             });
             const data = {
@@ -527,6 +674,7 @@
         function updateConditionValueHint() {
             const t = conditionTypeSelect.value;
             const input = titleForm.conditionValue;
+            input.removeAttribute('min');
             if (t === 'score') {
                 conditionValueLabel.textContent = 'スコア閾値（数値）';
                 input.placeholder = '例: 3000';
@@ -535,9 +683,21 @@
                 conditionValueLabel.textContent = '累計プレイ回数（数値）';
                 input.placeholder = '例: 10';
                 input.type = 'number'; input.min = '0';
+            } else if (t === 'bossLevel') {
+                conditionValueLabel.textContent = '倒したボスの最高Lv（1〜10）';
+                input.placeholder = '例: 7';
+                input.type = 'number'; input.min = '1';
+            } else if (t === 'weaponUnlocked') {
+                conditionValueLabel.textContent = '武器スロット名（rapid / shotgun / laser / drone など）';
+                input.placeholder = 'shotgun';
+                input.type = 'text';
             } else if (t === 'eventBoss') {
                 conditionValueLabel.textContent = 'progress キー（例: eventBossSkinShadowCruiser）';
                 input.placeholder = 'eventBossSkinShadowCruiser';
+                input.type = 'text';
+            } else if (t === 'progressFlag') {
+                conditionValueLabel.textContent = '任意の progress フラグ名';
+                input.placeholder = '例: allWeaponsUnlocked';
                 input.type = 'text';
             }
         }
@@ -567,7 +727,9 @@
             const fd = new FormData(titleForm);
             const type = conditionTypeSelect.value;
             const rawValue = String(fd.get('conditionValue') || '');
-            const value = (type === 'eventBoss') ? rawValue : Number(rawValue);
+            // 数値タイプ / 文字列タイプを判別
+            const numericTypes = ['score', 'totalGames', 'bossLevel'];
+            const value = numericTypes.includes(type) ? Number(rawValue) : rawValue;
             const data = {
                 label: fd.get('label') || '',
                 condition: { type, value }
@@ -599,9 +761,12 @@
                     row.className = 'row';
                     const c = t.condition || {};
                     let condText = '条件未設定';
-                    if (c.type === 'score') condText = `ハイスコア ${c.value} 以上`;
-                    else if (c.type === 'totalGames') condText = `累計プレイ ${c.value} 回以上`;
-                    else if (c.type === 'eventBoss')  condText = `イベントボス: ${c.value} 撃破`;
+                    if      (c.type === 'score')          condText = `ハイスコア ${c.value} 以上`;
+                    else if (c.type === 'totalGames')     condText = `累計プレイ ${c.value} 回以上`;
+                    else if (c.type === 'bossLevel')      condText = `Lv${c.value} 以上のボス撃破`;
+                    else if (c.type === 'weaponUnlocked') condText = `武器 ${c.value} 解放`;
+                    else if (c.type === 'eventBoss')      condText = `イベント progress: ${c.value}`;
+                    else if (c.type === 'progressFlag')   condText = `progress.${c.value} = true`;
                     row.innerHTML = `
                         <div class="row-main">
                             <div class="row-title">🏅 ${esc(t.label || t.id)}</div>
