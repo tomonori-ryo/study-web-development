@@ -32,6 +32,19 @@ console.log('Firebase認証初期化完了');
 const analytics = firebase.analytics();
 console.log('Analytics初期化完了');
 
+// Storage（管理画面で画像をアップロード）
+// 利用側で firebase-storage-compat.js を読み込んでいない場合は undefined になるので
+// アクセス前にチェックする。
+let storage = null;
+try {
+  if (typeof firebase.storage === 'function') {
+    storage = firebase.storage();
+    console.log('Firebase Storage初期化完了');
+  }
+} catch (e) {
+  console.warn('Storage init skipped:', e.message);
+}
+
 // 固定称号の定義
 const FIXED_TITLES = {
   rookie: 'ルーキー',
@@ -56,6 +69,7 @@ class FirebaseDataManager {
   constructor() {
     this.db = db;
     this.auth = auth;
+    this.storage = storage;
   }
 
   // ユーザー登録
@@ -205,6 +219,14 @@ class FirebaseDataManager {
       const userData = userDoc.data();
       const currentProgress = userData.progress || {};
       const nextProgress = { ...currentProgress, ...progressPatch };
+
+      // 単調増加するフィールド: 既存値より小さい値で上書きしない
+      const MONOTONIC_FIELDS = ['maxBossLevelDefeated'];
+      MONOTONIC_FIELDS.forEach(k => {
+        const incoming = Number(progressPatch[k]);
+        const existing = Number(currentProgress[k]) || 0;
+        if (!isNaN(incoming)) nextProgress[k] = Math.max(existing, incoming);
+      });
 
       // 個別の武器解放フラグが揃ったら allWeaponsUnlocked を立てる
       if (nextProgress.rapidUnlocked && nextProgress.shotgunUnlocked && nextProgress.laserUnlocked) {
@@ -551,11 +573,32 @@ class FirebaseDataManager {
     await this.db.collection('titles').doc(titleId).delete();
   }
 
+  // 画像アップロード（管理者専用）。File を受け取って Storage に保存し
+  // ダウンロード可能な永続URLを返す。
+  async uploadEventBossImage(file, opts = {}) {
+    if (!this.storage) throw new Error('Firebase Storage SDK が初期化されていません');
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+
+    const safeName = (file.name || 'image').replace(/[^\w.\-]/g, '_');
+    const ts = Date.now();
+    const path = `event-bosses/${ts}_${safeName}`;
+    const ref = this.storage.ref().child(path);
+    const metadata = { contentType: file.type || 'image/png' };
+    const task = await ref.put(file, metadata);
+    const url = await task.ref.getDownloadURL();
+    if (typeof opts.onComplete === 'function') opts.onComplete(url);
+    return { url, path };
+  }
+
   // 動的称号: ユーザーデータを元に、未解放の称号を解禁
   //   condition.type:
-  //     'score'      : highScore >= condition.value
-  //     'totalGames' : totalGames >= condition.value
-  //     'eventBoss'  : progress[condition.value] === true
+  //     'score'          : highScore >= condition.value
+  //     'totalGames'     : totalGames >= condition.value
+  //     'eventBoss'      : progress[condition.value] === true (任意の progress flag)
+  //     'bossLevel'      : progress.maxBossLevelDefeated >= condition.value
+  //     'weaponUnlocked' : progress[`${value}Unlocked`] === true（例: shotgun → shotgunUnlocked）
+  //     'progressFlag'   : progress[condition.value] === true (eventBoss と同義の汎用版)
   async evaluateDynamicTitles(userRef, userData) {
     try {
       const titles = await this.listTitles();
@@ -565,15 +608,19 @@ class FirebaseDataManager {
       const progress = userData.progress || {};
       const highScore = userData.highScore || 0;
       const totalGames = userData.totalGames || 0;
+      const maxBossLv  = Number(progress.maxBossLevelDefeated) || 0;
 
       for (const t of titles) {
         if (!t.label) continue;
         const cond = t.condition || {};
         let ok = false;
         switch (cond.type) {
-          case 'score':      ok = highScore >= (Number(cond.value) || 0); break;
-          case 'totalGames': ok = totalGames >= (Number(cond.value) || 0); break;
-          case 'eventBoss':  ok = !!progress[cond.value]; break;
+          case 'score':          ok = highScore >= (Number(cond.value) || 0); break;
+          case 'totalGames':     ok = totalGames >= (Number(cond.value) || 0); break;
+          case 'eventBoss':      ok = !!progress[cond.value]; break;
+          case 'progressFlag':   ok = !!progress[cond.value]; break;
+          case 'bossLevel':      ok = maxBossLv >= (Number(cond.value) || 0); break;
+          case 'weaponUnlocked': ok = !!progress[`${cond.value}Unlocked`]; break;
           default: ok = false;
         }
         if (ok) set.add(t.label);

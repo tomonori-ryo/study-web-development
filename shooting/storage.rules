@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 管理者メールアドレス（firebase-config.js / firestore.rules と同期）
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() in [
+            'tomonoriryou4@gmail.com'
+          ];
+    }
+
+    // イベントボス画像: 誰でも読み取り可（ゲームから取得するため）、書き込みは管理者のみ
+    match /event-bosses/{file=**} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // それ以外はデフォルト deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

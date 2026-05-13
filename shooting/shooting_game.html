@@ -753,7 +753,9 @@
                         hpMultiplier: Number(b.hpMultiplier) || 1,
                         featureLevel: Number(b.featureLevel) || 8,
                         bulletCount: Number(b.bulletCount) || 3,
-                        extraGimmicks: Array.isArray(b.extraGimmicks) ? b.extraGimmicks : []
+                        extraGimmicks: Array.isArray(b.extraGimmicks) ? b.extraGimmicks : [],
+                        // admin の個別攻撃トグル（auto は省略済み）
+                        featuresOverride: (b.featuresOverride && typeof b.featuresOverride === 'object') ? b.featuresOverride : null
                     }))
                 };
                 if (isEventMode) preloadEventBossImages();
@@ -2131,6 +2133,24 @@
         const BOSS_MINION_PULL_FORCE = 4;
         let bossMinions = [];
 
+        // 個別攻撃トグル: ボス毎の featuresOverride{ key: true|false } で
+        //   featureLevel に依存せず ON/OFF を強制できる。未指定 (undefined) なら
+        //   従来通り Lv 閾値で判定する。
+        function hasBossFeature(boss, key) {
+            if (!boss) return false;
+            const ov = boss.featuresOverride;
+            if (ov && typeof ov[key] === 'boolean') return ov[key];
+            const lvl = boss.level || bossLevel;
+            switch (key) {
+                case 'shockwave':  return lvl >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD;
+                case 'absorption': return lvl >= BOSS_ABSORB_LEVEL_THRESHOLD;
+                case 'mines':      return lvl >= BOSS_MINE_LEVEL_THRESHOLD;
+                case 'sniper':     return lvl >= BOSS_SNIPER_LEVEL_THRESHOLD;
+                case 'minions':    return lvl >= BOSS_MINION_LEVEL_THRESHOLD;
+                default: return false;
+            }
+        }
+
         // ボス機雷設置（Lv.8=4000点以上のボスが機雷を投下）
         const BOSS_MINE_LEVEL_THRESHOLD = 8;
         const BOSS_MINE_DROP_COOLDOWN_MS = 4000;
@@ -2639,18 +2659,23 @@
                         ? [...eventBossProfile.extraGimmicks] : [],
                     // イベントモード時の通常ファン射撃数（プロファイル指定があれば差し替え）
                     eventBulletCount: (isEventMode && eventBossProfile && eventBossProfile.bulletCount > 0)
-                        ? eventBossProfile.bulletCount : null
+                        ? eventBossProfile.bulletCount : null,
+                    // 個別攻撃トグル（admin で設定）。指定があれば featureLevel に勝つ。
+                    featuresOverride: (isEventMode && eventBossProfile && eventBossProfile.featuresOverride && typeof eventBossProfile.featuresOverride === 'object')
+                        ? { ...eventBossProfile.featuresOverride } : null,
+                    // hasBossFeature が `boss.level` を参照するのでメモする
+                    level: bossLevel
                 };
                 if (isEventMode) eventBossSpawnCount++;
 
                 // 狙撃モード(Lv.9+): 単発高精度なので最低発射間隔を確保
-                if (bossLevel >= BOSS_SNIPER_LEVEL_THRESHOLD) {
+                if (hasBossFeature(boss, 'sniper')) {
                     boss.shotInterval = Math.max(boss.shotInterval, BOSS_SNIPER_MIN_INTERVAL_MS);
                 }
 
                 // 部下出現(Lv.9+): Lv.9 → Lv.1 部下x2 / Lv.10+ → Lv.2 部下x2
                 bossMinions = [];
-                if (bossLevel >= BOSS_MINION_LEVEL_THRESHOLD) {
+                if (hasBossFeature(boss, 'minions')) {
                     spawnBossMinions(bossLevel);
                 }
 
@@ -3342,7 +3367,7 @@
                 
                 // ボスの攻撃
                 const now = Date.now();
-                const isSniper = bossLevel >= BOSS_SNIPER_LEVEL_THRESHOLD;
+                const isSniper = hasBossFeature(boss, 'sniper');
                 if (isSniper) {
                     const since = now - boss.lastShot;
                     // 発射の BOSS_SNIPER_CHARGE_MS 前にターゲットをロックして照準表示
@@ -3364,7 +3389,7 @@
                 }
 
                 // 部下吸収(Lv.9+): 8秒経過後に最寄りの部下を引き寄せ、接触で全回復
-                if (bossLevel >= BOSS_MINION_LEVEL_THRESHOLD && bossMinions.length > 0) {
+                if (hasBossFeature(boss, 'minions') && bossMinions.length > 0) {
                     if (boss.minionAbsorbStartAt === null) {
                         boss.minionAbsorbStartAt = now + BOSS_MINION_ABSORB_DELAY_MS;
                     }
@@ -3405,7 +3430,7 @@
                 }
 
                 // 吸収: Lv.7(=3000点)以上で、最寄りの雑魚を引き寄せて HP 回復
-                if (bossLevel >= BOSS_ABSORB_LEVEL_THRESHOLD && enemies.length > 0) {
+                if (hasBossFeature(boss, 'absorption') && enemies.length > 0) {
                     const bcx = boss.x + boss.width / 2;
                     const bcy = boss.y + boss.height / 2;
                     // ターゲット選択（毎フレーム再選択。最寄り 1 体のみ吸引）
@@ -3446,7 +3471,7 @@
                 }
 
                 // 機雷設置: Lv.8(=4000点)以上で、4秒に1個ボスから投下し画面下半分に着地
-                if (bossLevel >= BOSS_MINE_LEVEL_THRESHOLD) {
+                if (hasBossFeature(boss, 'mines')) {
                     if (now - (boss.lastMineDropAt || 0) >= BOSS_MINE_DROP_COOLDOWN_MS) {
                         boss.lastMineDropAt = now;
                         const targetY = canvas.height * (
@@ -3471,7 +3496,7 @@
                 }
 
                 // 衝撃波: Lv.5(=2000点)以上で、プレイヤーが一定距離内に入ったら発動
-                if (bossLevel >= BOSS_SHOCKWAVE_LEVEL_THRESHOLD) {
+                if (hasBossFeature(boss, 'shockwave')) {
                     const bcx = boss.x + boss.width / 2;
                     const bcy = boss.y + boss.height / 2;
                     const pcx = player.x + player.width / 2;
@@ -3592,6 +3617,17 @@
                             grantEventSkin(boss.eventBossIndex);
                             updateEventBanner();
                         }
+
+                        // 動的称号用に倒したボスの最高 Lv を永続化（ログイン時のみ。
+                        // updateProgress 側で単調増加に保たれる）
+                        try {
+                            if (typeof firebaseDataManager !== 'undefined'
+                                && typeof firebase !== 'undefined'
+                                && firebase.auth && firebase.auth().currentUser) {
+                                firebaseDataManager.updateProgress({ maxBossLevelDefeated: bossLevel })
+                                    .catch(() => {});
+                            }
+                        } catch (e) { /* ignore */ }
                         
                         // ボス撃破時に宝箱をドロップ（倒した地点と同じ横座標、プレイヤーが行ける最も上の地点）
                         treasureBox = {
