@@ -28,9 +28,18 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
   });
 console.log('Firebase認証初期化完了');
 
-// Analytics
-const analytics = firebase.analytics();
-console.log('Analytics初期化完了');
+// Analytics（admin.html など analytics SDK を読み込まないページもあるので防御的に）
+let analytics = null;
+try {
+  if (typeof firebase.analytics === 'function') {
+    analytics = firebase.analytics();
+    console.log('Analytics初期化完了');
+  } else {
+    console.log('Analytics SDK 未読み込み (skip)');
+  }
+} catch (e) {
+  console.warn('Analytics init skipped:', e.message);
+}
 
 // Storage（管理画面で画像をアップロード）
 // 利用側で firebase-storage-compat.js を読み込んでいない場合は undefined になるので
