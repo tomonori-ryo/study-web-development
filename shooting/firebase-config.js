@@ -39,6 +39,18 @@ const FIXED_TITLES = {
   weaponMaster: 'ウェポンマスター'
 };
 
+// ─────── 管理者ホワイトリスト ───────
+// 注意: クライアントサイドのみの判定です。Firestore セキュリティルールでも
+// 同等の制限を入れない限り、悪意のあるユーザーは API を直接叩けます。
+// 段階的に Firestore Rules 側でも `request.auth.token.email in [...]` を強制してください。
+const ADMIN_EMAILS = [
+  'tomonoriryou4@gmail.com'
+];
+
+function isAdminEmail(email) {
+  return !!email && ADMIN_EMAILS.includes(String(email).toLowerCase());
+}
+
 // データ管理クラス
 class FirebaseDataManager {
   constructor() {
@@ -162,8 +174,18 @@ class FirebaseDataManager {
           progress: progress,
           lastPlayed: firebase.firestore.FieldValue.serverTimestamp()
         });
-        
-        return { highScore: newHighScore, totalGames: newTotalGames, totalScore: newTotalScore, titles: nextTitles, activeTitle, progress };
+
+        // 動的称号も評価して追加
+        const dynamicAdded = await this.evaluateDynamicTitles(userRef, {
+          ...userData,
+          highScore: newHighScore,
+          totalGames: newTotalGames,
+          totalScore: newTotalScore,
+          titles: nextTitles,
+          progress
+        });
+        const finalTitles = dynamicAdded || nextTitles;
+        return { highScore: newHighScore, totalGames: newTotalGames, totalScore: newTotalScore, titles: finalTitles, activeTitle, progress };
       }
     } catch (error) {
       throw error;
@@ -204,7 +226,14 @@ class FirebaseDataManager {
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
 
-      return { progress: nextProgress, titles: nextTitles, activeTitle };
+      // 動的称号評価（イベントボス系などはここで反映）
+      const dynamicAdded = await this.evaluateDynamicTitles(userRef, {
+        ...userData,
+        progress: nextProgress,
+        titles: nextTitles
+      });
+      const finalTitles = dynamicAdded || nextTitles;
+      return { progress: nextProgress, titles: finalTitles, activeTitle };
     } catch (error) {
       throw error;
     }
@@ -440,6 +469,125 @@ class FirebaseDataManager {
         });
         callback(bullets);
       });
+  }
+
+  // ─────────────────────────────────────────────
+  // 管理者用 API（イベント / 動的称号）
+  //   events/{eventId}: { title, startsAt(ISO), endsAt(ISO), bosses[], active }
+  //   titles/{titleId}: { label, condition: { type, value } }
+  // ─────────────────────────────────────────────
+  async listEvents() {
+    const snap = await this.db.collection('events').orderBy('endsAt', 'desc').get();
+    const list = [];
+    snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+    return list;
+  }
+
+  // 現在アクティブなイベント (active=true かつ now in [startsAt, endsAt]) を1件取得
+  async getActiveEvent() {
+    try {
+      const snap = await this.db.collection('events').where('active', '==', true).get();
+      const now = Date.now();
+      let chosen = null;
+      snap.forEach(doc => {
+        const d = doc.data();
+        const start = Date.parse(d.startsAt);
+        const end   = Date.parse(d.endsAt);
+        if (!isNaN(start) && !isNaN(end) && now >= start && now <= end) {
+          if (!chosen) chosen = { id: doc.id, ...d };
+        }
+      });
+      return chosen;
+    } catch (e) {
+      console.warn('getActiveEvent failed:', e);
+      return null;
+    }
+  }
+
+  async saveEvent(eventId, data) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    const payload = { ...data, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    if (eventId) {
+      await this.db.collection('events').doc(eventId).set(payload, { merge: true });
+      return eventId;
+    } else {
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      const ref = await this.db.collection('events').add(payload);
+      return ref.id;
+    }
+  }
+
+  async deleteEvent(eventId) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    await this.db.collection('events').doc(eventId).delete();
+  }
+
+  async listTitles() {
+    const snap = await this.db.collection('titles').get();
+    const list = [];
+    snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+    return list;
+  }
+
+  async saveTitle(titleId, data) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    const payload = { ...data, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    if (titleId) {
+      await this.db.collection('titles').doc(titleId).set(payload, { merge: true });
+      return titleId;
+    } else {
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      const ref = await this.db.collection('titles').add(payload);
+      return ref.id;
+    }
+  }
+
+  async deleteTitle(titleId) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    await this.db.collection('titles').doc(titleId).delete();
+  }
+
+  // 動的称号: ユーザーデータを元に、未解放の称号を解禁
+  //   condition.type:
+  //     'score'      : highScore >= condition.value
+  //     'totalGames' : totalGames >= condition.value
+  //     'eventBoss'  : progress[condition.value] === true
+  async evaluateDynamicTitles(userRef, userData) {
+    try {
+      const titles = await this.listTitles();
+      if (!titles.length) return null;
+      const current = Array.isArray(userData.titles) ? [...userData.titles] : [];
+      const set = new Set(current);
+      const progress = userData.progress || {};
+      const highScore = userData.highScore || 0;
+      const totalGames = userData.totalGames || 0;
+
+      for (const t of titles) {
+        if (!t.label) continue;
+        const cond = t.condition || {};
+        let ok = false;
+        switch (cond.type) {
+          case 'score':      ok = highScore >= (Number(cond.value) || 0); break;
+          case 'totalGames': ok = totalGames >= (Number(cond.value) || 0); break;
+          case 'eventBoss':  ok = !!progress[cond.value]; break;
+          default: ok = false;
+        }
+        if (ok) set.add(t.label);
+      }
+      const next = Array.from(set);
+      if (next.length !== current.length) {
+        await userRef.update({ titles: next });
+        return next;
+      }
+      return null;
+    } catch (e) {
+      console.warn('evaluateDynamicTitles failed:', e);
+      return null;
+    }
   }
 }
 

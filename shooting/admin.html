@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者画面 - 戦闘機シューティングゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #060b1a, #001a36, #060b1a);
+            font-family: 'Arial', sans-serif;
+            color: white;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+        .container { position: relative; max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
+        header.admin-header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 12px; margin-bottom: 28px;
+        }
+        header.admin-header h1 {
+            margin: 0; font-size: clamp(1.4rem, 4vw, 2rem);
+            color: #00ffff; text-shadow: 0 0 12px rgba(0,255,255,0.6);
+        }
+        .admin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .btn {
+            background: linear-gradient(135deg, #2244aa, #4466dd);
+            color: white; border: none; border-radius: 8px;
+            padding: 8px 16px; font-weight: bold; cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            font-size: 0.9rem;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(68, 102, 221, 0.4); }
+        .btn-danger { background: linear-gradient(135deg, #aa2244, #dd3366); }
+        .btn-danger:hover { box-shadow: 0 6px 16px rgba(221, 51, 102, 0.4); }
+        .btn-success { background: linear-gradient(135deg, #11aa55, #22cc77); }
+        .btn-success:hover { box-shadow: 0 6px 16px rgba(34, 204, 119, 0.4); }
+        .btn-ghost {
+            background: transparent; border: 1px solid rgba(255,255,255,0.3);
+            color: rgba(255,255,255,0.85);
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.08); transform: none; }
+        .btn-sm { padding: 4px 10px; font-size: 0.78rem; }
+
+        .card {
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 14px;
+            padding: 20px 22px;
+            margin-bottom: 22px;
+            box-shadow: 0 8px 30px rgba(0, 255, 255, 0.05);
+        }
+        .card h2 {
+            margin: 0 0 0.4rem; color: #00ffff;
+            font-size: clamp(1.1rem, 3.2vw, 1.4rem);
+        }
+        .card .note {
+            margin: 0 0 14px;
+            color: #99c8d8; font-size: 0.82rem;
+        }
+
+        /* Status / loading */
+        #adminStatus {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px dashed rgba(255,255,255,0.2);
+            padding: 12px 16px; border-radius: 10px;
+            font-size: 0.95rem; margin-bottom: 22px;
+        }
+        #adminStatus.error { border-color: #dd3366; color: #ffaaaa; }
+        #adminStatus.ok    { border-color: #22cc77; color: #aaffcc; }
+
+        /* Tables */
+        .row-list { display: flex; flex-direction: column; gap: 10px; }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px 16px;
+            background: rgba(255,255,255,0.04);
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .row .row-main { display: flex; flex-direction: column; gap: 2px; }
+        .row .row-title { font-weight: bold; color: #ffffff; font-size: 1rem; }
+        .row .row-sub   { color: #c0d8e6; font-size: 0.82rem; }
+        .row .row-actions { display: flex; gap: 6px; align-self: center; flex-wrap: wrap; }
+
+        /* Forms */
+        form.admin-form {
+            display: grid; gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            background: rgba(255,255,255,0.03);
+            padding: 14px;
+            border-radius: 10px;
+            margin-top: 12px;
+            border: 1px dashed rgba(0,255,255,0.2);
+        }
+        form.admin-form .field { display: flex; flex-direction: column; gap: 4px; }
+        form.admin-form .field.full { grid-column: 1 / -1; }
+        form.admin-form label {
+            font-size: 0.78rem; color: #aaccdd; letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        form.admin-form input[type=text],
+        form.admin-form input[type=number],
+        form.admin-form input[type=datetime-local],
+        form.admin-form input[type=url],
+        form.admin-form select,
+        form.admin-form textarea {
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: white; border-radius: 8px;
+            padding: 8px 10px; font-size: 0.93rem;
+            font-family: inherit;
+        }
+        form.admin-form input:focus,
+        form.admin-form select:focus,
+        form.admin-form textarea:focus {
+            outline: none;
+            border-color: rgba(0,255,255,0.6);
+            box-shadow: 0 0 0 2px rgba(0,255,255,0.15);
+        }
+        form.admin-form textarea { min-height: 60px; resize: vertical; }
+        form.admin-form .checkbox-row { display: flex; align-items: center; gap: 6px; }
+        form.admin-form .submit-row { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* Boss list inside event edit */
+        .boss-mini {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px; padding: 10px 12px;
+            margin-top: 8px;
+        }
+        .boss-mini h4 {
+            margin: 0 0 6px; color: #ffd28a;
+            font-size: 0.95rem; display: flex; justify-content: space-between;
+            align-items: center; gap: 6px;
+        }
+        .boss-mini .boss-grid {
+            display: grid; gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        }
+        .boss-mini label {
+            font-size: 0.72rem; color: #aaccdd; letter-spacing: 0.04em; text-transform: uppercase;
+        }
+        .boss-mini input, .boss-mini select {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: white; border-radius: 6px;
+            padding: 6px 8px; font-size: 0.85rem;
+            width: 100%; box-sizing: border-box;
+        }
+        .gimmicks {
+            display: flex; gap: 10px; flex-wrap: wrap;
+            font-size: 0.82rem;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 8px; border-radius: 6px;
+        }
+        .gimmicks label { color: #ddd; display: flex; gap: 4px; align-items: center; }
+
+        /* Modal */
+        .modal {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75);
+            display: none; align-items: center; justify-content: center;
+            padding: 16px; z-index: 200;
+        }
+        .modal.open { display: flex; }
+        .modal-card {
+            background: linear-gradient(160deg, #0a1830, #050d1f);
+            border: 1px solid rgba(0,255,255,0.3);
+            border-radius: 14px;
+            padding: 22px 22px 16px;
+            max-width: 760px;
+            width: 100%;
+            max-height: 88vh;
+            overflow-y: auto;
+        }
+        .modal-card h3 {
+            margin: 0 0 12px; color: #00ffff;
+            font-size: 1.25rem;
+        }
+
+        .empty {
+            color: #99c8d8; font-style: italic;
+            padding: 12px; text-align: center;
+            border: 1px dashed rgba(255,255,255,0.15);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="admin-header">
+            <h1>🛠 管理者画面</h1>
+            <div class="admin-actions">
+                <a class="btn btn-ghost" href="index.html">🏠 ホーム</a>
+                <a class="btn btn-ghost" href="mypage.html">👤 マイページ</a>
+                <button type="button" class="btn btn-ghost" id="logoutBtn">ログアウト</button>
+            </div>
+        </header>
+
+        <div id="adminStatus">権限確認中…</div>
+
+        <div id="adminMain" style="display:none;">
+            <!-- イベント管理 -->
+            <section class="card">
+                <h2>🎉 イベント管理</h2>
+                <p class="note">期間限定イベントの追加・期間設定・ボス構成 (HP倍率 / 攻撃ギミック / 弾数) を編集できます。`active` チェックが ON でかつ現在時刻が期間内のイベントが、ゲーム側に反映されます。</p>
+                <div id="eventList" class="row-list"></div>
+                <div style="margin-top: 14px;">
+                    <button type="button" class="btn btn-success" id="newEventBtn">＋ 新規イベント</button>
+                </div>
+            </section>
+
+            <!-- 称号管理 -->
+            <section class="card">
+                <h2>🏅 称号管理</h2>
+                <p class="note">固定の称号 (ルーキー/スコア100突破/ウェポンマスター) はコードに直書きされています。ここでは追加の動的称号を作成できます。スコア閾値・プレイ回数・特定イベントボス撃破などの条件で解放されます。</p>
+                <div id="titleList" class="row-list"></div>
+                <div style="margin-top: 14px;">
+                    <button type="button" class="btn btn-success" id="newTitleBtn">＋ 新規称号</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- イベント編集モーダル -->
+    <div class="modal" id="eventModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-card">
+            <h3 id="eventModalTitle">イベント編集</h3>
+            <form id="eventForm" class="admin-form">
+                <div class="field">
+                    <label>タイトル</label>
+                    <input type="text" name="title" required>
+                </div>
+                <div class="field">
+                    <label>イベントID（任意・URL/データ識別用）</label>
+                    <input type="text" name="slug" placeholder="例: shadow-fleet-2026">
+                </div>
+                <div class="field">
+                    <label>開始日時</label>
+                    <input type="datetime-local" name="startsAt" required>
+                </div>
+                <div class="field">
+                    <label>終了日時</label>
+                    <input type="datetime-local" name="endsAt" required>
+                </div>
+                <div class="field full">
+                    <div class="checkbox-row">
+                        <input type="checkbox" name="active" id="activeCheckbox">
+                        <label for="activeCheckbox" style="text-transform:none;">このイベントを公開する (active)</label>
+                    </div>
+                </div>
+                <div class="field full">
+                    <label>ボス構成</label>
+                    <div id="bossEditList"></div>
+                    <div style="margin-top: 6px;">
+                        <button type="button" class="btn btn-sm" id="addBossBtn">＋ ボス追加</button>
+                    </div>
+                </div>
+                <div class="submit-row">
+                    <button type="submit" class="btn btn-success">保存</button>
+                    <button type="button" class="btn btn-ghost" id="cancelEventBtn">キャンセル</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 称号編集モーダル -->
+    <div class="modal" id="titleModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-card">
+            <h3 id="titleModalTitle">称号編集</h3>
+            <form id="titleForm" class="admin-form">
+                <div class="field full">
+                    <label>表示ラベル（プレイヤーに見える名前）</label>
+                    <input type="text" name="label" required placeholder="例: シャドウキラー">
+                </div>
+                <div class="field">
+                    <label>条件タイプ</label>
+                    <select name="conditionType" id="conditionTypeSelect" required>
+                        <option value="score">ハイスコア閾値</option>
+                        <option value="totalGames">累計プレイ回数</option>
+                        <option value="eventBoss">イベントボス撃破</option>
+                    </select>
+                </div>
+                <div class="field" id="conditionValueField">
+                    <label id="conditionValueLabel">閾値</label>
+                    <input type="text" name="conditionValue" required>
+                </div>
+                <div class="submit-row">
+                    <button type="submit" class="btn btn-success">保存</button>
+                    <button type="button" class="btn btn-ghost" id="cancelTitleBtn">キャンセル</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+
+    <script>
+        const statusEl   = document.getElementById('adminStatus');
+        const mainEl     = document.getElementById('adminMain');
+        const eventList  = document.getElementById('eventList');
+        const titleList  = document.getElementById('titleList');
+
+        // ─────── ボス編集用の既知選択肢 ───────
+        const BOSS_IMAGE_PRESETS = [
+            { value: '',                                      label: '画像なし' },
+            { value: 'assets/event/event-boss-1.png',         label: 'シャドウ・クルーザー' },
+            { value: 'assets/event/event-boss-2.png',         label: 'シャドウ・オーバーロード' }
+        ];
+        const GIMMICK_OPTIONS = ['homing', 'gravity'];
+
+        // ─────── 認証ゲート ───────
+        firebase.auth().onAuthStateChanged(async user => {
+            if (!user) {
+                statusEl.className = 'error';
+                statusEl.innerHTML = 'ログインが必要です。<a href="index.html" style="color:#88ddff">ホームへ</a>';
+                return;
+            }
+            if (!isAdminEmail(user.email)) {
+                statusEl.className = 'error';
+                statusEl.textContent = `${user.email} は管理者ではありません。`;
+                return;
+            }
+            statusEl.className = 'ok';
+            statusEl.textContent = `管理者としてログイン中: ${user.email}`;
+            mainEl.style.display = 'block';
+            await Promise.all([refreshEvents(), refreshTitles()]);
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try { await firebase.auth().signOut(); }
+            catch (e) { console.error(e); }
+            window.location.href = 'index.html';
+        });
+
+        // ─────────────────────────────────────────────
+        // イベント管理
+        // ─────────────────────────────────────────────
+        let currentEditingEventId = null;
+        const eventModal = document.getElementById('eventModal');
+        const eventForm  = document.getElementById('eventForm');
+        const bossEditList = document.getElementById('bossEditList');
+
+        function openEventModal(ev) {
+            currentEditingEventId = ev ? ev.id : null;
+            document.getElementById('eventModalTitle').textContent = ev ? `イベント編集: ${ev.title || ev.id}` : '新規イベント';
+            eventForm.reset();
+            eventForm.title.value    = ev ? (ev.title || '') : '';
+            eventForm.slug.value     = ev ? (ev.slug  || ev.id || '') : '';
+            eventForm.startsAt.value = ev ? toLocalDateTime(ev.startsAt) : '';
+            eventForm.endsAt.value   = ev ? toLocalDateTime(ev.endsAt)   : '';
+            eventForm.active.checked = !!(ev && ev.active);
+
+            // ボス一覧を反映
+            bossEditList.innerHTML = '';
+            const bosses = (ev && Array.isArray(ev.bosses)) ? ev.bosses : [];
+            if (bosses.length === 0) addBossEditor(null);
+            else bosses.forEach(b => addBossEditor(b));
+
+            eventModal.classList.add('open');
+            eventModal.setAttribute('aria-hidden', 'false');
+        }
+        function closeEventModal() {
+            eventModal.classList.remove('open');
+            eventModal.setAttribute('aria-hidden', 'true');
+            currentEditingEventId = null;
+        }
+
+        function addBossEditor(b) {
+            const idx = bossEditList.children.length;
+            const wrap = document.createElement('div');
+            wrap.className = 'boss-mini';
+            wrap.dataset.idx = String(idx);
+            wrap.innerHTML = `
+                <h4>ボス #${idx + 1}
+                    <button type="button" class="btn btn-sm btn-danger" data-action="remove-boss">削除</button>
+                </h4>
+                <div class="boss-grid">
+                    <div>
+                        <label>ボスID</label>
+                        <input type="text" name="b_id" value="${esc((b && b.id) || '')}" placeholder="cruiser">
+                    </div>
+                    <div>
+                        <label>表示名</label>
+                        <input type="text" name="b_name" value="${esc((b && b.name) || '')}" placeholder="シャドウ・クルーザー">
+                    </div>
+                    <div>
+                        <label>スキンキー (progress 反映用)</label>
+                        <input type="text" name="b_skinKey" value="${esc((b && b.skinKey) || '')}" placeholder="eventBossSkinShadowCruiser">
+                    </div>
+                    <div>
+                        <label>画像パス</label>
+                        <select name="b_image">
+                            ${BOSS_IMAGE_PRESETS.map(p => `<option value="${esc(p.value)}" ${((b && b.image) === p.value) ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label>HP倍率</label>
+                        <input type="number" name="b_hpMultiplier" step="0.5" min="1" value="${(b && Number(b.hpMultiplier)) || 4}">
+                    </div>
+                    <div>
+                        <label>featureLevel (5–10)</label>
+                        <input type="number" name="b_featureLevel" min="1" max="10" value="${(b && Number(b.featureLevel)) || 8}">
+                    </div>
+                    <div>
+                        <label>弾数</label>
+                        <input type="number" name="b_bulletCount" min="1" max="12" value="${(b && Number(b.bulletCount)) || 3}">
+                    </div>
+                    <div style="grid-column: 1 / -1;">
+                        <label>攻撃ギミック</label>
+                        <div class="gimmicks">
+                            ${GIMMICK_OPTIONS.map(g => `<label><input type="checkbox" name="b_gimmick_${g}" ${(b && Array.isArray(b.extraGimmicks) && b.extraGimmicks.includes(g)) ? 'checked' : ''}> ${g}</label>`).join('')}
+                        </div>
+                    </div>
+                    <div style="grid-column: 1 / -1;">
+                        <label>説明</label>
+                        <input type="text" name="b_description" value="${esc((b && b.description) || '')}" placeholder="軍事兵器の精密射撃 / 機雷・狙撃・追尾ミサイル">
+                    </div>
+                </div>
+            `;
+            bossEditList.appendChild(wrap);
+        }
+        bossEditList.addEventListener('click', e => {
+            if (e.target.dataset && e.target.dataset.action === 'remove-boss') {
+                e.target.closest('.boss-mini').remove();
+            }
+        });
+        document.getElementById('addBossBtn').addEventListener('click', () => addBossEditor(null));
+
+        eventForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const fd = new FormData(eventForm);
+            const bosses = [];
+            bossEditList.querySelectorAll('.boss-mini').forEach(el => {
+                const get = name => (el.querySelector(`[name="${name}"]`) || {}).value || '';
+                const gimmicks = GIMMICK_OPTIONS.filter(g => el.querySelector(`[name="b_gimmick_${g}"]`).checked);
+                bosses.push({
+                    id: get('b_id'),
+                    name: get('b_name'),
+                    skinKey: get('b_skinKey'),
+                    image: get('b_image'),
+                    description: get('b_description'),
+                    hpMultiplier: Number(get('b_hpMultiplier')) || 1,
+                    featureLevel: Number(get('b_featureLevel')) || 8,
+                    bulletCount:  Number(get('b_bulletCount'))  || 3,
+                    extraGimmicks: gimmicks
+                });
+            });
+            const data = {
+                title:    fd.get('title') || '',
+                slug:     fd.get('slug') || '',
+                startsAt: fromLocalDateTime(fd.get('startsAt')),
+                endsAt:   fromLocalDateTime(fd.get('endsAt')),
+                active:   fd.get('active') === 'on',
+                bosses:   bosses
+            };
+            try {
+                await firebaseDataManager.saveEvent(currentEditingEventId, data);
+                closeEventModal();
+                refreshEvents();
+            } catch (err) {
+                console.error(err);
+                alert('保存に失敗しました: ' + err.message);
+            }
+        });
+        document.getElementById('cancelEventBtn').addEventListener('click', closeEventModal);
+        eventModal.addEventListener('click', e => { if (e.target === eventModal) closeEventModal(); });
+
+        document.getElementById('newEventBtn').addEventListener('click', () => openEventModal(null));
+
+        async function refreshEvents() {
+            eventList.innerHTML = '<div class="empty">読み込み中…</div>';
+            try {
+                const events = await firebaseDataManager.listEvents();
+                if (!events.length) {
+                    eventList.innerHTML = '<div class="empty">イベントはまだ登録されていません。</div>';
+                    return;
+                }
+                eventList.innerHTML = '';
+                events.forEach(ev => {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    const periodText = `${fmtDate(ev.startsAt)} 〜 ${fmtDate(ev.endsAt)}`;
+                    const status = ev.active ? '<span style="color:#7fffaa">✓ 公開中</span>' : '<span style="color:#ffaa77">下書き</span>';
+                    const bossText = `${(ev.bosses || []).length} 体のボス`;
+                    row.innerHTML = `
+                        <div class="row-main">
+                            <div class="row-title">${esc(ev.title || ev.id)} ${status}</div>
+                            <div class="row-sub">${periodText} ・ ${bossText} ・ ID: ${esc(ev.id)}</div>
+                        </div>
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-sm" data-action="edit">編集</button>
+                            <button type="button" class="btn btn-sm btn-danger" data-action="delete">削除</button>
+                        </div>
+                    `;
+                    row.querySelector('[data-action="edit"]').addEventListener('click', () => openEventModal(ev));
+                    row.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+                        if (!confirm(`イベント "${ev.title || ev.id}" を削除しますか？`)) return;
+                        try { await firebaseDataManager.deleteEvent(ev.id); refreshEvents(); }
+                        catch (err) { alert('削除失敗: ' + err.message); }
+                    });
+                    eventList.appendChild(row);
+                });
+            } catch (err) {
+                console.error(err);
+                eventList.innerHTML = `<div class="empty" style="color:#ffaaaa">読み込みエラー: ${esc(err.message)}</div>`;
+            }
+        }
+
+        // ─────────────────────────────────────────────
+        // 称号管理
+        // ─────────────────────────────────────────────
+        let currentEditingTitleId = null;
+        const titleModal = document.getElementById('titleModal');
+        const titleForm  = document.getElementById('titleForm');
+        const conditionTypeSelect = document.getElementById('conditionTypeSelect');
+        const conditionValueLabel = document.getElementById('conditionValueLabel');
+
+        function updateConditionValueHint() {
+            const t = conditionTypeSelect.value;
+            const input = titleForm.conditionValue;
+            if (t === 'score') {
+                conditionValueLabel.textContent = 'スコア閾値（数値）';
+                input.placeholder = '例: 3000';
+                input.type = 'number'; input.min = '0';
+            } else if (t === 'totalGames') {
+                conditionValueLabel.textContent = '累計プレイ回数（数値）';
+                input.placeholder = '例: 10';
+                input.type = 'number'; input.min = '0';
+            } else if (t === 'eventBoss') {
+                conditionValueLabel.textContent = 'progress キー（例: eventBossSkinShadowCruiser）';
+                input.placeholder = 'eventBossSkinShadowCruiser';
+                input.type = 'text';
+            }
+        }
+        conditionTypeSelect.addEventListener('change', updateConditionValueHint);
+
+        function openTitleModal(t) {
+            currentEditingTitleId = t ? t.id : null;
+            document.getElementById('titleModalTitle').textContent = t ? `称号編集: ${t.label || t.id}` : '新規称号';
+            titleForm.reset();
+            if (t) {
+                titleForm.label.value = t.label || '';
+                conditionTypeSelect.value = (t.condition && t.condition.type) || 'score';
+                titleForm.conditionValue.value = (t.condition && t.condition.value) || '';
+            }
+            updateConditionValueHint();
+            titleModal.classList.add('open');
+            titleModal.setAttribute('aria-hidden', 'false');
+        }
+        function closeTitleModal() {
+            titleModal.classList.remove('open');
+            titleModal.setAttribute('aria-hidden', 'true');
+            currentEditingTitleId = null;
+        }
+
+        titleForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const fd = new FormData(titleForm);
+            const type = conditionTypeSelect.value;
+            const rawValue = String(fd.get('conditionValue') || '');
+            const value = (type === 'eventBoss') ? rawValue : Number(rawValue);
+            const data = {
+                label: fd.get('label') || '',
+                condition: { type, value }
+            };
+            try {
+                await firebaseDataManager.saveTitle(currentEditingTitleId, data);
+                closeTitleModal();
+                refreshTitles();
+            } catch (err) {
+                console.error(err);
+                alert('保存失敗: ' + err.message);
+            }
+        });
+        document.getElementById('cancelTitleBtn').addEventListener('click', closeTitleModal);
+        titleModal.addEventListener('click', e => { if (e.target === titleModal) closeTitleModal(); });
+        document.getElementById('newTitleBtn').addEventListener('click', () => openTitleModal(null));
+
+        async function refreshTitles() {
+            titleList.innerHTML = '<div class="empty">読み込み中…</div>';
+            try {
+                const titles = await firebaseDataManager.listTitles();
+                if (!titles.length) {
+                    titleList.innerHTML = '<div class="empty">称号はまだ登録されていません。</div>';
+                    return;
+                }
+                titleList.innerHTML = '';
+                titles.forEach(t => {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    const c = t.condition || {};
+                    let condText = '条件未設定';
+                    if (c.type === 'score') condText = `ハイスコア ${c.value} 以上`;
+                    else if (c.type === 'totalGames') condText = `累計プレイ ${c.value} 回以上`;
+                    else if (c.type === 'eventBoss')  condText = `イベントボス: ${c.value} 撃破`;
+                    row.innerHTML = `
+                        <div class="row-main">
+                            <div class="row-title">🏅 ${esc(t.label || t.id)}</div>
+                            <div class="row-sub">${esc(condText)} ・ ID: ${esc(t.id)}</div>
+                        </div>
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-sm" data-action="edit">編集</button>
+                            <button type="button" class="btn btn-sm btn-danger" data-action="delete">削除</button>
+                        </div>
+                    `;
+                    row.querySelector('[data-action="edit"]').addEventListener('click', () => openTitleModal(t));
+                    row.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+                        if (!confirm(`称号 "${t.label || t.id}" を削除しますか？`)) return;
+                        try { await firebaseDataManager.deleteTitle(t.id); refreshTitles(); }
+                        catch (err) { alert('削除失敗: ' + err.message); }
+                    });
+                    titleList.appendChild(row);
+                });
+            } catch (err) {
+                console.error(err);
+                titleList.innerHTML = `<div class="empty" style="color:#ffaaaa">読み込みエラー: ${esc(err.message)}</div>`;
+            }
+        }
+
+        // ─────── ユーティリティ ───────
+        function esc(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function toLocalDateTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d)) return '';
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+        function fromLocalDateTime(s) {
+            if (!s) return '';
+            const d = new Date(s);
+            if (isNaN(d)) return '';
+            return d.toISOString();
+        }
+        function fmtDate(iso) {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            if (isNaN(d)) return '—';
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+    </script>
+</body>
+</html>

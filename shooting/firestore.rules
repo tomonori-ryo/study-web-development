@@ -1,22 +1,52 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ユーザーコレクションのルール
-    match /users/{userId} {
-      // 認証されたユーザーは自分のドキュメントを読み書き可能
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // 管理者メールアドレス（firebase-config.js の ADMIN_EMAILS と同期）
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() in [
+            'tomonoriryou4@gmail.com'
+          ];
     }
-    
-    // PvPルームコレクションのルール
+
+    // ユーザーコレクション
+    match /users/{userId} {
+      // 自分のドキュメントを読み書き可能 / 管理者はランキング閲覧のため全件読込可
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // PvP ルーム
     match /pvp_rooms/{roomId} {
-      // 認証されたユーザーは読み書き可能
       allow read, write: if request.auth != null;
     }
-    
-    // その他のコレクション（必要に応じて追加）
+
+    // 管理画面で編集する動的設定（イベント/カスタム称号）
+    //   読み込みは誰でも可、書き込みは管理者のみ
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 管理画面で作成・編集するイベント設定。
+    //   ゲーム本体（index.html / shooting_game.html）からも未ログインで読み出すため
+    //   読み込みは公開、書き込みは管理者のみ。
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 管理画面で作成する動的称号。
+    //   全プレイヤーのスコア保存時に評価するため公開読み込み、書き込みは管理者のみ。
+    match /titles/{titleId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 既存のフォールバック（開発用）。本番では絞り込み推奨
     match /{document=**} {
-      // 認証されたユーザーは読み書き可能（開発用）
       allow read, write: if request.auth != null;
     }
   }
-} 
+}

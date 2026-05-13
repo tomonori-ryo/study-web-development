@@ -569,6 +569,8 @@
             <button class="nav-button game-start" onclick="window.location.href='shooting_game.html'">ゲーム開始</button>
             <button class="nav-button pvp-button" onclick="window.location.href='pvp_game.html'" style="background: linear-gradient(45deg, #ff8800, #ffaa00); box-shadow: 0 0 10px rgba(255, 136, 0, 0.4);">PvP対戦</button>
             <button class="nav-button" onclick="window.location.href='index.html'">ホーム</button>
+            <!-- 管理者のみ表示。auth ステート確定後に display を切り替える -->
+            <button id="adminNavBtn" class="nav-button" onclick="window.location.href='admin.html'" style="display:none; background: linear-gradient(45deg, #5500ff, #8844ff); box-shadow: 0 0 10px rgba(136, 68, 255, 0.4);">🛠 管理者</button>
             <button class="nav-button" onclick="logout()" style="background: linear-gradient(45deg, #ff4444, #ff6666); box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);">ログアウト</button>
         </div>
         
@@ -1136,6 +1138,14 @@
                 }
                 
                 console.log('認証成功 - データ読み込み開始');
+                // 管理者なら管理者ナビを表示
+                try {
+                    const cu = firebase.auth().currentUser;
+                    if (cu && typeof isAdminEmail === 'function' && isAdminEmail(cu.email)) {
+                        const btn = document.getElementById('adminNavBtn');
+                        if (btn) btn.style.display = 'inline-block';
+                    }
+                } catch (e) { /* ignore */ }
                 await loadUserData();
                 await loadRanking();
                 console.log('データ読み込み完了');
