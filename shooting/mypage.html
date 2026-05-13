@@ -289,6 +289,56 @@
             text-align: center;
         }
 
+        .collection-card .title-note {
+            color: #cccccc;
+            font-size: 0.85rem;
+            margin-top: -0.4rem;
+            margin-bottom: 0.6rem;
+            text-align: center;
+        }
+
+        .skin-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 10px 8px 12px;
+            text-align: center;
+            position: relative;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .skin-card.unlocked {
+            border-color: rgba(0, 200, 255, 0.55);
+            box-shadow: 0 0 16px rgba(0, 200, 255, 0.18);
+        }
+        .skin-card.locked {
+            opacity: 0.55;
+            filter: grayscale(0.7);
+        }
+        .skin-card .skin-img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: contain;
+            image-rendering: pixelated;
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 8px;
+            padding: 4px;
+        }
+        .skin-card .skin-name {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #ffffff;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .skin-card .skin-status {
+            margin-top: 2px;
+            font-size: 0.7rem;
+            color: #00ddff;
+        }
+        .skin-card.locked .skin-status {
+            color: #ff6699;
+        }
+
         .titles-list {
             display: flex;
             flex-wrap: wrap;
@@ -554,6 +604,13 @@
                     <li class="title-badge empty">まだ称号がありません</li>
                 </ul>
             </div>
+
+            <!-- コレクション（イベント報酬スキン） -->
+            <div class="card collection-card">
+                <h2>🎁 コレクション</h2>
+                <p class="title-note">期間限定イベントをクリアすると、対象ボスのスキンがここに追加されます。</p>
+                <div id="eventSkinsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 12px;"></div>
+            </div>
             
             <!-- アカウント設定カード -->
             <div class="card account-card">
@@ -771,6 +828,34 @@
             }, 5000);
         }
 
+        // ─────── イベントスキン（コレクション）描画 ───────
+        const EVENT_SKIN_CATALOG = [
+            { skinKey: 'eventBossSkinShadowCruiser',  name: 'シャドウ・クルーザー',   image: 'assets/event/event-boss-1.png', description: '影艦隊襲来 / Boss 1' },
+            { skinKey: 'eventBossSkinShadowOverlord', name: 'シャドウ・オーバーロード', image: 'assets/event/event-boss-2.png', description: '影艦隊襲来 / Boss 2' }
+        ];
+
+        function renderEventSkins(progress) {
+            const grid = document.getElementById('eventSkinsGrid');
+            if (!grid) return;
+            // progress（Firebase 由来）と localStorage の両方から判定
+            let localSkins = {};
+            try { localSkins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+
+            grid.innerHTML = '';
+            EVENT_SKIN_CATALOG.forEach(skin => {
+                const unlocked = !!(localSkins[skin.skinKey] || (progress && progress[skin.skinKey]));
+                const card = document.createElement('div');
+                card.className = `skin-card ${unlocked ? 'unlocked' : 'locked'}`;
+                card.innerHTML = `
+                    <img class="skin-img" src="${skin.image}" alt="${skin.name}" loading="lazy" />
+                    <div class="skin-name">${skin.name}</div>
+                    <div class="skin-status">${unlocked ? '✓ 獲得済み' : '🔒 未取得'}</div>
+                `;
+                card.title = `${skin.name}\n${skin.description}\n${unlocked ? '獲得済み' : 'イベントで撃破して獲得しよう'}`;
+                grid.appendChild(card);
+            });
+        }
+
         function renderTitles(fixedTitles, rankTitle) {
             const titlesList = document.getElementById('titlesList');
             if (!titlesList) return;
@@ -910,6 +995,7 @@
                     const savedLoadout = settings.weaponLoadout || getStoredWeaponLoadout() || DEFAULT_WEAPON_LOADOUT;
                     renderWeaponLoadoutSelects(savedLoadout, currentWeaponProgress);
                     renderTitles(currentFixedTitles, '');
+                    renderEventSkins(currentWeaponProgress);
                 }
             } catch (error) {
                 console.error('ユーザーデータ読み込みエラー:', error);
@@ -939,6 +1025,7 @@
                 persistWeaponProgress(currentWeaponProgress);
                 renderWeaponLoadoutSelects(getStoredWeaponLoadout() || DEFAULT_WEAPON_LOADOUT, currentWeaponProgress);
                 renderTitles(currentFixedTitles, '');
+                renderEventSkins(currentWeaponProgress);
             }
         }
         

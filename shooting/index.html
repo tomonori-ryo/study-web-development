@@ -609,6 +609,15 @@
         
         <button class="start-button" onclick="startGame()">ゲーム開始</button>
         <button class="start-button pvp-button" onclick="startPvP()" style="background: linear-gradient(45deg, #ff8800, #ffaa00); margin-left: 10px;">PvP対戦</button>
+        <button class="start-button event-button" onclick="startEvent()" style="background: linear-gradient(45deg, #6a00b8, #008abf); margin-left: 10px; position: relative;">
+            🎪 期間限定イベント
+            <span id="eventBadge" style="display:none; position:absolute; top:-8px; right:-8px; background:#ff3366; color:#fff; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:bold; box-shadow:0 2px 6px rgba(0,0,0,0.4);">NEW</span>
+        </button>
+        <div id="eventInfo" style="margin-top: 8px; font-size: 13px; color: rgba(255,255,255,0.75); display:none;">
+            <span id="eventInfoTitle">影艦隊襲来</span>
+            <span style="opacity:0.6;"> · <span id="eventInfoDeadline">2026/12/31 まで</span></span>
+            <span id="eventInfoProgress" style="margin-left:6px;"></span>
+        </div>
         
 
         
@@ -681,6 +690,67 @@
                 alert('PvP対戦の開始に失敗しました: ' + error.message);
             }
         }
+
+        // ─────── 期間限定イベント ───────
+        const EVENT_META = {
+            id: 'shadow-fleet-2026',
+            title: '影艦隊襲来',
+            endsAt: '2026-12-31T23:59:59+09:00',
+            bossCount: 2
+        };
+
+        function startEvent() {
+            try {
+                window.location.href = 'shooting_game.html?mode=event';
+            } catch (error) {
+                console.error('イベント開始エラー:', error);
+                alert('イベントの開始に失敗しました: ' + error.message);
+            }
+        }
+
+        // イベント情報を画面に反映
+        function renderEventInfo() {
+            const info = document.getElementById('eventInfo');
+            if (!info) return;
+            const titleEl = document.getElementById('eventInfoTitle');
+            const deadlineEl = document.getElementById('eventInfoDeadline');
+            const progressEl = document.getElementById('eventInfoProgress');
+            const badge = document.getElementById('eventBadge');
+            if (titleEl) titleEl.textContent = EVENT_META.title;
+
+            // 期間
+            try {
+                const end = new Date(EVENT_META.endsAt);
+                const y = end.getFullYear();
+                const m = String(end.getMonth() + 1).padStart(2, '0');
+                const d = String(end.getDate()).padStart(2, '0');
+                if (deadlineEl) deadlineEl.textContent = `${y}/${m}/${d} まで`;
+                if (Date.now() > end.getTime() && deadlineEl) {
+                    deadlineEl.textContent = '(期間終了)';
+                }
+            } catch (e) {}
+
+            // 進捗
+            let skins = {};
+            try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+            const unlocked = Object.keys(skins).filter(k => k.startsWith('eventBossSkin') && skins[k]).length;
+            if (progressEl) {
+                if (unlocked === 0) {
+                    progressEl.textContent = '';
+                } else if (unlocked >= EVENT_META.bossCount) {
+                    progressEl.textContent = '· ✓ コンプリート';
+                    progressEl.style.color = '#00ffaa';
+                } else {
+                    progressEl.textContent = `· スキン ${unlocked}/${EVENT_META.bossCount}`;
+                }
+            }
+
+            info.style.display = 'block';
+            if (badge && unlocked < EVENT_META.bossCount) badge.style.display = 'inline-block';
+            else if (badge) badge.style.display = 'none';
+        }
+        // ページロード後に呼ぶ（DOMContentLoaded で十分早い）
+        document.addEventListener('DOMContentLoaded', renderEventInfo);
 
         // モード選択モーダルを表示
         function showModeSelectModal() {
