@@ -341,12 +341,27 @@
                 <div class="field">
                     <label>条件タイプ</label>
                     <select name="conditionType" id="conditionTypeSelect" required>
-                        <option value="score">ハイスコア閾値</option>
-                        <option value="totalGames">累計プレイ回数</option>
-                        <option value="bossLevel">倒したボスの最高Lv</option>
-                        <option value="weaponUnlocked">武器解放</option>
-                        <option value="eventBoss">イベントボス撃破</option>
-                        <option value="progressFlag">進捗フラグ (汎用)</option>
+                        <optgroup label="スコア / プレイ実績">
+                            <option value="score">ハイスコア閾値</option>
+                            <option value="totalScore">累計スコア閾値</option>
+                            <option value="totalGames">累計プレイ回数</option>
+                        </optgroup>
+                        <optgroup label="ボス / 武器">
+                            <option value="bossLevel">倒したボスの最高Lv</option>
+                            <option value="weaponUnlocked">特定武器の解放</option>
+                            <option value="allWeapons">全武器解放</option>
+                        </optgroup>
+                        <optgroup label="イベント / コレクション">
+                            <option value="eventBoss">特定イベントボス撃破</option>
+                            <option value="eventClear">イベントスキン獲得数</option>
+                        </optgroup>
+                        <optgroup label="プレイスタイル">
+                            <option value="noDamageRun">ノーダメージクリア達成</option>
+                            <option value="multiTitle">称号保有数</option>
+                        </optgroup>
+                        <optgroup label="高度">
+                            <option value="progressFlag">進捗フラグ (汎用)</option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="field" id="conditionValueField">
@@ -702,10 +717,17 @@
         function updateConditionValueHint() {
             const t = conditionTypeSelect.value;
             const input = titleForm.conditionValue;
+            const field = document.getElementById('conditionValueField');
             input.removeAttribute('min');
+            input.required = true;
+            field.style.display = '';
             if (t === 'score') {
-                conditionValueLabel.textContent = 'スコア閾値（数値）';
+                conditionValueLabel.textContent = 'ハイスコア閾値（数値）';
                 input.placeholder = '例: 3000';
+                input.type = 'number'; input.min = '0';
+            } else if (t === 'totalScore') {
+                conditionValueLabel.textContent = '累計スコア閾値（数値）';
+                input.placeholder = '例: 50000';
                 input.type = 'number'; input.min = '0';
             } else if (t === 'totalGames') {
                 conditionValueLabel.textContent = '累計プレイ回数（数値）';
@@ -719,10 +741,26 @@
                 conditionValueLabel.textContent = '武器スロット名（rapid / shotgun / laser / drone など）';
                 input.placeholder = 'shotgun';
                 input.type = 'text';
+            } else if (t === 'allWeapons') {
+                conditionValueLabel.textContent = '値は不要';
+                input.value = ''; input.required = false;
+                field.style.display = 'none';
             } else if (t === 'eventBoss') {
                 conditionValueLabel.textContent = 'progress キー（例: eventBossSkinShadowCruiser）';
                 input.placeholder = 'eventBossSkinShadowCruiser';
                 input.type = 'text';
+            } else if (t === 'eventClear') {
+                conditionValueLabel.textContent = 'イベントスキン獲得数（数値）';
+                input.placeholder = '例: 2';
+                input.type = 'number'; input.min = '1';
+            } else if (t === 'noDamageRun') {
+                conditionValueLabel.textContent = '値は不要';
+                input.value = ''; input.required = false;
+                field.style.display = 'none';
+            } else if (t === 'multiTitle') {
+                conditionValueLabel.textContent = '所持称号数（数値・自分自身は除く）';
+                input.placeholder = '例: 5';
+                input.type = 'number'; input.min = '1';
             } else if (t === 'progressFlag') {
                 conditionValueLabel.textContent = '任意の progress フラグ名';
                 input.placeholder = '例: allWeaponsUnlocked';
@@ -811,9 +849,13 @@
             const fd = new FormData(titleForm);
             const type = conditionTypeSelect.value;
             const rawValue = String(fd.get('conditionValue') || '');
-            // 数値タイプ / 文字列タイプを判別
-            const numericTypes = ['score', 'totalGames', 'bossLevel'];
-            const value = numericTypes.includes(type) ? Number(rawValue) : rawValue;
+            // タイプ別の値の扱い
+            const numericTypes  = ['score', 'totalScore', 'totalGames', 'bossLevel', 'eventClear', 'multiTitle'];
+            const noValueTypes  = ['allWeapons', 'noDamageRun'];
+            let value;
+            if (noValueTypes.includes(type))      value = true;
+            else if (numericTypes.includes(type)) value = Number(rawValue);
+            else                                   value = rawValue;
             const data = {
                 label: fd.get('label') || '',
                 iconEmoji: (fd.get('iconEmoji') || '').toString().trim(),
@@ -848,10 +890,15 @@
                     const c = t.condition || {};
                     let condText = '条件未設定';
                     if      (c.type === 'score')          condText = `ハイスコア ${c.value} 以上`;
+                    else if (c.type === 'totalScore')     condText = `累計スコア ${c.value} 以上`;
                     else if (c.type === 'totalGames')     condText = `累計プレイ ${c.value} 回以上`;
                     else if (c.type === 'bossLevel')      condText = `Lv${c.value} 以上のボス撃破`;
                     else if (c.type === 'weaponUnlocked') condText = `武器 ${c.value} 解放`;
+                    else if (c.type === 'allWeapons')     condText = `全武器解放`;
                     else if (c.type === 'eventBoss')      condText = `イベント progress: ${c.value}`;
+                    else if (c.type === 'eventClear')     condText = `イベントスキン ${c.value} 個以上獲得`;
+                    else if (c.type === 'noDamageRun')    condText = `ノーダメージクリア達成`;
+                    else if (c.type === 'multiTitle')     condText = `称号 ${c.value} 個以上保有`;
                     else if (c.type === 'progressFlag')   condText = `progress.${c.value} = true`;
                     let iconHtml;
                     if (t.iconImage) {

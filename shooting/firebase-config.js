@@ -609,12 +609,17 @@ class FirebaseDataManager {
 
   // 動的称号: ユーザーデータを元に、未解放の称号を解禁
   //   condition.type:
-  //     'score'          : highScore >= condition.value
+  //     'score'          : highScore  >= condition.value
+  //     'totalScore'     : totalScore >= condition.value（累計スコア）
   //     'totalGames'     : totalGames >= condition.value
   //     'eventBoss'      : progress[condition.value] === true (任意の progress flag)
+  //     'progressFlag'   : progress[condition.value] === true (eventBoss と同義の汎用版)
   //     'bossLevel'      : progress.maxBossLevelDefeated >= condition.value
   //     'weaponUnlocked' : progress[`${value}Unlocked`] === true（例: shotgun → shotgunUnlocked）
-  //     'progressFlag'   : progress[condition.value] === true (eventBoss と同義の汎用版)
+  //     'allWeapons'     : progress.allWeaponsUnlocked === true（value 不要）
+  //     'eventClear'     : progress 中の eventBossSkin* フラグが value 個以上
+  //     'noDamageRun'    : progress.noDamageRunDone === true（value 不要）
+  //     'multiTitle'     : 現在所持している称号数 >= value（自分自身は除外）
   async evaluateDynamicTitles(userRef, userData) {
     try {
       const titles = await this.listTitles();
@@ -624,23 +629,44 @@ class FirebaseDataManager {
       const progress = userData.progress || {};
       const highScore = userData.highScore || 0;
       const totalGames = userData.totalGames || 0;
+      const totalScore = userData.totalScore || 0;
       const maxBossLv  = Number(progress.maxBossLevelDefeated) || 0;
+      const eventSkinCount = Object.keys(progress).filter(k => k.startsWith('eventBossSkin') && !!progress[k]).length;
 
+      // multiTitle 評価のために 2 パス: まず通常の称号を解禁、次に multiTitle を判定。
+      // （multiTitle が他の称号にも依存するため）
+      const passes = [];
       for (const t of titles) {
         if (!t.label) continue;
         const cond = t.condition || {};
+        if (cond.type === 'multiTitle') {
+          passes.push(t);
+          continue;
+        }
         let ok = false;
         switch (cond.type) {
-          case 'score':          ok = highScore >= (Number(cond.value) || 0); break;
+          case 'score':          ok = highScore  >= (Number(cond.value) || 0); break;
+          case 'totalScore':     ok = totalScore >= (Number(cond.value) || 0); break;
           case 'totalGames':     ok = totalGames >= (Number(cond.value) || 0); break;
           case 'eventBoss':      ok = !!progress[cond.value]; break;
           case 'progressFlag':   ok = !!progress[cond.value]; break;
           case 'bossLevel':      ok = maxBossLv >= (Number(cond.value) || 0); break;
           case 'weaponUnlocked': ok = !!progress[`${cond.value}Unlocked`]; break;
+          case 'allWeapons':     ok = !!progress.allWeaponsUnlocked; break;
+          case 'eventClear':     ok = eventSkinCount >= (Number(cond.value) || 0); break;
+          case 'noDamageRun':    ok = !!progress.noDamageRunDone; break;
           default: ok = false;
         }
         if (ok) set.add(t.label);
       }
+      // multiTitle の評価（既に上で取得した称号数を基準）
+      for (const t of passes) {
+        const need = Number(t.condition.value) || 0;
+        // 自分自身を除いた称号数
+        const have = Array.from(set).filter(label => label !== t.label).length;
+        if (have >= need) set.add(t.label);
+      }
+
       const next = Array.from(set);
       if (next.length !== current.length) {
         await userRef.update({ titles: next });

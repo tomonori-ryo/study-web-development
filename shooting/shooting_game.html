@@ -1025,6 +1025,8 @@
         let gameTime = 120; // 120秒制限
         const PLAYER_MAX_UP_RATIO = 0.35; // プレイヤーが上に進める割合（小さいほどボスに接近可能）
         let gameStartTime = Date.now();
+        // 称号「ノーダメージクリア」用。被弾するたびに true へ、time-up 時に未被弾なら成立。
+        let runTookDamage = false;
         let bossSpawned = false;
         let bossWarningShown = false;
         let lastBossScore = 0; // 最後にボスが出現したスコア
@@ -1618,6 +1620,7 @@
                         sw.hit = true;
                         // 1 衝撃波 = ライフ 1 個分（複数ライフ消費を防ぐため hit フラグで一回だけ）
                         const dmg = sw.damage || BOSS_SHOCKWAVE_DAMAGE_LIVES;
+                        runTookDamage = true;
                         lives -= dmg;
                         if (lives < 0) lives = 0;
                         livesElement.textContent = `ライフ: ${lives}`;
@@ -1645,6 +1648,7 @@
             const pcy = player.y + player.height / 2;
             const dist = Math.hypot(pcx - cx, pcy - cy);
             if (dist <= BOSS_MINE_EXPLODE_RADIUS) {
+                runTookDamage = true;
                 lives -= BOSS_MINE_EXPLODE_DAMAGE_LIVES;
                 if (lives < 0) lives = 0;
                 livesElement.textContent = `ライフ: ${lives}`;
@@ -2439,6 +2443,7 @@
                 }
                 // プレイヤー本体接触
                 if (checkCollision(m, player)) {
+                    runTookDamage = true;
                     lives--;
                     if (lives < 0) lives = 0;
                     livesElement.textContent = `ライフ: ${lives}`;
@@ -3528,6 +3533,7 @@
 
                 // プレイヤーとの衝突
                 if (checkCollision(boss, player)) {
+                    runTookDamage = true;
                     lives--;
                     livesElement.textContent = `ライフ: ${lives}`;
                     runState.livesLost++;
@@ -3545,6 +3551,7 @@
                 
                 // プレイヤーとの衝突
                 if (checkCollision(enemy, player)) {
+                    runTookDamage = true;
                     lives--;
                     livesElement.textContent = `ライフ: ${lives}`;
                     runState.livesLost++;
@@ -3691,6 +3698,7 @@
                     if (bullet.isSniper) {
                         // 狙撃弾は 1 発で即死
                         const lethal = lives;
+                        runTookDamage = true;
                         lives = 0;
                         runState.livesLost += lethal;
                         livesElement.textContent = `ライフ: 0`;
@@ -3698,6 +3706,7 @@
                         spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
                         gameOver('gameover');
                     } else {
+                        runTookDamage = true;
                         lives--;
                         if (lives < 0) lives = 0;
                         livesElement.textContent = `ライフ: ${lives}`;
@@ -3954,6 +3963,20 @@
                 }
             }
             
+            // ノーダメージクリア（time-up かつ未被弾）を進捗フラグへ記録
+            //   イベントモードは時間制限がないので対象外
+            const isNoDamageClear = !isEventMode
+                && reason === 'timeout'
+                && !runTookDamage
+                && score > 0;
+            if (isAuthenticated && isNoDamageClear) {
+                try {
+                    await firebaseDataManager.updateProgress({ noDamageRunDone: true });
+                } catch (e) {
+                    console.warn('noDamageRunDone 保存失敗:', e);
+                }
+            }
+
             // Firebaseにスコアを保存（ログインしている場合のみ）
             // saveScore 側で進捗フラグから称号と allWeaponsUnlocked を再計算するため、ここでは追加更新しない
             if (isAuthenticated) {
@@ -3992,6 +4015,7 @@
         restartBtn.addEventListener('click', () => {
             score = 0;
             lives = STARTING_LIVES;
+            runTookDamage = false;
             bullets = [];
             enemies = [];
             boss = null;
