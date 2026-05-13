@@ -61,6 +61,11 @@ const FIXED_TITLES = {
   weaponMaster: 'ウェポンマスター'
 };
 
+// ─────── ランキング称号 ───────
+// このランクまでに入っているユーザーだけが「順位称号」を保持できる。
+// 圏外に出れば剥奪。順位ごとに別の称号を当てる運用を想定。
+const RANKING_TITLE_LIMIT = 5;
+
 // ─────── 管理者ホワイトリスト ───────
 // 注意: クライアントサイドのみの判定です。Firestore セキュリティルールでも
 // 同等の制限を入れない限り、悪意のあるユーザーは API を直接叩けます。
@@ -186,15 +191,16 @@ class FirebaseDataManager {
           unlockedTitleSet.add(FIXED_TITLES.weaponMaster);
         }
 
-        // ランキング判定: ハイスコアが伸びた時だけ再計算（読み取りコスト抑制）。
-        //   トップ 100 名をスキャンして自分の位置を求め、過去最良 (=小さい) 順位を保存。
-        //   100 位より外にいる場合は更新しない。
+        // ランキング判定: トップ RANKING_TITLE_LIMIT 名のみをスキャンし
+        //   現在順位を progress.currentRank に保存。圏外なら削除して称号も剥奪。
+        //   ハイスコアを更新した時のみ自分の順位は上がりうるので、その時だけ計算する。
         if (newHighScore > oldHighScore) {
           try {
             const newRank = await this.computeRank(user.uid, newHighScore);
-            if (newRank) {
-              const prev = Number(progress.bestRank);
-              progress.bestRank = (prev && prev > 0) ? Math.min(prev, newRank) : newRank;
+            if (newRank && newRank >= 1 && newRank <= RANKING_TITLE_LIMIT) {
+              progress.currentRank = newRank;
+            } else {
+              delete progress.currentRank;
             }
           } catch (e) {
             console.warn('rank compute failed:', e);
@@ -252,15 +258,6 @@ class FirebaseDataManager {
         const existing = Number(currentProgress[k]) || 0;
         if (!isNaN(incoming)) nextProgress[k] = Math.max(existing, incoming);
       });
-      // 単調減少するフィールド: 値が小さいほど良い指標（順位など）
-      const MIN_MONOTONIC_FIELDS = ['bestRank'];
-      MIN_MONOTONIC_FIELDS.forEach(k => {
-        const incoming = Number(progressPatch[k]);
-        const existing = Number(currentProgress[k]);
-        if (!isNaN(incoming) && incoming > 0) {
-          nextProgress[k] = (existing && existing > 0) ? Math.min(existing, incoming) : incoming;
-        }
-      });
 
       // 個別の武器解放フラグが揃ったら allWeaponsUnlocked を立てる
       if (nextProgress.rapidUnlocked && nextProgress.shotgunUnlocked && nextProgress.laserUnlocked) {
@@ -313,8 +310,8 @@ class FirebaseDataManager {
 
   // 指定ユーザーの現在のランキング順位を返す。トップ scanLimit 名の中に
   // 自分が見つかれば 1 始まりの順位を、見つからなければ null を返す。
-  // ランキング称号は基本的に「トップ N 位以内」を判定するので 100 件で十分。
-  async computeRank(uid, highScore, scanLimit = 100) {
+  // ランキング称号はトップ RANKING_TITLE_LIMIT 位までを順位ごとに付与する。
+  async computeRank(uid, highScore, scanLimit = RANKING_TITLE_LIMIT) {
     try {
       const snapshot = await this.db.collection('users')
         .orderBy('highScore', 'desc')
@@ -669,20 +666,31 @@ class FirebaseDataManager {
   //     'eventClear'     : progress 中の eventBossSkin* フラグが value 個以上
   //     'noDamageRun'    : progress.noDamageRunDone === true（value 不要）
   //     'multiTitle'     : 現在所持している称号数 >= value（自分自身は除外）
-  //     'ranking'        : progress.bestRank <= value（順位は小さいほど良い、未取得時は不成立）
+  //     'ranking'        : progress.currentRank === value（厳密一致 / 圏外 = 剥奪）
+  // ranking だけは「降格」を伴う唯一の動的称号タイプ。トップ RANKING_TITLE_LIMIT
+  // 以内に入っているときのみ、その順位ぴったりの称号を付与する。
   async evaluateDynamicTitles(userRef, userData) {
     try {
       const titles = await this.listTitles();
       if (!titles.length) return null;
       const current = Array.isArray(userData.titles) ? [...userData.titles] : [];
-      const set = new Set(current);
       const progress = userData.progress || {};
       const highScore = userData.highScore || 0;
       const totalGames = userData.totalGames || 0;
       const totalScore = userData.totalScore || 0;
       const maxBossLv  = Number(progress.maxBossLevelDefeated) || 0;
-      const bestRank   = Number(progress.bestRank) || 0; // 0 = まだ計測されていない
+      const currentRank = Number(progress.currentRank) || 0; // 0 = 圏外 or 未計測
       const eventSkinCount = Object.keys(progress).filter(k => k.startsWith('eventBossSkin') && !!progress[k]).length;
+
+      // ranking 系の称号は条件を満たさなくなったら剥奪する必要があるので、
+      // 一度ベースから除外しておき、評価で満たしたものだけ後で追加する。
+      const rankingTitleLabels = new Set();
+      for (const t of titles) {
+        if (t && t.condition && t.condition.type === 'ranking' && t.label) {
+          rankingTitleLabels.add(t.label);
+        }
+      }
+      const set = new Set([...current].filter(label => !rankingTitleLabels.has(label)));
 
       // multiTitle 評価のために 2 パス: まず通常の称号を解禁、次に multiTitle を判定。
       // （multiTitle が他の称号にも依存するため）
@@ -706,7 +714,7 @@ class FirebaseDataManager {
           case 'allWeapons':     ok = !!progress.allWeaponsUnlocked; break;
           case 'eventClear':     ok = eventSkinCount >= (Number(cond.value) || 0); break;
           case 'noDamageRun':    ok = !!progress.noDamageRunDone; break;
-          case 'ranking':        ok = bestRank > 0 && bestRank <= (Number(cond.value) || 0); break;
+          case 'ranking':        ok = currentRank > 0 && currentRank === (Number(cond.value) || 0); break;
           default: ok = false;
         }
         if (ok) set.add(t.label);
@@ -719,9 +727,20 @@ class FirebaseDataManager {
         if (have >= need) set.add(t.label);
       }
 
+      // 集合に変化があれば書き戻す。ranking 系は剥奪もあるため、長さだけで判定せず
+      // 要素の出入りもチェックする。
       const next = Array.from(set);
-      if (next.length !== current.length) {
-        await userRef.update({ titles: next });
+      const before = [...current].sort();
+      const after  = [...next].sort();
+      const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
+
+      if (changed) {
+        const update = { titles: next };
+        // activeTitle が剥奪された場合は別の所持称号にフォールバック
+        if (userData.activeTitle && !next.includes(userData.activeTitle)) {
+          update.activeTitle = next[0] || '';
+        }
+        await userRef.update(update);
         return next;
       }
       return null;
