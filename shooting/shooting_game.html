@@ -4,6 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>戦闘機シューティングゲーム</title>
+    <!-- 起動時はホーム画面から始める。flag が無いブラウザ起動はリダイレクト。
+         管理者プレビュー (previewEventId / adminEventId / adminEventActive) と
+         パスワードリセット (oobCode) はバイパス。 -->
+    <script>
+    (function homeGuard() {
+        try {
+            if (sessionStorage.getItem('appLaunched') === '1') return;
+            const params = new URLSearchParams(location.search);
+            if (params.has('previewEventId')) return;
+            if (params.has('adminEventId')) return;
+            if (params.has('adminEventActive')) return;
+            if (params.has('oobCode')) return;
+            location.replace('index.html');
+        } catch (e) {}
+    })();
+    </script>
     <style>
         body {
             margin: 0;
