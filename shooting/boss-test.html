@@ -143,6 +143,18 @@
         <button onclick="boss && dropBossMine()">今、機雷を投下</button>
     </div>
 
+    <h2>2.5 イベントモード（画像差し替え）</h2>
+    <div class="row">
+        <button id="eventModeBtn" onclick="toggleEventMode()">イベントモード: OFF</button>
+        <label>使用画像:</label>
+        <select id="eventBossSelect" onchange="setEventBossIndex(this.value)">
+            <option value="auto">自動（交互）</option>
+            <option value="0">ボス1（シャドウ・クルーザー）</option>
+            <option value="1">ボス2（シャドウ・オーバーロード）</option>
+        </select>
+        <span class="help" id="eventImgStatus" style="margin-left:6px;"></span>
+    </div>
+
     <h2>3. 雑魚スポーン（吸収検証用）</h2>
     <div class="row">
         <button onclick="spawnEnemy('small')">小</button>
@@ -190,6 +202,36 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const W = canvas.width;
 const H = canvas.height;
+
+// ── イベントモード（画像差し替え）
+// 本番の shooting_game.html?mode=event と同じアセット・配置を使い、
+// drawBossArtwork() で procedural 描画の代わりに drawImage を行う。
+const EVENT_BOSS_IMAGES = [
+    { name: 'シャドウ・クルーザー',   src: 'assets/event/event-boss-1.png' },
+    { name: 'シャドウ・オーバーロード', src: 'assets/event/event-boss-2.png' }
+];
+let eventMode = false;
+let eventBossOverride = null; // null=自動交互、0/1=固定インデックス
+let eventBossSpawnCount = 0;
+const eventImgs = EVENT_BOSS_IMAGES.map((meta, i) => {
+    const img = new Image();
+    img.onload = () => {
+        meta.loaded = true;
+        const s = document.getElementById('eventImgStatus');
+        if (s) s.textContent = `画像: ${EVENT_BOSS_IMAGES.filter(m => m.loaded).length}/${EVENT_BOSS_IMAGES.length} 読み込み済み`;
+    };
+    img.onerror = () => {
+        meta.failed = true;
+        const s = document.getElementById('eventImgStatus');
+        if (s) s.textContent = `⚠️ 画像読み込み失敗（procedural 表示）`;
+    };
+    img.src = meta.src;
+    return img;
+});
+function pickEventBossIndex() {
+    if (eventBossOverride === 0 || eventBossOverride === 1) return eventBossOverride;
+    return eventBossSpawnCount % EVENT_BOSS_IMAGES.length;
+}
 
 // ── State
 const player = { x: W / 2 - 20, y: H - 80, width: 40, height: 40, speed: 5 };
@@ -352,6 +394,36 @@ function spawnAtSelectedLevel() {
     spawnBossLevel(selectedLevel);
 }
 
+// ── イベントモードのトグル
+function toggleEventMode() {
+    eventMode = !eventMode;
+    const btn = document.getElementById('eventModeBtn');
+    if (btn) {
+        btn.textContent = `イベントモード: ${eventMode ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('active', eventMode);
+    }
+    // 現在ボスがいるならその場で画像を切り替える（インデックスを再割当）
+    if (boss) {
+        boss.eventBossIndex = eventMode ? pickEventBossIndex() : -1;
+    }
+    if (eventMode && !EVENT_BOSS_IMAGES.some(m => m.loaded)) {
+        log('info', 'イベント画像を読み込み中… 完了するまで procedural 表示');
+    }
+    log('info', `イベントモード: ${eventMode ? 'ON（画像差し替え）' : 'OFF（procedural 描画）'}`);
+}
+
+function setEventBossIndex(v) {
+    if (v === 'auto') {
+        eventBossOverride = null;
+    } else {
+        eventBossOverride = parseInt(v) | 0;
+    }
+    if (boss && eventMode) {
+        boss.eventBossIndex = pickEventBossIndex();
+    }
+    log('info', `イベントボス選択: ${v === 'auto' ? '自動（交互）' : `固定 #${v}（${EVENT_BOSS_IMAGES[parseInt(v)|0].name}）`}`);
+}
+
 function applyLevelToCurrentBoss() {
     if (!boss) {
         log('warn', '現在ボスがいません。先にスポーンしてください');
@@ -396,8 +468,10 @@ function spawnBossLevel(level) {
         sniperLocked: false,
         sniperTargetX: 0,
         sniperTargetY: 0,
-        minionAbsorbStartAt: null
+        minionAbsorbStartAt: null,
+        eventBossIndex: eventMode ? pickEventBossIndex() : -1
     };
+    if (eventMode) eventBossSpawnCount++;
     bossBullets = [];
     bossShockwaves = [];
     bossMines = [];
@@ -549,7 +623,11 @@ function drawBossMinions() {
     ctx.save();
     bossMinions.forEach(m => {
         // ボス Lv.1/Lv.2 と同じアートワーク（サイズだけ縮小）
-        drawBossArtwork(m.x, m.y, m.width, m.height, m.level, false);
+        // イベントモード時は本体ボスと別画像にして見分けやすくする
+        const minionImgIdx = eventMode && boss
+            ? ((typeof boss.eventBossIndex === 'number' ? boss.eventBossIndex : 0) + 1) % EVENT_BOSS_IMAGES.length
+            : -1;
+        drawBossArtwork(m.x, m.y, m.width, m.height, m.level, false, minionImgIdx);
         const ratio = m.health / m.maxHealth;
         ctx.fillStyle = '#222';
         ctx.fillRect(m.x, m.y - 6, m.width, 4);
@@ -1313,7 +1391,24 @@ function spawnExplosion(x, y) {
 }
 
 // 任意の位置・サイズ・レベルでボスのアートワークを描画（部下も同じ見た目で使う）
-function drawBossArtwork(x, y, w, h, level, slowed) {
+function drawBossArtwork(x, y, w, h, level, slowed, eventBossIndex) {
+    // イベントモード: 画像差し替え（読み込めなければ procedural にフォールバック）
+    if (eventMode) {
+        const idx = (typeof eventBossIndex === 'number' && eventBossIndex >= 0)
+            ? eventBossIndex
+            : pickEventBossIndex();
+        const img = eventImgs[idx];
+        if (img && img.complete && img.naturalWidth > 0) {
+            ctx.save();
+            ctx.shadowColor = slowed ? '#88ccff' : (idx === 1 ? '#88aaff' : '#66ddff');
+            ctx.shadowBlur = 12 + (level - 1) * 4;
+            ctx.drawImage(img, x, y, w, h);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+            return;
+        }
+    }
+
     ctx.save();
     ctx.shadowColor = slowed ? '#88ccff' : (level > 2 ? '#ff00ff' : '#ff0000');
     ctx.shadowBlur = 10 + (level - 1) * 5;
@@ -1381,7 +1476,8 @@ function draw() {
     // ボス（実ゲームと同じ描画）
     if (boss) {
         const x = boss.x, y = boss.y, w = boss.width, h = boss.height;
-        drawBossArtwork(x, y, w, h, boss.level, boss.slowedUntil && Date.now() < boss.slowedUntil);
+        const evIdx = (eventMode && typeof boss.eventBossIndex === 'number') ? boss.eventBossIndex : -1;
+        drawBossArtwork(x, y, w, h, boss.level, boss.slowedUntil && Date.now() < boss.slowedUntil, evIdx);
 
         // HP バー
         const barW = w, barH = 8, barX = x, barY = y - 20;
@@ -1486,7 +1582,7 @@ function updateStats() {
     const mineReady = boss.level >= BOSS_MINE_LEVEL_THRESHOLD;
     const mineCdRemaining = mineReady ? Math.max(0, BOSS_MINE_DROP_COOLDOWN_MS - (Date.now() - (boss.lastMineDropAt || 0))) : 0;
     el.innerHTML = `
-        <div><span class="key">レベル</span><span class="val">Lv.${boss.level}</span></div>
+        <div><span class="key">レベル</span><span class="val">Lv.${boss.level}${eventMode && boss.eventBossIndex >= 0 ? ` / 🎪 ${EVENT_BOSS_IMAGES[boss.eventBossIndex].name}` : ''}</span></div>
         <div><span class="key">HP</span><span class="val">${boss.health.toFixed(1)} / ${boss.maxHealth}</span></div>
         <div><span class="key">サイズ</span><span class="val">${boss.width} × ${boss.height}</span></div>
         <div><span class="key">移動速度</span><span class="val">${boss.moveSpeed.toFixed(1)} px/f</span></div>
@@ -1539,6 +1635,7 @@ function resetAll() {
     shockwavesFired = 0;
     enemiesAbsorbed = 0;
     totalHealed = 0;
+    eventBossSpawnCount = 0; // イベント交互カウンタをリセット
     minesDropped = 0;
     minesShot = 0;
     minesExploded = 0;
