@@ -219,6 +219,7 @@ const EVENT_BOSS_PROFILES = [
         src: 'assets/event/event-boss-1.png',
         hpMultiplier: 4,
         featureLevel: 8,
+        bulletCount: 3,
         extraGimmicks: ['homing']
     },
     {
@@ -227,6 +228,7 @@ const EVENT_BOSS_PROFILES = [
         src: 'assets/event/event-boss-2.png',
         hpMultiplier: 5,
         featureLevel: 10,
+        bulletCount: 2,
         extraGimmicks: ['homing', 'gravity']
     }
 ];
@@ -488,7 +490,8 @@ function applyEventProfileToBoss() {
         boss.health = Math.max(1, boss.maxHealth * hpRatio);
     }
     boss.extraGimmicks = [...(profile.extraGimmicks || [])];
-    log('info', `プロファイル適用: ${profile.name} (HP=${boss.health.toFixed(0)}/${boss.maxHealth}, Lv.${boss.level}, extra=${boss.extraGimmicks.join(',') || '—'})`);
+    boss.eventBulletCount = profile.bulletCount > 0 ? profile.bulletCount : null;
+    log('info', `プロファイル適用: ${profile.name} (HP=${boss.health.toFixed(0)}/${boss.maxHealth}, Lv.${boss.level}, 通常弾=${boss.eventBulletCount || 'auto'}発, extra=${boss.extraGimmicks.join(',') || '—'})`);
 }
 
 // ボスの特殊弾発射（テスト用）
@@ -787,7 +790,9 @@ function bossShoot() {
     }
 
     const level = boss.level;
-    const count = bulletCountFor(level);
+    const count = (eventProfileMode && boss.eventBulletCount > 0)
+        ? boss.eventBulletCount
+        : bulletCountFor(level);
     for (let i = 0; i < count; i++) {
         const angle = (i - (count - 1) / 2) * 0.5;
         const speedX = Math.sin(angle) * 3;
