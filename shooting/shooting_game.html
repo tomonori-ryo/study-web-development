@@ -1073,6 +1073,9 @@
         // ゲーム状態
         // イベントモードは時間制限なし + HP/ギミック強化ボス相手なのでライフを多めに付与
         const EVENT_STARTING_LIVES = 10;
+        // イベントボスの狙撃は通常モードでは即死だが、イベントではライフが多いため
+        // 一度の被弾で固定ダメージ（ライフ N 個分）に抑える。
+        const EVENT_BOSS_SNIPER_DAMAGE_LIVES = 3;
         const DEFAULT_STARTING_LIVES = 3;
         const STARTING_LIVES = isEventMode ? EVENT_STARTING_LIVES : DEFAULT_STARTING_LIVES;
         let score = 0;
@@ -3762,15 +3765,29 @@
                 if (checkCollision(bullet, player)) {
                     bossBullets.splice(bulletIndex, 1);
                     if (bullet.isSniper) {
-                        // 狙撃弾は 1 発で即死
-                        const lethal = lives;
                         runTookDamage = true;
-                        lives = 0;
-                        runState.livesLost += lethal;
-                        livesElement.textContent = `ライフ: 0`;
-                        playSound(explosionSound);
-                        spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
-                        gameOver('gameover');
+                        if (isEventMode) {
+                            // イベント: 即死ではなくライフを複数個分だけ減らす
+                            const dmg = Math.min(EVENT_BOSS_SNIPER_DAMAGE_LIVES, lives);
+                            lives -= dmg;
+                            if (lives < 0) lives = 0;
+                            runState.livesLost += dmg;
+                            livesElement.textContent = `ライフ: ${lives}`;
+                            playSound(explosionSound);
+                            spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
+                            recomputeUnlockedSlots();
+                            shockwaveFlashUntil = Date.now() + BOSS_SHOCKWAVE_FLASH_MS;
+                            if (lives <= 0) gameOver('gameover');
+                        } else {
+                            // 通常: 狙撃弾は 1 発で即死
+                            const lethal = lives;
+                            lives = 0;
+                            runState.livesLost += lethal;
+                            livesElement.textContent = `ライフ: 0`;
+                            playSound(explosionSound);
+                            spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
+                            gameOver('gameover');
+                        }
                     } else {
                         runTookDamage = true;
                         lives--;
