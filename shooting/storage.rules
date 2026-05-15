@@ -26,6 +26,14 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // お知らせバナー画像: 誰でも読み取り可、書き込みは管理者のみ（5MB 上限）
+    match /announcements/{file=**} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // それ以外はデフォルト deny
     match /{path=**} {
       allow read, write: if false;

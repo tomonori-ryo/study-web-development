@@ -449,9 +449,6 @@
         }
         
         .mypage-button {
-            position: absolute;
-            top: 20px;
-            right: 20px;
             background: linear-gradient(45deg, #4444ff, #6666ff);
             color: white;
             border: none;
@@ -462,14 +459,38 @@
             cursor: pointer;
             transition: all 0.3s ease;
             box-shadow: 0 0 20px rgba(68, 68, 255, 0.5);
+            flex-shrink: 0;
+        }
+
+        /* 右上: お知らせ + ログイン（横並び） */
+        .home-top-bar {
+            position: absolute;
+            top: 16px;
+            right: 16px;
             z-index: 100;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: clamp(8px, 2vw, 14px);
+            max-width: calc(100vw - 20px);
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .home-announce-mount {
+            flex: 0 1 auto;
+            min-width: 0;
+        }
+        .home-top-bar .mypage-button {
+            position: relative;
+            top: auto;
+            right: auto;
         }
         
         .mypage-button:hover {
             transform: scale(1.05);
             box-shadow: 0 0 25px rgba(68, 68, 255, 0.7);
         }
-        
+
         /* ログインモーダル */
         .modal {
             display: none;
@@ -655,9 +676,11 @@
                 display: none;
             }
             
-            .mypage-button {
-                top: 15px;
-                right: 15px;
+            .home-top-bar {
+                top: 12px;
+                right: 10px;
+            }
+            .home-top-bar .mypage-button {
                 padding: clamp(6px, 1.5vw, 10px) clamp(12px, 2.5vw, 16px);
                 font-size: clamp(0.7rem, 2vw, 0.9rem);
             }
@@ -735,9 +758,11 @@
                 max-height: 45vh;
             }
             
-            .mypage-button {
+            .home-top-bar {
                 top: 10px;
                 right: 10px;
+            }
+            .home-top-bar .mypage-button {
                 padding: clamp(5px, 1.2vw, 8px) clamp(10px, 2vw, 14px);
                 font-size: clamp(0.6rem, 1.8vw, 0.8rem);
             }
@@ -758,7 +783,10 @@
 <body>
     <div class="stars"></div>
     
-    <button class="mypage-button" id="authButton" onclick="handleAuthClick()">👤 ログイン</button>
+    <div class="home-top-bar">
+        <div id="homeAnnouncementMount" class="home-announce-mount" aria-label="お知らせ"></div>
+        <button class="mypage-button" id="authButton" onclick="handleAuthClick()">👤 ログイン</button>
+    </div>
     
     <!-- ログインモーダル -->
     <div id="loginModal" class="modal">
@@ -920,6 +948,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-analytics-compat.js"></script>
     <script src="firebase-config.js"></script>
+    <script src="announcements-ui.js?v=20260515a"></script>
     
     <script>
         function startGame() {
@@ -998,15 +1027,233 @@
             }
         }
 
-        function startEvent() {
-            showEventBossSelectModal();
+        function closeEventFlowModals() {
+            ['eventCategoryModal', 'eventBossSelectModal', 'starBeastDifficultyModal'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.remove();
+            });
         }
 
-        // ボス選択モーダルを表示
+        function startEvent() {
+            showEventCategoryModal();
+        }
+
+        /** 艦隊襲来 / 星獣襲来 の分岐（縦一列・画像付き） */
+        function showEventCategoryModal() {
+            closeEventFlowModals();
+            const modal = document.createElement('div');
+            modal.id = 'eventCategoryModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0;
+                background: rgba(0, 0, 0, 0.84);
+                display: flex; align-items: center; justify-content: center;
+                z-index: 9999; padding: 20px;
+                backdrop-filter: blur(6px);
+            `;
+            const fleetTitle = (EVENT_META && EVENT_META.title) ? String(EVENT_META.title) : '影艦隊襲来';
+            const fleetTitleEsc = fleetTitle
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+            const starBeastPlayable = typeof window.isShootingAdminSession === 'function' && window.isShootingAdminSession();
+            const starBeastRowHtml = starBeastPlayable
+                ? `
+                        <button type="button" class="event-cat-row" data-choice="beast" style="
+                            display: flex; flex-direction: row; align-items: center; gap: 14px;
+                            width: 100%; text-align: left; cursor: pointer;
+                            background: linear-gradient(90deg, rgba(70,25,60,0.95), rgba(35,15,45,0.92));
+                            border: 1px solid rgba(255, 120, 200, 0.35); border-radius: 14px;
+                            padding: 12px 14px; color: #fff;
+                            transition: transform 0.15s ease, box-shadow 0.15s ease;
+                        ">
+                            <img src="assets/event/doragonevent.png" alt="" width="96" height="96" style="
+                                width: 96px; height: 96px; object-fit: contain; flex-shrink: 0;
+                                border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: auto;
+                            ">
+                            <div style="min-width:0;">
+                                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">星獣襲来</div>
+                                <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,210,240,0.9);">初級・中級・上級から選択</div>
+                                <div style="font-size: 0.72rem; margin-top: 6px; color: rgba(255,160,200,0.75);">管理者プレビュー</div>
+                            </div>
+                        </button>`
+                : `
+                        <div class="event-cat-row event-cat-locked" aria-disabled="true" style="
+                            display: flex; flex-direction: row; align-items: center; gap: 14px;
+                            width: 100%; text-align: left; cursor: default;
+                            background: linear-gradient(90deg, rgba(40,40,48,0.75), rgba(28,28,36,0.85));
+                            border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px;
+                            padding: 12px 14px; color: #fff; opacity: 0.72;
+                        ">
+                            <img src="assets/event/doragonevent.png" alt="" width="96" height="96" style="
+                                width: 96px; height: 96px; object-fit: contain; flex-shrink: 0;
+                                border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: auto;
+                                filter: grayscale(0.35);
+                            ">
+                            <div style="min-width:0;">
+                                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">星獣襲来</div>
+                                <div style="font-size: 0.95rem; line-height: 1.45; color: rgba(255,220,160,0.95);">近日公開</div>
+                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(200,200,210,0.75);">イベント開始までお待ちください</div>
+                            </div>
+                        </div>`;
+            modal.innerHTML = `
+                <div style="
+                    background: linear-gradient(165deg, #0a1628, #12081e);
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    border-radius: 20px; padding: 22px 20px 26px;
+                    max-width: 440px; width: 100%; color: #fff; position: relative;
+                ">
+                    <button type="button" id="closeCategoryModal" style="
+                        position: absolute; top: 10px; right: 12px;
+                        background: rgba(255,255,255,0.08); color: #fff; border: none;
+                        width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px;
+                    ">×</button>
+                    <h2 style="text-align: center; margin: 0 0 6px; font-size: 1.35rem;">🎪 期間限定イベント</h2>
+                    <p style="text-align: center; color: rgba(255,255,255,0.62); margin: 0 0 18px; font-size: 0.88rem;">
+                        プレイするイベントを選んでください
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <button type="button" class="event-cat-row" data-choice="fleet" style="
+                            display: flex; flex-direction: row; align-items: center; gap: 14px;
+                            width: 100%; text-align: left; cursor: pointer;
+                            background: linear-gradient(90deg, rgba(30,50,80,0.95), rgba(20,30,55,0.92));
+                            border: 1px solid rgba(120, 200, 255, 0.35); border-radius: 14px;
+                            padding: 12px 14px; color: #fff;
+                            transition: transform 0.15s ease, box-shadow 0.15s ease;
+                        ">
+                            <img src="assets/event/event-boss-1.png" alt="" width="96" height="96" style="
+                                width: 96px; height: 96px; object-fit: contain; flex-shrink: 0;
+                                border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: pixelated;
+                            ">
+                            <div style="min-width:0;">
+                                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">艦隊襲来</div>
+                                <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(200,230,255,0.88);">${fleetTitleEsc}</div>
+                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(150,200,255,0.75);">複数ボスから選択・交互出現モードあり</div>
+                            </div>
+                        </button>
+                        ${starBeastRowHtml}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.querySelectorAll('.event-cat-row:not(.event-cat-locked)').forEach((btn) => {
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.transform = 'translateY(-2px)';
+                    btn.style.boxShadow = btn.getAttribute('data-choice') === 'beast'
+                        ? '0 10px 28px rgba(255, 100, 180, 0.28)'
+                        : '0 10px 28px rgba(0, 220, 255, 0.22)';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.transform = '';
+                    btn.style.boxShadow = '';
+                });
+            });
+            modal.querySelector('[data-choice="fleet"]').addEventListener('click', () => {
+                modal.remove();
+                showEventBossSelectModal();
+            });
+            const beastBtn = modal.querySelector('[data-choice="beast"]');
+            if (beastBtn && starBeastPlayable) {
+                beastBtn.addEventListener('click', () => {
+                    modal.remove();
+                    showStarBeastDifficultyModal();
+                });
+            }
+            modal.querySelector('#closeCategoryModal').addEventListener('click', () => modal.remove());
+            modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        }
+
+        /** 星獣襲来：初級 / 中級 / 上級（管理者のみ） */
+        function showStarBeastDifficultyModal() {
+            if (typeof window.isShootingAdminSession !== 'function' || !window.isShootingAdminSession()) {
+                return;
+            }
+            closeEventFlowModals();
+            const modal = document.createElement('div');
+            modal.id = 'starBeastDifficultyModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0;
+                background: rgba(0, 0, 0, 0.84);
+                display: flex; align-items: center; justify-content: center;
+                z-index: 9999; padding: 20px;
+                backdrop-filter: blur(6px);
+            `;
+            const rows = [
+                { rank: 1, name: '初級', desc: 'HP・弾幕は控えめ。まずはここから。' },
+                { rank: 2, name: '中級', desc: 'バランス型。追尾と重力オーブあり。' },
+                { rank: 3, name: '上級', desc: '高耐久・攻撃密度アップ。慣れた方向け。' }
+            ];
+            const rowHtml = rows.map((r) => `
+                <button type="button" class="star-beast-tier" data-rank="${r.rank}" style="
+                    display: flex; flex-direction: row; align-items: center; gap: 12px;
+                    width: 100%; text-align: left; cursor: pointer;
+                    background: rgba(40, 18, 48, 0.92);
+                    border: 1px solid rgba(255, 140, 200, 0.35); border-radius: 12px;
+                    padding: 12px 14px; color: #fff;
+                    transition: transform 0.15s ease, box-shadow 0.15s ease;
+                ">
+                    <img src="assets/event/doragon.png" alt="" width="52" height="52" style="
+                        flex-shrink: 0; width: 52px; height: 52px; object-fit: contain;
+                        border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: auto;
+                        border: 1px solid rgba(255, 180, 220, 0.35);
+                    ">
+                    <div style="min-width:0;">
+                        <div style="font-weight: bold; font-size: 1rem;">${r.name}</div>
+                        <div style="font-size: 0.8rem; color: rgba(255,220,245,0.85); margin-top: 2px;">${r.desc}</div>
+                    </div>
+                </button>
+            `).join('');
+            modal.innerHTML = `
+                <div style="
+                    background: linear-gradient(165deg, #1a0a22, #0d0818);
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    border-radius: 20px; padding: 22px 20px 26px;
+                    max-width: 420px; width: 100%; color: #fff; position: relative;
+                ">
+                    <button type="button" id="closeStarBeastModal" style="
+                        position: absolute; top: 10px; right: 12px;
+                        background: rgba(255,255,255,0.08); color: #fff; border: none;
+                        width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px;
+                    ">×</button>
+                    <button type="button" id="starBeastBackToCategory" style="
+                        display: block; margin-bottom: 10px; background: transparent; border: none;
+                        color: #9cf; cursor: pointer; font-size: 0.88rem; padding: 0;
+                    ">← イベント選択に戻る</button>
+                    <h2 style="text-align: center; margin: 0 0 6px; font-size: 1.25rem;">🐉 星獣襲来</h2>
+                    <p style="text-align: center; color: rgba(255,255,255,0.62); margin: 0 0 16px; font-size: 0.86rem;">
+                        難易度を選んでください
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        ${rowHtml}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.querySelectorAll('.star-beast-tier').forEach((btn) => {
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.transform = 'translateY(-2px)';
+                    btn.style.boxShadow = '0 8px 24px rgba(255, 100, 180, 0.25)';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.transform = '';
+                    btn.style.boxShadow = '';
+                });
+                btn.addEventListener('click', () => {
+                    const rank = parseInt(btn.getAttribute('data-rank'), 10) || 2;
+                    window.location.href = `shooting_game.html?mode=event&event=cosmic-dragon&boss=all&starRank=${rank}`;
+                });
+            });
+            modal.querySelector('#starBeastBackToCategory').addEventListener('click', () => {
+                modal.remove();
+                showEventCategoryModal();
+            });
+            modal.querySelector('#closeStarBeastModal').addEventListener('click', () => modal.remove());
+            modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        }
+
+        // ボス選択モーダルを表示（艦隊襲来）
         function showEventBossSelectModal() {
-            // 既にあれば閉じる
-            const existing = document.getElementById('eventBossSelectModal');
-            if (existing) existing.remove();
+            closeEventFlowModals();
 
             let skins = {};
             try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
@@ -1066,6 +1313,10 @@
                         width: 32px; height: 32px; border-radius: 50%;
                         cursor: pointer; font-size: 18px;
                     ">×</button>
+                    <button type="button" id="fleetBackToCategory" style="
+                        display: block; margin: 0 0 12px 4px; background: transparent; border: none;
+                        color: #9cf; cursor: pointer; font-size: 0.88rem; padding: 0;
+                    ">← イベント選択に戻る</button>
                     <h2 style="text-align: center; margin: 0 0 6px; font-size: 1.6rem;">🎪 ${EVENT_META.title}</h2>
                     <p style="text-align: center; color: rgba(255,255,255,0.65); margin: 0 0 8px; font-size: 0.9rem;">
                         戦うボスを選んでください。時間制限なし・HP 大幅増・特殊弾あり。
@@ -1108,6 +1359,13 @@
             modal.querySelector('#startEventAll').addEventListener('click', () => {
                 window.location.href = 'shooting_game.html?mode=event&boss=all';
             });
+            const fleetBack = modal.querySelector('#fleetBackToCategory');
+            if (fleetBack) {
+                fleetBack.addEventListener('click', () => {
+                    modal.remove();
+                    showEventCategoryModal();
+                });
+            }
             modal.querySelector('#closeEventModal').addEventListener('click', () => modal.remove());
             modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
         }
@@ -1134,30 +1392,37 @@
                 }
             } catch (e) {}
 
-            // 進捗
+            // 進捗（影艦隊イベントのボスのみカウント。別イベントのスキンは含めない）
             let skins = {};
             try { skins = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
-            const unlocked = Object.keys(skins).filter(k => k.startsWith('eventBossSkin') && skins[k]).length;
+            const fleetUnlocked = EVENT_META.bosses.filter(b => skins[b.skinKey]).length;
             if (progressEl) {
-                if (unlocked === 0) {
+                if (fleetUnlocked === 0) {
                     progressEl.textContent = '';
-                } else if (unlocked >= EVENT_META.bossCount) {
+                } else if (fleetUnlocked >= EVENT_META.bossCount) {
                     progressEl.textContent = '· ✓ コンプリート';
                     progressEl.style.color = '#00ffaa';
                 } else {
-                    progressEl.textContent = `· スキン ${unlocked}/${EVENT_META.bossCount}`;
+                    progressEl.textContent = `· スキン ${fleetUnlocked}/${EVENT_META.bossCount}`;
                 }
             }
 
             info.style.display = 'block';
-            if (badge && unlocked < EVENT_META.bossCount) badge.style.display = 'inline-block';
+            if (badge && fleetUnlocked < EVENT_META.bossCount) badge.style.display = 'inline-block';
             else if (badge) badge.style.display = 'none';
         }
+
         // ページロード後に呼ぶ（DOMContentLoaded で十分早い）
         document.addEventListener('DOMContentLoaded', () => {
             renderEventInfo();
             // 認証完了を待たずに公開イベントとして取得（events コレクションが公開読み取り可能な前提）
             maybeOverrideEventMeta();
+            if (typeof ShootingAnnouncements !== 'undefined') {
+                ShootingAnnouncements.bootstrapIndex({
+                    panelEl: document.getElementById('homeAnnouncementMount'),
+                    popupDelayMs: 900
+                });
+            }
         });
 
         // モード選択モーダルを表示

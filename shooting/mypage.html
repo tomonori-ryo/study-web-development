@@ -116,7 +116,7 @@
             gap: 1.2rem;
             margin-bottom: 2rem;
         }
-        
+
         .card {
             background: rgba(0, 0, 0, 0.62);
             border-radius: 15px;
@@ -216,6 +216,38 @@
         .player-score {
             font-weight: bold;
             color: #00ff00;
+            min-width: 3.5rem;
+            text-align: right;
+        }
+
+        .ranking-mode-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .ranking-mode-btn {
+            flex: 1;
+            min-width: 120px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.35);
+            background: rgba(255, 255, 255, 0.08);
+            color: #ccc;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .ranking-mode-btn:hover {
+            background: rgba(0, 255, 255, 0.12);
+            color: #fff;
+        }
+        .ranking-mode-btn.active {
+            background: linear-gradient(135deg, rgba(0, 120, 180, 0.5), rgba(0, 60, 120, 0.6));
+            border-color: rgba(0, 255, 255, 0.65);
+            color: #fff;
+            box-shadow: 0 0 12px rgba(0, 255, 255, 0.25);
         }
         
         .form-group {
@@ -677,7 +709,12 @@
                     </div>
                 </div>
                 
-                <h3 style="color: #ffff00; margin-bottom: 1rem;">🏅 ランキング</h3>
+                <h3 style="color: #ffff00; margin-bottom: 0.5rem;">🏅 ランキング</h3>
+                <p id="rankingModeHint" style="color:#9ab;font-size:0.82rem;margin:0 0 10px 0;">最高スコア順のトップ10です。</p>
+                <div class="ranking-mode-row" role="tablist" aria-label="ランキングの種類">
+                    <button type="button" class="ranking-mode-btn active" id="rankingModeHigh" role="tab" aria-selected="true">最高スコア</button>
+                    <button type="button" class="ranking-mode-btn" id="rankingModeAvg" role="tab" aria-selected="false">平均スコア</button>
+                </div>
                 <ul class="ranking-list" id="rankingList">
                     <!-- ランキングがここに表示される -->
                 </ul>
@@ -810,13 +847,19 @@
             gravity:  { id: 'gravity',  name: '重力弾',     unlockProgressKey: 'gravityUnlocked',   unlockRequirement: '2000点ボス撃破で解放',                                             description: '範囲内の敵を吸引 / ダメージ無し' },
             mine:     { id: 'mine',     name: '機雷',       unlockProgressKey: 'mineUnlocked',      unlockRequirement: '2000点ボス撃破歴で装備可（ラン中: ノーダメも必要）',                description: '低速重弾 / 着弾範囲爆発（後方設置は段階実装）' },
             blade:    { id: 'blade',    name: 'ブレード',   unlockProgressKey: 'bladeUnlocked',     unlockRequirement: '2000点ボス撃破歴で装備可（ラン中: 補給2個取得も必要）',            description: '近接斬撃 / 短射程・幅広 / スタミナ式（弾切れなしだが連発でクールダウン）' },
-            shield:   { id: 'shield',   name: 'シールド',   unlockProgressKey: 'shieldUnlocked',    unlockRequirement: '2500点ボス撃破歴で装備可（ラン中: 被弾後に覚醒）',                  description: '前方バリア / 敵弾を貫通破壊' }
+            shield:   { id: 'shield',   name: 'シールド',   unlockProgressKey: 'shieldUnlocked',    unlockRequirement: '星獣襲来などのイベントボス撃破で解放',                              description: '前方扇形でボス弾を遮断（展開中も移動可）' },
+            barrier:  { id: 'barrier',  name: 'バリア',     unlockProgressKey: 'barrierUnlocked',   unlockRequirement: '星獣襲来などのイベントボス撃破で解放',                              description: '自機周りの円バリア（展開中は移動不可・ボス弾を遮断）' }
         };
 
         function getStoredWeaponProgress() {
             try {
                 const raw = JSON.parse(localStorage.getItem('weaponProgress') || '{}');
-                return (raw && typeof raw === 'object') ? raw : {};
+                const out = (raw && typeof raw === 'object') ? raw : {};
+                if (out.shieldUnlocked && !out.barrierUnlocked) {
+                    out.barrierUnlocked = true;
+                    localStorage.setItem('weaponProgress', JSON.stringify(out));
+                }
+                return out;
             } catch (e) {
                 return {};
             }
@@ -952,7 +995,8 @@
         // ─────── イベントスキン（コレクション）描画 ───────
         const EVENT_SKIN_CATALOG = [
             { skinKey: 'eventBossSkinShadowCruiser',  name: 'シャドウ・クルーザー',   image: 'assets/event/event-boss-1.png', description: '影艦隊襲来 / Boss 1' },
-            { skinKey: 'eventBossSkinShadowOverlord', name: 'シャドウ・オーバーロード', image: 'assets/event/event-boss-2.png', description: '影艦隊襲来 / Boss 2' }
+            { skinKey: 'eventBossSkinShadowOverlord', name: 'シャドウ・オーバーロード', image: 'assets/event/event-boss-2.png', description: '影艦隊襲来 / Boss 2' },
+            { skinKey: 'eventBossSkinCosmicDragon',   name: '星骸ドラゴン',             image: 'assets/event/doragonsukin.png', description: '星獣襲来 / 撃破でシールド＋バリア解放' }
         ];
 
         // ─────── 自機スキンカタログ（shooting_game.html と同期） ───────
@@ -962,10 +1006,11 @@
             neon:     { id: 'neon',     name: 'ネオン',     type: 'procedural', body: '#aa00ff', wing: '#aa00ff', nose: '#ffffff', engine: '#00ffff', cockpit: '#ff66ff', unlock: null },
             crimson:  { id: 'crimson',  name: 'クリムゾン', type: 'procedural', body: '#cc1133', wing: '#cc1133', nose: '#ffd700', engine: '#ffaa00', cockpit: '#ffd700', unlock: null },
             'shadow-cruiser':  { id: 'shadow-cruiser',  name: 'シャドウ・クルーザー',     type: 'image', src: 'assets/event/event-boss-1.png', unlock: 'eventBossSkinShadowCruiser' },
-            'shadow-overlord': { id: 'shadow-overlord', name: 'シャドウ・オーバーロード', type: 'image', src: 'assets/event/event-boss-2.png', unlock: 'eventBossSkinShadowOverlord' }
+            'shadow-overlord': { id: 'shadow-overlord', name: 'シャドウ・オーバーロード', type: 'image', src: 'assets/event/event-boss-2.png', unlock: 'eventBossSkinShadowOverlord' },
+            'cosmic-dragon':   { id: 'cosmic-dragon',   name: '星骸ドラゴン',             type: 'image', src: 'assets/event/doragonsukin.png', unlock: 'eventBossSkinCosmicDragon' }
         };
         const DEFAULT_PLAYER_SKIN = 'classic';
-        const PLAYER_SKIN_ORDER = ['classic', 'stealth', 'neon', 'crimson', 'shadow-cruiser', 'shadow-overlord'];
+        const PLAYER_SKIN_ORDER = ['classic', 'stealth', 'neon', 'crimson', 'shadow-cruiser', 'shadow-overlord', 'cosmic-dragon'];
 
         function isPlayerSkinUnlockedMy(skin) {
             if (!skin.unlock) return true;
@@ -1311,39 +1356,79 @@
             document.getElementById('speedMultiplier').textContent = speedText;
         }
         
+        let rankingMode = 'highScore';
+
+        function setRankingModeTabsUI() {
+            const hi = document.getElementById('rankingModeHigh');
+            const av = document.getElementById('rankingModeAvg');
+            const hint = document.getElementById('rankingModeHint');
+            if (hi) {
+                hi.classList.toggle('active', rankingMode === 'highScore');
+                hi.setAttribute('aria-selected', rankingMode === 'highScore' ? 'true' : 'false');
+            }
+            if (av) {
+                av.classList.toggle('active', rankingMode === 'averageScore');
+                av.setAttribute('aria-selected', rankingMode === 'averageScore' ? 'true' : 'false');
+            }
+            if (hint) {
+                hint.textContent = rankingMode === 'averageScore'
+                    ? '平均スコア（総スコア÷プレイ回数）。1回以上プレイしたユーザーのみ表示されます。'
+                    : '最高スコア順のトップ10です。';
+            }
+        }
+
+        async function getHighScoreRankPositionForTitles(currentUid, currentPlayerName) {
+            if (typeof firebaseDataManager === 'undefined' || !firebaseDataManager.getRanking) return 0;
+            const ranking = await firebaseDataManager.getRanking('highScore');
+            for (let i = 0; i < ranking.length; i++) {
+                const player = ranking[i];
+                const isMe = (currentUid && player.id === currentUid) || (player.username === currentPlayerName);
+                if (isMe) return i + 1;
+            }
+            return 0;
+        }
+
         // ランキングの読み込み
         async function loadRanking() {
+            setRankingModeTabsUI();
             try {
                 const rankingList = document.getElementById('rankingList');
                 const currentPlayerName = localStorage.getItem('playerName') || 'プレイヤー';
                 const currentUid = (firebase.auth().currentUser && firebase.auth().currentUser.uid) || localStorage.getItem('firebaseUid') || '';
 
-                // Firebaseからランキングを取得
-                const ranking = await firebaseDataManager.getRanking();
+                const kind = rankingMode === 'averageScore' ? 'averageScore' : 'highScore';
+                const ranking = await firebaseDataManager.getRanking(kind);
 
-                // ランキングを表示。username が改名・差異で一致しないケースに備え、uid で照合する。
                 rankingList.innerHTML = '';
-                let currentUserRank = 0;
+                let currentUserRankOnBoard = 0;
                 ranking.forEach((player, index) => {
                     const li = document.createElement('li');
                     li.className = 'ranking-item';
                     const isMe = (currentUid && player.id === currentUid) || (player.username === currentPlayerName);
                     if (isMe) {
                         li.classList.add('current');
-                        currentUserRank = index + 1;
+                        currentUserRankOnBoard = index + 1;
                     }
+
+                    const scoreVal = rankingMode === 'averageScore'
+                        ? (typeof player.averageScore === 'number' ? player.averageScore : 0)
+                        : (player.highScore || 0);
 
                     li.innerHTML = `
                         <span class="rank">#${index + 1}</span>
                         <span class="player-name">${player.username}</span>
-                        <span class="player-score">${player.highScore}</span>
+                        <span class="player-score">${scoreVal}</span>
                     `;
 
                     rankingList.appendChild(li);
                 });
 
+                const rankForTitles = rankingMode === 'highScore'
+                    ? currentUserRankOnBoard
+                    : await getHighScoreRankPositionForTitles(currentUid, currentPlayerName);
+
                 const previousRankTitle = localStorage.getItem('lastRankTitle') || '';
-                const currentRankTitle = getRankTitle(currentUserRank);
+                const currentRankTitle = getRankTitle(rankForTitles);
                 renderTitles(currentFixedTitles, currentRankTitle);
 
                 if (currentRankTitle && currentRankTitle !== previousRankTitle) {
@@ -1354,21 +1439,34 @@
                 localStorage.setItem('lastRankTitle', currentRankTitle);
             } catch (error) {
                 console.error('ランキング読み込みエラー:', error);
-                // エラー時はサンプルデータを表示
                 const rankingList = document.getElementById('rankingList');
                 const currentPlayerName = localStorage.getItem('playerName') || 'プレイヤー';
                 const currentHighScore = parseInt(localStorage.getItem('shootingGameHighScore')) || 0;
-                
-                const sampleRanking = [
-                    { name: 'チャンピオン', score: 2500 },
-                    { name: 'スコアラー', score: 1800 },
-                    { name: 'ゲーマー', score: 1200 },
-                    { name: currentPlayerName, score: currentHighScore },
-                    { name: '初心者', score: 500 }
-                ];
-                
+
+                let sampleRanking;
+                if (rankingMode === 'averageScore') {
+                    const tg = Math.max(1, parseInt(localStorage.getItem('totalGames'), 10) || 1);
+                    const ts = parseInt(localStorage.getItem('totalScore'), 10) || 0;
+                    const myAvg = Math.round(ts / tg);
+                    sampleRanking = [
+                        { name: 'エース', score: 920 },
+                        { name: 'スコアラー', score: 850 },
+                        { name: '安定勢', score: 720 },
+                        { name: currentPlayerName, score: myAvg || 400 },
+                        { name: '駆け出し', score: 310 }
+                    ];
+                } else {
+                    sampleRanking = [
+                        { name: 'チャンピオン', score: 2500 },
+                        { name: 'スコアラー', score: 1800 },
+                        { name: 'ゲーマー', score: 1200 },
+                        { name: currentPlayerName, score: currentHighScore },
+                        { name: '初心者', score: 500 }
+                    ];
+                }
+
                 sampleRanking.sort((a, b) => b.score - a.score);
-                
+
                 rankingList.innerHTML = '';
                 let currentUserRank = 0;
                 sampleRanking.forEach((player, index) => {
@@ -1378,18 +1476,27 @@
                         li.classList.add('current');
                         currentUserRank = index + 1;
                     }
-                    
+
                     li.innerHTML = `
                         <span class="rank">#${index + 1}</span>
                         <span class="player-name">${player.name}</span>
                         <span class="player-score">${player.score}</span>
                     `;
-                    
+
                     rankingList.appendChild(li);
                 });
 
                 const previousRankTitle = localStorage.getItem('lastRankTitle') || '';
-                const currentRankTitle = getRankTitle(currentUserRank);
+                let rankForTitles = rankingMode === 'highScore' ? currentUserRank : 0;
+                if (rankingMode === 'averageScore') {
+                    try {
+                        rankForTitles = await getHighScoreRankPositionForTitles(
+                            (firebase.auth().currentUser && firebase.auth().currentUser.uid) || localStorage.getItem('firebaseUid') || '',
+                            currentPlayerName
+                        );
+                    } catch (e) { rankForTitles = 0; }
+                }
+                const currentRankTitle = getRankTitle(rankForTitles);
                 renderTitles(currentFixedTitles, currentRankTitle);
 
                 if (currentRankTitle && currentRankTitle !== previousRankTitle) {
@@ -1400,7 +1507,23 @@
                 localStorage.setItem('lastRankTitle', currentRankTitle);
             }
         }
-        
+
+        (function setupRankingModeTabs() {
+            const hi = document.getElementById('rankingModeHigh');
+            const av = document.getElementById('rankingModeAvg');
+            if (!hi || !av) return;
+            hi.addEventListener('click', () => {
+                if (rankingMode === 'highScore') return;
+                rankingMode = 'highScore';
+                loadRanking();
+            });
+            av.addEventListener('click', () => {
+                if (rankingMode === 'averageScore') return;
+                rankingMode = 'averageScore';
+                loadRanking();
+            });
+        })();
+
         // アカウント設定の保存
         document.getElementById('accountForm').addEventListener('submit', (e) => {
             e.preventDefault();

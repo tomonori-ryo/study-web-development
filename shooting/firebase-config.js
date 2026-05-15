@@ -78,12 +78,23 @@ function isAdminEmail(email) {
   return !!email && ADMIN_EMAILS.includes(String(email).toLowerCase());
 }
 
+/** 現在のログインセッションが管理者か（index / shooting_game の UI 制御用） */
+function isShootingAdminSession() {
+  try {
+    return isAdminEmail(auth.currentUser && auth.currentUser.email);
+  } catch (e) {
+    return false;
+  }
+}
+
 // データ管理クラス
 class FirebaseDataManager {
   constructor() {
     this.db = db;
     this.auth = auth;
     this.storage = storage;
+    /** listAnnouncementsPublic で「件数はあるが表示 0」の診断を一度だけ出す */
+    this._annPublicFilterWarned = false;
   }
 
   // ユーザー登録
@@ -431,26 +442,59 @@ class FirebaseDataManager {
     }
   }
 
-  // ランキング取得
-  async getRanking() {
+  /**
+   * ランキング取得
+   * @param {'highScore'|'averageScore'} kind  highScore: 最高スコア上位10（クエリ効率あり）
+   *   averageScore: 平均スコア（総スコア÷総プレイ）上位10。1回以上プレイしたユーザーのみ。
+   */
+  async getRanking(kind = 'highScore') {
+    const mode = (kind === 'averageScore' || kind === 'average' || kind === 'avg') ? 'averageScore' : 'highScore';
     try {
-      const snapshot = await this.db.collection('users')
-        .orderBy('highScore', 'desc')
-        .limit(10)
-        .get();
-      
-      const ranking = [];
+      if (mode === 'highScore') {
+        const snapshot = await this.db.collection('users')
+          .orderBy('highScore', 'desc')
+          .limit(10)
+          .get();
+
+        const ranking = [];
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const tg = Number(data.totalGames) || 0;
+          const ts = Number(data.totalScore) || 0;
+          const averageScore = tg > 0 ? Math.round(ts / tg) : 0;
+          ranking.push({
+            id: doc.id,
+            username: data.username,
+            highScore: data.highScore || 0,
+            averageScore,
+            activeTitle: data.activeTitle || ''
+          });
+        });
+        return ranking;
+      }
+
+      // 平均スコア: 集計フィールドが無いユーザーが混在するため全件取得してソート（小規模向け）
+      const snapshot = await this.db.collection('users').get();
+      const rows = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        ranking.push({
+        const tg = Number(data.totalGames) || 0;
+        const ts = Number(data.totalScore) || 0;
+        if (tg < 1) return;
+        const averageScore = Math.round(ts / tg);
+        rows.push({
           id: doc.id,
           username: data.username,
           highScore: data.highScore || 0,
+          averageScore,
           activeTitle: data.activeTitle || ''
         });
       });
-      
-      return ranking;
+      rows.sort((a, b) => {
+        if (b.averageScore !== a.averageScore) return b.averageScore - a.averageScore;
+        return (b.highScore || 0) - (a.highScore || 0);
+      });
+      return rows.slice(0, 10);
     } catch (error) {
       throw error;
     }
@@ -727,6 +771,160 @@ class FirebaseDataManager {
     await this.db.collection('titles').doc(titleId).delete();
   }
 
+  // ─────── お知らせ（全員が読める / 管理者のみ編集）───────
+  // announcements/{id}: title, body, imageUrl?, active, showPopup, priority,
+  //   startsAt / endsAt (任意・ISO 文字列。空なら期間制限なし)
+  _announcementCreatedMillis(data) {
+    const c = data && data.createdAt;
+    if (c && typeof c.toMillis === 'function') return c.toMillis();
+    if (typeof c === 'number') return c;
+    return 0;
+  }
+
+  /** お知らせの startsAt/endsAt: ISO 文字列想定だが Timestamp や数値が混ざっても比較可能に */
+  _announcementTimeToIso(v) {
+    if (v == null || v === '') return '';
+    if (typeof v === 'string') return String(v).trim();
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? '' : d.toISOString();
+    }
+    if (typeof v === 'object' && v !== null && typeof v.toDate === 'function') {
+      const d = v.toDate();
+      return isNaN(d.getTime()) ? '' : d.toISOString();
+    }
+    if (typeof v === 'object' && v !== null && typeof v.seconds === 'number') {
+      const ms = v.seconds * 1000 + (typeof v.nanoseconds === 'number' ? v.nanoseconds / 1e6 : 0);
+      const d = new Date(ms);
+      return isNaN(d.getTime()) ? '' : d.toISOString();
+    }
+    return String(v).trim();
+  }
+
+  /** Firestore の画像 URL（複数キー・改行混入に対応） */
+  _announcementImageUrlFromData(d) {
+    if (!d) return '';
+    const candidates = [d.imageUrl, d.imageURL, d.bannerUrl, d.banner_url, d.image];
+    let s = '';
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (c == null || c === '') continue;
+      if (typeof c === 'string') {
+        s = c;
+        break;
+      }
+      if (typeof c === 'object' && c !== null && typeof c.url === 'string') {
+        s = c.url;
+        break;
+      }
+    }
+    if (!s) return '';
+    s = String(s).replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+    if (s.startsWith('`') && s.endsWith('`')) s = s.slice(1, -1).trim();
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+      s = s.slice(1, -1).trim();
+    }
+    // URL 内に紛れた改行・タブ・スペースを除去（エディタ折り返し・コピペ対策）
+    s = s.replace(/\s+/g, '');
+    return s;
+  }
+
+  _normalizeAnnouncementDoc(id, d) {
+    if (!d) {
+      return {
+        id, title: '', body: '', imageUrl: '', active: false, showPopup: false, priority: 0, startsAt: '', endsAt: ''
+      };
+    }
+    return {
+      id,
+      title: String(d.title || '').trim(),
+      body: String(d.body || ''),
+      imageUrl: this._announcementImageUrlFromData(d),
+      active: !!d.active,
+      showPopup: !!d.showPopup,
+      priority: Number(d.priority) || 0,
+      startsAt: this._announcementTimeToIso(d.startsAt),
+      endsAt: this._announcementTimeToIso(d.endsAt),
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt
+    };
+  }
+
+  _isAnnouncementInWindow(ann, now) {
+    if (!ann || !ann.active) return false;
+    const t = typeof now === 'number' ? now : Date.now();
+    if (ann.startsAt) {
+      const s = Date.parse(ann.startsAt);
+      if (!isNaN(s) && t < s) return false;
+    }
+    if (ann.endsAt) {
+      const e = Date.parse(ann.endsAt);
+      if (!isNaN(e) && t > e) return false;
+    }
+    return true;
+  }
+
+  /** ゲーム・ホーム用: 公開中かつ表示期間内のお知らせのみ（新しい順） */
+  async listAnnouncementsPublic() {
+    const snap = await this.db.collection('announcements').get();
+    const now = Date.now();
+    const list = [];
+    snap.forEach(doc => {
+      const ann = this._normalizeAnnouncementDoc(doc.id, doc.data());
+      if (!this._isAnnouncementInWindow(ann, now)) return;
+      list.push(ann);
+    });
+    list.sort((a, b) => (Number(b.priority) - Number(a.priority))
+      || (this._announcementCreatedMillis(b) - this._announcementCreatedMillis(a)));
+    if (!this._annPublicFilterWarned && snap.size > 0 && list.length === 0) {
+      this._annPublicFilterWarned = true;
+      console.warn(
+        '[FirebaseDataManager] announcements: Firestore に',
+        snap.size,
+        '件ありますが「公開」かつ掲載期間内のものは 0 件です。管理画面で「公開する」と掲載開始/終了を確認してください。'
+      );
+    }
+    return list;
+  }
+
+  /** 管理画面用: 期間フィルタなしの全件 */
+  async listAnnouncementsAll() {
+    const snap = await this.db.collection('announcements').get();
+    const list = [];
+    snap.forEach(doc => list.push(this._normalizeAnnouncementDoc(doc.id, doc.data())));
+    list.sort((a, b) => (this._announcementCreatedMillis(b) - this._announcementCreatedMillis(a)));
+    return list;
+  }
+
+  async saveAnnouncement(announcementId, data) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    const payload = {
+      title: String((data && data.title) || '').trim(),
+      body: String((data && data.body) || ''),
+      imageUrl: (data && data.imageUrl) ? String(data.imageUrl).trim() : '',
+      active: !!(data && data.active),
+      showPopup: !!(data && data.showPopup),
+      priority: Number(data && data.priority) || 0,
+      startsAt: (data && data.startsAt) ? String(data.startsAt).trim() : '',
+      endsAt: (data && data.endsAt) ? String(data.endsAt).trim() : '',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (announcementId) {
+      await this.db.collection('announcements').doc(announcementId).set(payload, { merge: true });
+      return announcementId;
+    }
+    payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    const ref = await this.db.collection('announcements').add(payload);
+    return ref.id;
+  }
+
+  async deleteAnnouncement(announcementId) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    await this.db.collection('announcements').doc(announcementId).delete();
+  }
+
   // 画像アップロード（管理者専用）。File を受け取って Storage に保存し
   // ダウンロード可能な永続URLを返す。
   async uploadImageToFolder(folder, file, opts = {}) {
@@ -750,6 +948,9 @@ class FirebaseDataManager {
   }
   async uploadTitleIcon(file, opts = {}) {
     return this.uploadImageToFolder('title-icons', file, opts);
+  }
+  async uploadAnnouncementImage(file, opts = {}) {
+    return this.uploadImageToFolder('announcements', file, opts);
   }
 
   // 動的称号: ユーザーデータを元に、未解放の称号を解禁
@@ -850,8 +1051,13 @@ class FirebaseDataManager {
   }
 }
 
-// グローバルインスタンス
+// グローバルインスタンス（let/const は window のプロパティにならない。
+// announcements-ui.js 等は window.firebaseDataManager を参照するため明示的に載せる）
 const firebaseDataManager = new FirebaseDataManager();
+if (typeof window !== 'undefined') {
+  window.firebaseDataManager = firebaseDataManager;
+  window.isShootingAdminSession = isShootingAdminSession;
+}
 
 // 認証状態の監視
 auth.onAuthStateChanged((user) => {

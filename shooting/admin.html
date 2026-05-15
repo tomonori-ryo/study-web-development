@@ -316,6 +316,16 @@
                     <button type="button" class="btn btn-success" id="newTitleBtn">＋ 新規称号</button>
                 </div>
             </section>
+
+            <!-- お知らせ -->
+            <section class="card">
+                <h2>📢 お知らせ</h2>
+                <p class="note">ホーム右上の「お知らせ」ボタン・マイページ・ゲーム本編で一覧に表示されます。任意の<strong>見出し画像</strong>を付けると、詳細ポップアップ上部や一覧にサムネイルとして表示されます（Firebase Storage にアップロード）。未読があると起動時に先頭の 1 件が自動ポップアップします。掲載期間を空にすると期間制限なしです。</p>
+                <div id="announcementList" class="row-list"></div>
+                <div style="margin-top: 14px;">
+                    <button type="button" class="btn btn-success" id="newAnnouncementBtn">＋ 新規お知らせ</button>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -427,6 +437,63 @@
         </div>
     </div>
 
+    <!-- お知らせ編集モーダル -->
+    <div class="modal" id="announcementModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-card">
+            <h3 id="announcementModalTitle">お知らせ編集</h3>
+            <form id="announcementForm" class="admin-form">
+                <div class="field full">
+                    <label>タイトル</label>
+                    <input type="text" name="title" required maxlength="120" placeholder="例: メンテナンスのお知らせ">
+                </div>
+                <div class="field full">
+                    <label>本文</label>
+                    <textarea name="body" rows="8" required placeholder="プレイヤーに表示する内容（改行可）"></textarea>
+                </div>
+                <div class="field full">
+                    <label>見出し画像（任意・一覧 / 詳細の上部に表示）</label>
+                    <div class="image-uploader">
+                        <img class="image-preview" id="announcementImgPreview" alt="" src="" style="display:none; max-height:140px; border-radius:10px;">
+                        <div class="uploader-fields">
+                            <input type="hidden" name="imageUrl" id="announcementImageUrlHidden" value="">
+                            <input type="file" accept="image/*" id="announcementImageFile" style="font-size: 0.8rem;">
+                            <button type="button" class="btn btn-sm btn-ghost" id="clearAnnouncementImageBtn">画像クリア</button>
+                            <div class="upload-status" id="announcementImageStatus">画像を選ぶと自動で縮小・圧縮してから Storage に送ります（上限 5MB 未満）</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>表示優先度（大きいほど先頭）</label>
+                    <input type="number" name="priority" value="0" step="1">
+                </div>
+                <div class="field full">
+                    <div class="checkbox-row">
+                        <input type="checkbox" name="active" id="annActiveChk">
+                        <label for="annActiveChk" style="text-transform:none;">公開する</label>
+                    </div>
+                </div>
+                <div class="field full">
+                    <div class="checkbox-row">
+                        <input type="checkbox" name="showPopup" id="annPopupChk">
+                        <label for="annPopupChk" style="text-transform:none;">未読のユーザーにポップアップで表示する</label>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>掲載開始（任意）</label>
+                    <input type="datetime-local" name="startsAt">
+                </div>
+                <div class="field">
+                    <label>掲載終了（任意）</label>
+                    <input type="datetime-local" name="endsAt">
+                </div>
+                <div class="submit-row">
+                    <button type="submit" class="btn btn-success">保存</button>
+                    <button type="button" class="btn btn-ghost" id="cancelAnnouncementBtn">キャンセル</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
@@ -439,6 +506,7 @@
         const mainEl     = document.getElementById('adminMain');
         const eventList  = document.getElementById('eventList');
         const titleList  = document.getElementById('titleList');
+        const announcementList = document.getElementById('announcementList');
 
         // ─────── ボス編集用の既知選択肢 ───────
         const BOSS_IMAGE_PRESETS = [
@@ -471,7 +539,7 @@
             statusEl.className = 'ok';
             statusEl.textContent = `管理者としてログイン中: ${user.email}`;
             mainEl.style.display = 'block';
-            await Promise.all([refreshEvents(), refreshTitles(), refreshStats()]);
+            await Promise.all([refreshEvents(), refreshTitles(), refreshAnnouncements(), refreshStats()]);
         });
 
         // ─────── 全体統計 ───────
@@ -553,6 +621,10 @@
                     <div>
                         <label>スキンキー (progress 反映用)</label>
                         <input type="text" name="b_skinKey" value="${esc((b && b.skinKey) || '')}" placeholder="eventBossSkinShadowCruiser">
+                    </div>
+                    <div>
+                        <label>武器解放キー（任意・例: shieldUnlocked）</label>
+                        <input type="text" name="b_weaponRewardKey" value="${esc((b && b.weaponRewardKey) || '')}" placeholder="shieldUnlocked">
                     </div>
                     <div>
                         <label>HP倍率</label>
@@ -690,6 +762,7 @@
                     id: get('b_id'),
                     name: get('b_name'),
                     skinKey: get('b_skinKey'),
+                    weaponRewardKey: (get('b_weaponRewardKey') || '').trim(),
                     image: get('b_image'),
                     description: get('b_description'),
                     hpMultiplier: Number(get('b_hpMultiplier')) || 1,
@@ -1001,6 +1074,267 @@
             }
         }
 
+        // ─────────────────────────────────────────────
+        // お知らせ管理
+        // ─────────────────────────────────────────────
+        let currentEditingAnnouncementId = null;
+        const announcementModal = document.getElementById('announcementModal');
+        const announcementForm  = document.getElementById('announcementForm');
+
+        function closeAnnouncementModal() {
+            announcementModal.classList.remove('open');
+            announcementModal.setAttribute('aria-hidden', 'true');
+            currentEditingAnnouncementId = null;
+        }
+
+        function openAnnouncementModal(a) {
+            currentEditingAnnouncementId = a ? a.id : null;
+            document.getElementById('announcementModalTitle').textContent = a ? `お知らせ編集` : '新規お知らせ';
+            announcementForm.reset();
+            const activeChk = document.getElementById('annActiveChk');
+            const popupChk = document.getElementById('annPopupChk');
+            const imgHidden = document.getElementById('announcementImageUrlHidden');
+            const imgPreview = document.getElementById('announcementImgPreview');
+            const imgStatus = document.getElementById('announcementImageStatus');
+            imgHidden.value = '';
+            imgPreview.src = '';
+            imgPreview.style.display = 'none';
+            imgStatus.className = 'upload-status';
+            imgStatus.textContent = '画像を選ぶと自動で縮小・圧縮してから Storage に送ります（上限 5MB 未満）';
+            if (a) {
+                announcementForm.title.value = a.title || '';
+                announcementForm.body.value = a.body || '';
+                announcementForm.priority.value = Number(a.priority) || 0;
+                activeChk.checked = !!a.active;
+                popupChk.checked = !!a.showPopup;
+                announcementForm.startsAt.value = a.startsAt ? toLocalDateTime(a.startsAt) : '';
+                announcementForm.endsAt.value = a.endsAt ? toLocalDateTime(a.endsAt) : '';
+                if (a.imageUrl) {
+                    imgHidden.value = a.imageUrl;
+                    imgPreview.src = a.imageUrl;
+                    imgPreview.style.display = 'inline-block';
+                    imgStatus.textContent = '画像URL 設定済み';
+                    imgStatus.className = 'upload-status ok';
+                }
+            } else {
+                activeChk.checked = true;
+                popupChk.checked = true;
+            }
+            announcementModal.classList.add('open');
+            announcementModal.setAttribute('aria-hidden', 'false');
+        }
+
+        /**
+         * お知らせ画像: Storage ルールは 5MB 未満。大きい原稿は canvas で縮小 + JPEG 圧縮。
+         */
+        async function prepareAnnouncementImageForUpload(file) {
+            const HARD_MAX = 5 * 1024 * 1024;
+            const TARGET = HARD_MAX - 48 * 1024;
+            if (!file.type || !/^image\//i.test(file.type)) {
+                throw new Error('画像ファイルを選んでください');
+            }
+            if (file.size < HARD_MAX) {
+                return file;
+            }
+
+            const baseName = String(file.name || 'announcement').replace(/\.[^/.\\]+$/, '') || 'announcement';
+
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = async () => {
+                    URL.revokeObjectURL(url);
+                    try {
+                        let w = img.naturalWidth || img.width;
+                        let h = img.naturalHeight || img.height;
+                        if (!w || !h) {
+                            reject(new Error('画像のサイズを読み取れませんでした'));
+                            return;
+                        }
+                        const MAX_LONG = 2400;
+                        let scale = Math.min(1, MAX_LONG / Math.max(w, h));
+                        w = Math.max(1, Math.round(w * scale));
+                        h = Math.max(1, Math.round(h * scale));
+
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const outMime = 'image/jpeg';
+                        const toBlob = q => new Promise(res => {
+                            canvas.toBlob(b => res(b), outMime, q);
+                        });
+
+                        let quality = 0.9;
+                        let blob = null;
+                        for (let iter = 0; iter < 36; iter++) {
+                            canvas.width = w;
+                            canvas.height = h;
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, w, h);
+                            ctx.drawImage(img, 0, 0, w, h);
+                            blob = await toBlob(quality);
+                            if (!blob) {
+                                reject(new Error('画像のエンコードに失敗しました'));
+                                return;
+                            }
+                            if (blob.size <= TARGET) break;
+
+                            if (quality > 0.52) {
+                                quality -= 0.06;
+                            } else if (Math.max(w, h) > 480) {
+                                w = Math.max(320, Math.round(w * 0.86));
+                                h = Math.max(320, Math.round(h * 0.86));
+                                quality = 0.85;
+                            } else {
+                                quality -= 0.05;
+                            }
+                            if (quality < 0.28) {
+                                reject(new Error('この画像は 5MB 未満に収まりませんでした（解像度の高い別ファイルを試してください）'));
+                                return;
+                            }
+                        }
+                        if (blob.size >= HARD_MAX) {
+                            reject(new Error('圧縮後も 5MB 未満にできませんでした'));
+                            return;
+                        }
+                        resolve(new File([blob], `${baseName}_opt.jpg`, { type: outMime, lastModified: Date.now() }));
+                    } catch (e) {
+                        reject(e);
+                    }
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('画像を開けませんでした（ブラウザ非対応の形式の可能性があります）'));
+                };
+                img.src = url;
+            });
+        }
+
+        document.getElementById('announcementImageFile').addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            const hidden = document.getElementById('announcementImageUrlHidden');
+            const preview = document.getElementById('announcementImgPreview');
+            const status = document.getElementById('announcementImageStatus');
+            if (!file) return;
+            status.textContent = '画像を確認しています…';
+            status.className = 'upload-status';
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'inline-block';
+            try {
+                let uploadFile = file;
+                if (file.size >= 5 * 1024 * 1024) {
+                    status.textContent = '大きい画像を縮小・圧縮しています…';
+                    uploadFile = await prepareAnnouncementImageForUpload(file);
+                    status.textContent = `圧縮済み (${(uploadFile.size / (1024 * 1024)).toFixed(2)} MB) をアップロード中…`;
+                } else {
+                    status.textContent = 'アップロード中…';
+                }
+                const { url } = await firebaseDataManager.uploadAnnouncementImage(uploadFile);
+                hidden.value = url;
+                preview.src = url;
+                status.textContent = uploadFile !== file
+                    ? '✓ アップロード完了（自動で最適化しました）'
+                    : '✓ アップロード完了';
+                status.className = 'upload-status ok';
+            } catch (err) {
+                console.error(err);
+                status.textContent = '✗ ' + (err.message || '失敗');
+                status.className = 'upload-status error';
+            }
+        });
+        document.getElementById('clearAnnouncementImageBtn').addEventListener('click', () => {
+            document.getElementById('announcementImageUrlHidden').value = '';
+            document.getElementById('announcementImgPreview').src = '';
+            document.getElementById('announcementImgPreview').style.display = 'none';
+            document.getElementById('announcementImageFile').value = '';
+            const status = document.getElementById('announcementImageStatus');
+            status.textContent = '画像を選ぶと自動で縮小・圧縮してから Storage に送ります（上限 5MB 未満）';
+            status.className = 'upload-status';
+        });
+
+        document.getElementById('newAnnouncementBtn').addEventListener('click', () => openAnnouncementModal(null));
+        document.getElementById('cancelAnnouncementBtn').addEventListener('click', closeAnnouncementModal);
+        announcementModal.addEventListener('click', e => { if (e.target === announcementModal) closeAnnouncementModal(); });
+
+        announcementForm.addEventListener('submit', async e => {
+            e.preventDefault();
+            const fd = new FormData(announcementForm);
+            const data = {
+                title: fd.get('title') || '',
+                body: fd.get('body') || '',
+                imageUrl: (document.getElementById('announcementImageUrlHidden').value || '').trim(),
+                active: fd.get('active') === 'on',
+                showPopup: fd.get('showPopup') === 'on',
+                priority: Number(fd.get('priority')) || 0,
+                startsAt: fd.get('startsAt') ? fromLocalDateTime(fd.get('startsAt')) : '',
+                endsAt: fd.get('endsAt') ? fromLocalDateTime(fd.get('endsAt')) : ''
+            };
+            try {
+                await firebaseDataManager.saveAnnouncement(currentEditingAnnouncementId, data);
+                closeAnnouncementModal();
+                refreshAnnouncements();
+            } catch (err) {
+                console.error(err);
+                alert('保存に失敗しました: ' + err.message);
+            }
+        });
+
+        function fmtFirestoreTs(val) {
+            if (!val) return '—';
+            try {
+                if (typeof val.toDate === 'function') {
+                    const d = val.toDate();
+                    if (isNaN(d.getTime())) return '—';
+                    const pad = n => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                }
+            } catch (e) { /* ignore */ }
+            return '—';
+        }
+
+        async function refreshAnnouncements() {
+            if (!announcementList) return;
+            announcementList.innerHTML = '<div class="empty">読み込み中…</div>';
+            try {
+                const rows = await firebaseDataManager.listAnnouncementsAll();
+                if (!rows.length) {
+                    announcementList.innerHTML = '<div class="empty">お知らせはまだありません。</div>';
+                    return;
+                }
+                announcementList.innerHTML = '';
+                rows.forEach(a => {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    const status = a.active ? '<span style="color:#7fffaa">✓ 公開</span>' : '<span style="color:#ffaa77">下書き</span>';
+                    const popup = a.showPopup ? 'ポップアップON' : '一覧のみ';
+                    const period = (a.startsAt || a.endsAt)
+                        ? `${a.startsAt ? fmtDate(a.startsAt) : '即時'} 〜 ${a.endsAt ? fmtDate(a.endsAt) : '無期限'}`
+                        : '期間指定なし';
+                    const imgTag = a.imageUrl ? ' · <span style="color:#8cf">画像あり</span>' : '';
+                    row.innerHTML = `
+                        <div class="row-main">
+                            <div class="row-title">${esc(a.title || '(無題)')} ${status}</div>
+                            <div class="row-sub">優先度 ${Number(a.priority) || 0} ・ ${popup} ・ ${period} ・ 作成: ${fmtFirestoreTs(a.createdAt)} ・ ID: ${esc(a.id)}${imgTag}</div>
+                        </div>
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-sm" data-action="edit">編集</button>
+                            <button type="button" class="btn btn-sm btn-danger" data-action="delete">削除</button>
+                        </div>`;
+                    row.querySelector('[data-action="edit"]').addEventListener('click', () => openAnnouncementModal(a));
+                    row.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+                        if (!confirm(`お知らせ「${a.title || a.id}」を削除しますか？`)) return;
+                        try {
+                            await firebaseDataManager.deleteAnnouncement(a.id);
+                            refreshAnnouncements();
+                        } catch (err) { alert('削除失敗: ' + err.message); }
+                    });
+                    announcementList.appendChild(row);
+                });
+            } catch (err) {
+                console.error(err);
+                announcementList.innerHTML = `<div class="empty" style="color:#ffaaaa">読み込みエラー: ${esc(err.message)}</div>`;
+            }
+        }
+
         // ─────── ユーティリティ ───────
         function esc(s) {
             return String(s == null ? '' : s)
@@ -1014,10 +1348,23 @@
             const pad = n => String(n).padStart(2, '0');
             return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
+        /**
+         * datetime-local の値はタイムゾーン表記が無い（例: 2026-05-14T13:00）。
+         * new Date(そのまま) は環境により UTC 解釈になり、JST だと最大 9 時間ズレて
+         * 「掲載開始が遅い／終了が早い」原因になる。ローカル壁時計として解釈する。
+         */
         function fromLocalDateTime(s) {
             if (!s) return '';
-            const d = new Date(s);
-            if (isNaN(d)) return '';
+            const str = String(s).trim();
+            const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(str);
+            if (m) {
+                const y = +m[1], mo = +m[2] - 1, day = +m[3], h = +m[4], mi = +m[5], sec = m[6] != null ? +m[6] : 0;
+                const d = new Date(y, mo, day, h, mi, sec, 0);
+                if (isNaN(d.getTime())) return '';
+                return d.toISOString();
+            }
+            const d = new Date(str);
+            if (isNaN(d.getTime())) return '';
             return d.toISOString();
         }
         function fmtDate(iso) {
