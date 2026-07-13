@@ -1,7 +1,9 @@
 rules_version = '2';
+// デプロイ: firebase deploy --only firestore:rules
+// スコアは「プレイセッション」開始から一定時間経過後の batch のみ受理（コンソール即時改ざん対策）
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 管理者メールアドレス（firebase-config.js の ADMIN_EMAILS と同期）
+
     function isAdmin() {
       return request.auth != null
         && request.auth.token.email != null
@@ -10,51 +12,269 @@ service cloud.firestore {
           ];
     }
 
-    // ユーザーコレクション
-    match /users/{userId} {
-      // マイページのランキング（最高・平均）で他ユーザーの highScore / totalGames 等を参照するため、
-      // ログイン済みユーザー同士の読み取りを許可。書き込みは本人のみ。
-      // ※ メール等の PII を同じドキュメントに載せ続ける場合は、公開用フィールドだけ別コレクションに分離するのが望ましい。
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
     }
 
-    // PvP ルーム
+    function maxRunScore() {
+      return 20000;
+    }
+
+    function minPlaySeconds() {
+      return 45;
+    }
+
+    function maxBossLevelCap() {
+      return 20;
+    }
+
+    function clientScoreFieldsImmutable() {
+      return request.resource.data.highScore == resource.data.get('highScore', 0)
+        && request.resource.data.totalGames == resource.data.get('totalGames', 0)
+        && request.resource.data.totalScore == resource.data.get('totalScore', 0)
+        && (
+          !('lastPlayed' in resource.data) && !('lastPlayed' in request.resource.data)
+          || request.resource.data.lastPlayed == resource.data.lastPlayed
+        );
+    }
+
+    function runScoreDelta() {
+      return request.resource.data.totalScore - resource.data.totalScore;
+    }
+
+    function playSessionPath(userId, sessionId) {
+      return /databases/$(database)/documents/users/$(userId)/playSessions/$(sessionId);
+    }
+
+    function scoreTiedToConsumedSession(userId) {
+      let sid = request.resource.data.get('lastScoreSessionId', '');
+      let runScore = runScoreDelta();
+      return sid != ''
+        && exists(playSessionPath(userId, sid))
+        && get(playSessionPath(userId, sid)).data.get('consumed', false) == true
+        && get(playSessionPath(userId, sid)).data.get('runScore', -1) == runScore
+        && request.time > get(playSessionPath(userId, sid)).data.startedAt + duration.value(minPlaySeconds(), 's');
+    }
+
+    function validScoreSubmission(userId) {
+      let runScore = runScoreDelta();
+      let oldHigh = resource.data.get('highScore', 0);
+      let newHigh = request.resource.data.highScore;
+      return request.resource.data.totalGames == resource.data.get('totalGames', 0) + 1
+        && runScore is int
+        && runScore >= 0
+        && runScore <= maxRunScore()
+        && request.resource.data.totalScore == resource.data.get('totalScore', 0) + runScore
+        && newHigh is int
+        && newHigh >= oldHigh
+        && newHigh <= oldHigh + runScore
+        && (newHigh == oldHigh || newHigh == runScore)
+        && request.resource.data.settings == resource.data.settings
+        && request.resource.data.highScore <= maxRunScore()
+        && request.resource.data.totalScore <= request.resource.data.totalGames * maxRunScore()
+        && (!('lastPlayed' in resource.data)
+            || request.time > resource.data.lastPlayed + duration.value(60, 's'))
+        && scoreTiedToConsumedSession(userId)
+        && validProgressOnWrite()
+        && validTitlesOnScoreWrite();
+    }
+
+    function validScoreSubmissionKeys() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      return keys.hasOnly([
+          'highScore', 'totalGames', 'totalScore',
+          'titles', 'activeTitle', 'progress', 'lastPlayed', 'lastScoreSessionId'
+        ]);
+    }
+
+    function validUserCreate() {
+      return request.resource.data.highScore == 0
+        && request.resource.data.totalGames == 0
+        && request.resource.data.totalScore == 0
+        && request.resource.data.get('titles', []).size() == 0;
+    }
+
+    function progressBoolMonotonic(key) {
+      let oldP = resource.data.get('progress', {});
+      let newP = request.resource.data.get('progress', {});
+      let o = oldP.get(key, false);
+      let n = newP.get(key, false);
+      return !(o == true && n == false);
+    }
+
+    function progressBoolMonotonicKeys() {
+      return progressBoolMonotonic('rapidUnlocked')
+        && progressBoolMonotonic('shotgunUnlocked')
+        && progressBoolMonotonic('laserUnlocked')
+        && progressBoolMonotonic('sniperUnlocked')
+        && progressBoolMonotonic('launcherUnlocked')
+        && progressBoolMonotonic('slowtimeUnlocked')
+        && progressBoolMonotonic('homingUnlocked')
+        && progressBoolMonotonic('droneUnlocked')
+        && progressBoolMonotonic('gravityUnlocked')
+        && progressBoolMonotonic('mineUnlocked')
+        && progressBoolMonotonic('bladeUnlocked')
+        && progressBoolMonotonic('shieldUnlocked')
+        && progressBoolMonotonic('barrierUnlocked')
+        && progressBoolMonotonic('allWeaponsUnlocked')
+        && progressBoolMonotonic('noDamageRunDone')
+        && progressBoolMonotonic('eventBossSkinShadowCruiser')
+        && progressBoolMonotonic('eventBossSkinShadowOverlord')
+        && progressBoolMonotonic('eventBossSkinCosmicDragon');
+    }
+
+    function shieldUnlockAllowed() {
+      let oldP = resource.data.get('progress', {});
+      let newP = request.resource.data.get('progress', {});
+      let was = oldP.get('shieldUnlocked', false);
+      let now = newP.get('shieldUnlocked', false);
+      return !(now == true && was != true)
+        || request.resource.data.get('highScore', 0) > 3000;
+    }
+
+    function barrierUnlockAllowed() {
+      let oldP = resource.data.get('progress', {});
+      let newP = request.resource.data.get('progress', {});
+      let was = oldP.get('barrierUnlocked', false);
+      let now = newP.get('barrierUnlocked', false);
+      return !(now == true && was != true)
+        || request.resource.data.get('highScore', 0) > 3000
+        || newP.get('eventBossSkinCosmicDragon', false) == true;
+    }
+
+    function maxBossLevelDefeatedValid() {
+      let oldP = resource.data.get('progress', {});
+      let newP = request.resource.data.get('progress', {});
+      let o = oldP.get('maxBossLevelDefeated', 0);
+      let n = newP.get('maxBossLevelDefeated', 0);
+      return n is int
+        && o is int
+        && n >= o
+        && n <= o + 1
+        && n <= maxBossLevelCap();
+    }
+
+    function currentRankValid() {
+      let newP = request.resource.data.get('progress', {});
+      return !('currentRank' in newP)
+        || newP.currentRank == null
+        || (newP.currentRank is int && newP.currentRank >= 1 && newP.currentRank <= 10);
+    }
+
+    function playerSkinValid() {
+      let newP = request.resource.data.get('progress', {});
+      return !('playerSkin' in newP)
+        || newP.playerSkin in [
+          'classic',
+          'eventBossSkinShadowCruiser',
+          'eventBossSkinShadowOverlord',
+          'eventBossSkinCosmicDragon'
+        ];
+    }
+
+    function validProgressOnWrite() {
+      return progressBoolMonotonicKeys()
+        && shieldUnlockAllowed()
+        && barrierUnlockAllowed()
+        && maxBossLevelDefeatedValid()
+        && currentRankValid()
+        && playerSkinValid();
+    }
+
+    function validTitlesOnScoreWrite() {
+      let oldT = resource.data.get('titles', []);
+      let newT = request.resource.data.get('titles', []);
+      return newT is list
+        && newT.size() <= 40
+        && oldT.toSet().difference(newT.toSet()).size() == 0;
+    }
+
+    function validTitlesOnlyUpdate() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      let newT = request.resource.data.get('titles', []);
+      return clientScoreFieldsImmutable()
+        && keys.hasOnly(['titles', 'activeTitle'])
+        && request.resource.data.progress == resource.data.get('progress', {})
+        && newT is list
+        && newT.size() <= 40;
+    }
+
+    function validSettingsUpdate() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      return clientScoreFieldsImmutable()
+        && keys.hasOnly(['settings', 'updatedAt'])
+        && request.resource.data.settings is map
+        && request.resource.data.progress == resource.data.get('progress', {})
+        && request.resource.data.titles == resource.data.get('titles', []);
+    }
+
+    function validProgressPatchUpdate() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      return clientScoreFieldsImmutable()
+        && (keys.hasOnly(['progress', 'updatedAt'])
+            || keys.hasOnly(['progress', 'titles', 'activeTitle', 'updatedAt']))
+        && validProgressOnWrite();
+    }
+
+    function validNonScoreUpdate() {
+      return validSettingsUpdate()
+        || validProgressPatchUpdate()
+        || validTitlesOnlyUpdate();
+    }
+
+    function validUserScoreUpdate(userId) {
+      return validScoreSubmissionKeys() && validScoreSubmission(userId);
+    }
+
+    match /users/{userId}/playSessions/{sessionId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.consumed == false
+        && request.resource.data.keys().hasOnly(['startedAt', 'consumed']);
+      allow update: if isOwner(userId)
+        && resource.data.consumed == false
+        && request.resource.data.consumed == true
+        && request.resource.data.runScore is int
+        && request.resource.data.runScore >= 0
+        && request.resource.data.runScore <= maxRunScore()
+        && request.time > resource.data.startedAt + duration.value(minPlaySeconds(), 's')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['consumed', 'runScore']);
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if isOwner(userId) && validUserCreate();
+      allow update: if isAdmin()
+        || (isOwner(userId) && (
+            validUserScoreUpdate(userId)
+            || (clientScoreFieldsImmutable() && validNonScoreUpdate())
+          ));
+      allow delete: if isAdmin();
+    }
+
     match /pvp_rooms/{roomId} {
       allow read, write: if request.auth != null;
     }
 
-    // 管理画面で編集する動的設定（イベント/カスタム称号）
-    //   読み込みは誰でも可、書き込みは管理者のみ
     match /config/{configId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 管理画面で作成・編集するイベント設定。
-    //   ゲーム本体（index.html / shooting_game.html）からも未ログインで読み出すため
-    //   読み込みは公開、書き込みは管理者のみ。
     match /events/{eventId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 管理画面で作成する動的称号。
-    //   全プレイヤーのスコア保存時に評価するため公開読み込み、書き込みは管理者のみ。
     match /titles/{titleId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // お知らせ（ホーム・ゲームから未ログインでも読む。書き込みは管理者のみ）
     match /announcements/{announcementId} {
       allow read: if true;
       allow write: if isAdmin();
-    }
-
-    // 既存のフォールバック（開発用）。本番では絞り込み推奨
-    match /{document=**} {
-      allow read, write: if request.auth != null;
     }
   }
 }

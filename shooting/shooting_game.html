@@ -284,7 +284,7 @@
             min-width: 160px;
             max-width: min(60vw, 280px);
         }
-
+        
         /* デフォルトでは全カード非表示。updateWeaponSelector で現在武器のみ表示にする。 */
         .weapon-display {
             display: none;
@@ -400,7 +400,7 @@
                 font-size: clamp(10px, 2vw, 14px);
                 margin-bottom: 6px;
             }
-
+            
             #bossWarning {
                 font-size: clamp(18px, 5vw, 24px);
             }
@@ -490,7 +490,7 @@
                 font-size: clamp(8px, 1.5vw, 12px);
                 margin-bottom: 4px;
             }
-
+            
             #bossWarning {
                 font-size: clamp(16px, 4vw, 20px);
             }
@@ -613,7 +613,7 @@
             crimson:  { id: 'crimson',  name: 'クリムゾン',   type: 'procedural', body: '#cc1133', wing: '#cc1133', nose: '#ffd700', engine: '#ffaa00', cockpit: '#ffd700', glow: '#ffaa00', unlock: null },
             'shadow-cruiser':  { id: 'shadow-cruiser',  name: 'シャドウ・クルーザー',     type: 'image', src: 'assets/event/event-boss-1.png', glow: '#66ddff', unlock: 'eventBossSkinShadowCruiser' },
             'shadow-overlord': { id: 'shadow-overlord', name: 'シャドウ・オーバーロード', type: 'image', src: 'assets/event/event-boss-2.png', glow: '#88aaff', unlock: 'eventBossSkinShadowOverlord' },
-            'cosmic-dragon':   { id: 'cosmic-dragon',   name: '星骸ドラゴン',             type: 'image', src: 'assets/event/doragonsukin.png', glow: '#cc66ff', unlock: 'eventBossSkinCosmicDragon' }
+            'cosmic-dragon':   { id: 'cosmic-dragon',   name: 'インペリアル・バハムート', type: 'image', src: 'assets/event/doragonsukin.png', glow: '#cc66ff', unlock: 'eventBossSkinCosmicDragon' }
         };
         const DEFAULT_PLAYER_SKIN = 'classic';
 
@@ -716,7 +716,7 @@
                     id: 'cosmic-dragon',
                     skinKey: 'eventBossSkinCosmicDragon',
                     image: 'assets/event/doragon.png',
-                    name: '星骸ドラゴン',
+                    name: 'インペリアル・バハムート',
                     flavor: '深宇宙から現れた脅威',
                     hpMultiplier: 4.5,
                     featureLevel: 9,
@@ -756,6 +756,12 @@
         let cosmicDragonPhase = 'main';
         let cosmicCoaTarget = null;
         let cosmicGuardianBosses = [];
+        /** 星核防衛: 眷属が放つシールド（プレイヤー弾を遮断） */
+        let cosmicCoreShields = [];
+        /** 星核を 30 秒以内に破壊できなければ吸収 → メイン星獣復活 */
+        let cosmicCoaDeadlineAt = null;
+        /** シールド着弾角を周回させ、コア周りに分散させる */
+        let cosmicCoaShieldAngleSlot = 0;
 
         function isCosmicDragonEventRun() {
             return isEventMode && EVENT_URL_SLUG === 'cosmic-dragon' && cosmicDragonPhase !== 'done';
@@ -783,14 +789,21 @@
             bossBullets = [];
             bossShockwaves = [];
             bossMines = [];
+            cosmicCoreShields = [];
+            cosmicCoaDeadlineAt = Date.now() + 30000;
+            cosmicCoaShieldAngleSlot = 0;
+            const coreMaxHp = 95 + COSMIC_DRAGON_STAR_RANK * 55;
             cosmicCoaTarget = {
                 x: canvas.width / 2 - 62,
                 y: 32,
                 width: 124,
-                height: 118
+                height: 118,
+                health: coreMaxHp,
+                maxHealth: coreMaxHp
             };
             cosmicGuardianBosses = [];
-            const n = COSMIC_DRAGON_STAR_RANK >= 2 ? 3 : 2;
+            const baseN = COSMIC_DRAGON_STAR_RANK >= 2 ? 3 : 2;
+            const n = Math.min(6, baseN * 2);
             for (let i = 0; i < n; i++) {
                 const w = 76;
                 const h = 62;
@@ -805,13 +818,14 @@
                     vx: (i % 2 === 0 ? 1 : -1) * 0.85 * speedMultiplier,
                     vy: 0.28 * speedMultiplier,
                     lastShot: Date.now() + 400 + i * 450,
-                    shotInterval: Math.max(1100, 1700 - COSMIC_DRAGON_STAR_RANK * 120),
+                    shotInterval: Math.max(900, 1500 - COSMIC_DRAGON_STAR_RANK * 110),
+                    nextShieldAt: Date.now() + 820 + i * 320,
                     level: 6
                 });
             }
-            bossWarningElement.textContent = '⚠️ 星核（コア）出現 — 眷属ドラゴンが守りに来た！ ⚠️';
+            bossWarningElement.textContent = '⚠️ 星核（コア）出現 — 眷属がシールドで防衛！30秒以内にコアを破壊せよ ⚠️';
             bossWarningElement.style.display = 'block';
-            setTimeout(() => { bossWarningElement.style.display = 'none'; }, 2200);
+            setTimeout(() => { bossWarningElement.style.display = 'none'; }, 2600);
         }
 
         function finishCosmicDragonEventClear() {
@@ -819,16 +833,34 @@
             cosmicDragonPhase = 'done';
             cosmicCoaTarget = null;
             cosmicGuardianBosses = [];
+            cosmicCoreShields = [];
+            cosmicCoaDeadlineAt = null;
             spawnExplosionEffect(canvas.width / 2, 120, 100);
             playSound(bossExplosionSound);
             let barrierNew = false;
-            if (COSMIC_DRAGON_STAR_RANK === 3) {
+            if (COSMIC_DRAGON_STAR_RANK >= 2) {
                 barrierNew = grantMetaWeaponUnlock('barrierUnlocked');
             }
-            weaponMessage = COSMIC_DRAGON_STAR_RANK === 3
-                ? (barrierNew ? '完全クリア！ バリアを解放しました（マイページで装備）' : '完全クリア！（バリアは既に解放済み）')
-                : 'イベントクリア！';
-            weaponMessageTimer = Math.max(weaponMessageTimer, 300);
+            let skinNewly = false;
+            if (COSMIC_DRAGON_STAR_RANK === 3) {
+                let skinsBefore = {};
+                try { skinsBefore = JSON.parse(localStorage.getItem('eventSkinsUnlocked') || '{}') || {}; } catch (e) {}
+                const b0 = EVENT_CONFIG.bosses[0];
+                const sk = b0 && b0.skinKey;
+                skinNewly = !!(sk && !skinsBefore[sk]);
+                grantEventSkin(0);
+            }
+            updateEventBanner();
+            const bits = ['イベントクリア！'];
+            if (COSMIC_DRAGON_STAR_RANK >= 2) {
+                bits.push(barrierNew ? '🛡 バリアを解放しました（マイページで装備）' : '🛡 バリアは既に解放済みです');
+            }
+            if (COSMIC_DRAGON_STAR_RANK === 3) {
+                const bn = EVENT_CONFIG.bosses[0] && EVENT_CONFIG.bosses[0].name ? EVENT_CONFIG.bosses[0].name : 'ボス';
+                bits.push(skinNewly ? `🎁 ${bn}のスキンを獲得！` : '🎁 スキンは既に獲得済みです');
+            }
+            weaponMessage = bits.filter(Boolean).join(' ／ ');
+            weaponMessageTimer = Math.max(weaponMessageTimer, 320);
             updateWeaponSelector();
             gameOver('event_clear');
         }
@@ -852,6 +884,164 @@
                 color: '#ff9966'
             });
             playSound(bossShootSound);
+        }
+
+        /** 眷属が星核手前へシールドオーブを飛ばす（着弾後は弾を無効化するバリア帯） */
+        function spawnCosmicGuardianShieldOrb(g) {
+            if (!cosmicCoaTarget) return;
+            const co = cosmicCoaTarget;
+            const tcx = co.x + co.width / 2;
+            const tcy = co.y + co.height * 0.58;
+            const gx = g.x + g.width / 2;
+            const gy = g.y + g.height;
+            // コア正面（画面下＝自機方向）に扇状で配置。角スロットを周回して一点集中を避ける。
+            const nSlots = 10;
+            cosmicCoaShieldAngleSlot = (cosmicCoaShieldAngleSlot + 1) % nSlots;
+            const u = cosmicCoaShieldAngleSlot / Math.max(1, nSlots - 1);
+            const fan = 1.25;
+            const theta = -fan + u * (2 * fan);
+            const ring = 1 + (cosmicCoaShieldAngleSlot % 3);
+            const R = 38 + ring * 12 + Math.random() * 8;
+            let tx = tcx + Math.sin(theta) * R;
+            let ty = tcy + Math.cos(theta) * R * 1.06;
+            tx = Math.max(co.x - 32, Math.min(co.x + co.width + 32, tx));
+            ty = Math.max(co.y + co.height * 0.1, Math.min(co.y + co.height + 58, ty));
+            cosmicCoreShields.push({
+                x: gx,
+                y: gy,
+                tx,
+                ty,
+                radius: 26 + Math.floor(Math.random() * 7),
+                ttlEnd: Date.now() + 12000,
+                moving: true
+            });
+        }
+
+        function tryFinishCosmicCoaIfCoreDestroyed() {
+            if (cosmicDragonPhase !== 'coa' || !cosmicCoaTarget) return;
+            if (cosmicCoaTarget.health != null && cosmicCoaTarget.health <= 0) {
+                finishCosmicDragonEventClear();
+            }
+        }
+
+        function cosmicBulletHitsShieldOrb(bullet, s) {
+            const bx = bullet.x + bullet.width / 2;
+            const by = bullet.y + bullet.height / 2;
+            const pad = Math.max(bullet.width, bullet.height) * 0.55;
+            return Math.hypot(bx - s.x, by - s.y) < s.radius + pad;
+        }
+
+        function updateCosmicCoaShieldsAndDeadline() {
+            if (cosmicDragonPhase !== 'coa') return;
+            const now = Date.now();
+            for (let si = cosmicCoreShields.length - 1; si >= 0; si--) {
+                const s = cosmicCoreShields[si];
+                if (now > s.ttlEnd) {
+                    cosmicCoreShields.splice(si, 1);
+                    continue;
+                }
+                if (s.moving) {
+                    const dx = s.tx - s.x;
+                    const dy = s.ty - s.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d < 3.2) {
+                        s.moving = false;
+                        s.x = s.tx;
+                        s.y = s.ty;
+                    } else {
+                        const sp = 2.35;
+                        s.x += (dx / d) * sp;
+                        s.y += (dy / d) * sp;
+                    }
+                }
+            }
+        }
+
+        /** 30秒切れ: 雑魚・眷属・シールドを吸収しメイン星獣を復活（雑魚出現率は通常へ） */
+        function performCosmicCoreAbsorbAndReviveBoss() {
+            if (cosmicDragonPhase !== 'coa' || !cosmicCoaTarget) return;
+            const cx = cosmicCoaTarget.x + cosmicCoaTarget.width / 2;
+            const cy = cosmicCoaTarget.y + cosmicCoaTarget.height / 2;
+            spawnExplosionEffect(cx, cy, 120);
+            playSound(bossExplosionSound);
+            for (const e of enemies) {
+                spawnExplosionEffect(e.x + e.width / 2, e.y + e.height / 2, 18);
+            }
+            for (const g of cosmicGuardianBosses) {
+                spawnExplosionEffect(g.x + g.width / 2, g.y + g.height / 2, 26);
+            }
+            enemies = [];
+            cosmicGuardianBosses = [];
+            cosmicCoreShields = [];
+            bullets = [];
+            bossBullets = [];
+            cosmicDragonPhase = 'main';
+            cosmicCoaTarget = null;
+            cosmicCoaDeadlineAt = null;
+            spawnCosmicDragonBossForRevive();
+            bossWarningElement.textContent = '⚠️ 星核がエネルギーを回収 — メイン星獣が復活！ ⚠️';
+            bossWarningElement.style.display = 'block';
+            setTimeout(() => { bossWarningElement.style.display = 'none'; }, 2800);
+        }
+
+        /** 吸収後にメイン星獣のみ再出現（スコア条件なし） */
+        function spawnCosmicDragonBossForRevive() {
+            if (!isEventMode || EVENT_URL_SLUG !== 'cosmic-dragon') return;
+            const eventBossIdx = EVENT_CONFIG.bosses.findIndex(b => b.id === 'cosmic-dragon');
+            if (eventBossIdx < 0) return;
+            const eventBossProfile = EVENT_CONFIG.bosses[eventBossIdx];
+            bossSpawned = true;
+            const baseHealth = 20 + (bossLevel - 1) * 10;
+            const hpMultiplier = eventBossProfile.hpMultiplier || 1;
+            const eventHealth = Math.round(baseHealth * hpMultiplier);
+            boss = {
+                x: canvas.width / 2 - 50,
+                y: -100,
+                width: 100 + (bossLevel - 1) * 10,
+                height: 80 + (bossLevel - 1) * 8,
+                health: eventHealth,
+                maxHealth: eventHealth,
+                speed: 1 * speedMultiplier,
+                moveSpeed: (2 + (bossLevel - 1) * 0.5) * speedMultiplier,
+                moveDirection: 1,
+                points: 50 + (bossLevel - 1) * 25,
+                lastShot: Date.now() + 400,
+                shotInterval: Math.max(500, 2000 - (bossLevel - 1) * 200) / speedMultiplier,
+                lastShockwaveAt: 0,
+                sniperLocked: false,
+                sniperTargetX: 0,
+                sniperTargetY: 0,
+                minionAbsorbStartAt: null,
+                eventBossIndex: eventBossIdx,
+                eventWeaponRewardKey: (eventBossProfile && eventBossProfile.weaponRewardKey)
+                    ? String(eventBossProfile.weaponRewardKey).trim() : '',
+                extraGimmicks: (Array.isArray(eventBossProfile.extraGimmicks)) ? [...eventBossProfile.extraGimmicks] : [],
+                eventBulletCount: (eventBossProfile && eventBossProfile.bulletCount > 0)
+                    ? eventBossProfile.bulletCount : null,
+                featuresOverride: (eventBossProfile && eventBossProfile.featuresOverride && typeof eventBossProfile.featuresOverride === 'object')
+                    ? { ...eventBossProfile.featuresOverride } : null,
+                level: bossLevel
+            };
+            const sc = 1.58;
+            boss.width = Math.round(boss.width * sc);
+            boss.height = Math.round(boss.height * sc);
+            boss.x = canvas.width / 2 - boss.width / 2;
+            boss.isCosmicDragonMain = true;
+            boss.barrierRadius = Math.round(Math.max(boss.width, boss.height) * 0.56);
+            boss.cosmicAttackPhase = 0;
+            const baseFO = boss.featuresOverride && typeof boss.featuresOverride === 'object'
+                ? { ...boss.featuresOverride } : {};
+            boss.featuresOverride = {
+                ...baseFO,
+                sniper: false,
+                minions: false,
+                mines: false,
+                shockwave: false,
+                absorption: false
+            };
+            boss.shotInterval = Math.max(boss.shotInterval, 920 / speedMultiplier);
+            bossMinions = [];
+            playCosmicDragonAppearCue();
         }
 
         applyBuiltinEventPresetFromUrl();
@@ -923,6 +1113,7 @@
                     title: active.title || EVENT_CONFIG.title,
                     subtitle: EVENT_CONFIG.subtitle,
                     endsAt: active.endsAt || EVENT_CONFIG.endsAt,
+                    _fromFirestore: true,
                     bosses: active.bosses.map(b => ({
                         id: b.id || '',
                         skinKey: b.skinKey || '',
@@ -945,8 +1136,9 @@
             }
         }
 
-        // 期間内かどうか
+        // 期間内かどうか（ビルトイン既定のみ endsAt で判定。Firestore 管理イベントは active フラグ側で公開制御）
         function isEventActive() {
+            if (EVENT_CONFIG && EVENT_CONFIG._fromFirestore) return true;
             try {
                 return Date.now() < new Date(EVENT_CONFIG.endsAt).getTime();
             } catch (e) {
@@ -1090,6 +1282,15 @@
             return changed;
         }
 
+        /** 通常モードでスコアが 3000 を超えたらシールドをメタ解放（イベント撃破と同じキー） */
+        function maybeUnlockShieldFromScore() {
+            if (isEventMode || score <= 3000) return;
+            if (!grantMetaWeaponUnlock('shieldUnlocked')) return;
+            recomputeUnlockedSlots();
+            weaponMessage = (weaponMessage ? `${weaponMessage} ／ ` : '') + '🛡 シールド解放！（マイページで装備可）';
+            weaponMessageTimer = Math.max(weaponMessageTimer || 0, 240);
+        }
+
         // オーディオ要素
         let shootSound = null;
         let bossShootSound = null;
@@ -1210,11 +1411,11 @@
                 applyCanvasSize();
             });
         }
-
+        
         // 初期キャンバスサイズ設定
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-
+        
         // リサイズ系イベント。orientationchange は値が確定するまでわずかな遅延があるため、
         // 直後と少し遅らせた 2 回適用する。
         window.addEventListener('resize', resizeCanvas);
@@ -1226,7 +1427,7 @@
         // 武器選択UIの初期化（単一カード表示版）。
         // 常に左下に「現在の武器」を 1 枚だけ表示する。カードクリック / Tab で次の武器に循環。
         function initWeaponSelector() {
-            weaponSelector.style.display = 'block';
+                weaponSelector.style.display = 'block';
             weaponSelectorToggle.style.display = 'none';
 
             // すべてのカードに「タップで次の武器へ」のハンドラを付ける。表示されているのは常に
@@ -1244,7 +1445,9 @@
             // 切替ヒントは「使用可能な武器が 2 種類以上ある時だけ」表示する。
             const hint = document.getElementById('weaponSwitchHint');
             if (hint) {
-                hint.style.display = (unlockedWeapons && unlockedWeapons.length > 1) ? 'block' : 'none';
+                const showSwitch = loadoutMode !== 'guest'
+                    && unlockedWeapons && unlockedWeapons.length > 1;
+                hint.style.display = showSwitch ? 'block' : 'none';
             }
 
             const weaponDisplays = document.querySelectorAll('.weapon-display');
@@ -1258,7 +1461,7 @@
                     return;
                 }
 
-                display.style.display = 'flex';
+                    display.style.display = 'flex';
 
                 const isUsable = unlockedWeapons.includes(slotNum);
                 display.classList.toggle('locked', !isUsable);
@@ -1283,10 +1486,10 @@
                             const pct = Math.round((cur / max) * 100);
                             const tag = weaponOverheated[slotNum] ? '【クールダウン】' : '';
                             detail.textContent = `スタミナ ${pct}% ${tag} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
-                        } else {
-                            detail.textContent = `残弾 ${weaponAmmo[slotNum] || 0}/${weaponMaxAmmo[slotNum] || 0} 消費${weapon.ammoCost} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
-                        }
                     } else {
+                            detail.textContent = `残弾 ${weaponAmmo[slotNum] || 0}/${weaponMaxAmmo[slotNum] || 0} 消費${weapon.ammoCost} / 威力${weapon.damage} / 射程${getRangeLabel(weapon.range)}${pierceText}`;
+                    }
+                } else {
                         const ctx = buildTriggerContext();
                         const progress = describeTriggerProgress(weapon.runTrigger, ctx);
                         detail.textContent = `🔒 ${progress}`;
@@ -1303,6 +1506,8 @@
         const EVENT_BOSS_SNIPER_DAMAGE_LIVES = 3;
         const DEFAULT_STARTING_LIVES = 3;
         const STARTING_LIVES = isEventMode ? EVENT_STARTING_LIVES : DEFAULT_STARTING_LIVES;
+        /** 未ログイン（ゲスト）の通常モードはこのスコア到達で終了（ログインで制限なし） */
+        const GUEST_NORMAL_MAX_SCORE = 500;
         let score = 0;
         let lives = STARTING_LIVES;
         let gameRunning = true;
@@ -1327,19 +1532,50 @@
         let weaponStamina = {};
         let weaponMaxStamina = {};
         let weaponOverheated = {};
-        // バリア（円）展開中: 自機中心の円。until まで移動不可・弾・雑魚は円と矩形の交差で処理。
+        // バリア再展開までに必要な「補給（支援物資）」取得回数
+        const BARRIER_REARM_SUPPLY_PICKUPS = 6;
+        let barrierRearmSupplyPickupsNeeded = 0;
+
+        // バリア（円）展開中: 耐久 maxAbsorbDamage に達するまで維持。射撃の瞬間のみ弾遮断をオフ。
         let playerBarrier = null;
-        // シールド: 機首前方に短い横帯を複数。移動可・帯と敵弾矩形が重なれば消去。
+        // シールド: 機首前方の横帯（UI は横線が前方へ流れる）
         let playerDirectionalShield = null;
+
+        function isPlayerBarrierDeployed() {
+            if (!playerBarrier) return false;
+            const max = playerBarrier.maxAbsorbDamage != null ? playerBarrier.maxAbsorbDamage : 3;
+            return (playerBarrier.absorbedDamage || 0) < max;
+        }
+        /** 衝撃波・機雷等「展開中なら無効化」用（射撃の一瞬も含む） */
         function isPlayerBarrierActive() {
-            return !!(playerBarrier && Date.now() < playerBarrier.until);
+            return isPlayerBarrierDeployed();
+        }
+        /** 敵弾をバリアで遮断できるか（射撃直後の脆弱窓では false） */
+        function isPlayerBarrierBlockingProjectiles() {
+            if (!isPlayerBarrierDeployed()) return false;
+            if (Date.now() < (playerBarrier.shootVulnerableUntil || 0)) return false;
+            return true;
+        }
+        function markPlayerBarrierShootVulnerability() {
+            if (!playerBarrier || !isPlayerBarrierDeployed()) return;
+            playerBarrier.shootVulnerableUntil = Date.now() + 110;
+        }
+        function registerPlayerBarrierAbsorb(amount) {
+            if (!playerBarrier || !isPlayerBarrierDeployed()) return;
+            const a = Math.max(0, Number(amount) || 0);
+            if (a <= 0) return;
+            playerBarrier.absorbedDamage = (playerBarrier.absorbedDamage || 0) + a;
+            const max = playerBarrier.maxAbsorbDamage != null ? playerBarrier.maxAbsorbDamage : 3;
+            if (playerBarrier.absorbedDamage >= max) {
+                playerBarrier = null;
+                barrierRearmSupplyPickupsNeeded = BARRIER_REARM_SUPPLY_PICKUPS;
+            }
         }
         function getPlayerBarrierRadius() {
             return (playerBarrier && typeof playerBarrier.radius === 'number') ? playerBarrier.radius : 72;
         }
-        /** 自機バリア円と軸平行矩形が交差するか */
-        function doesPlayerBarrierIntersectRect(rx, ry, rw, rh) {
-            if (!isPlayerBarrierActive()) return false;
+        /** 自機バリア円と軸平行矩形が交差するか（幾何のみ） */
+        function _playerBarrierCircleVsAABB(rx, ry, rw, rh) {
             const pcx = player.x + player.width / 2;
             const pcy = player.y + player.height / 2;
             const r = getPlayerBarrierRadius();
@@ -1347,24 +1583,35 @@
             const ny = Math.max(ry, Math.min(pcy, ry + rh));
             return Math.hypot(nx - pcx, ny - pcy) <= r;
         }
+        function doesPlayerBarrierIntersectRectForBullets(rx, ry, rw, rh) {
+            if (!isPlayerBarrierBlockingProjectiles()) return false;
+            return _playerBarrierCircleVsAABB(rx, ry, rw, rh);
+        }
+        function doesPlayerBarrierIntersectRectForGrunts(rx, ry, rw, rh) {
+            if (!isPlayerBarrierDeployed()) return false;
+            return _playerBarrierCircleVsAABB(rx, ry, rw, rh);
+        }
         function isDirectionalShieldActive() {
             return !!(playerDirectionalShield && Date.now() < playerDirectionalShield.until);
         }
-        /** シールド横帯の AABB 一覧（機首＝画面上方向） */
+        /** シールド: 前方へ流れる横線3本の帯（命中用矩形） */
         function getDirectionalShieldBandRects() {
             if (!isDirectionalShieldActive()) return [];
             const sh = playerDirectionalShield;
-            const rng = sh.range || 88;
-            const n = sh.bandCount || 5;
-            const th = sh.bandThickness || 9;
-            const hw = sh.bandHalfWidth || (player.width * 1.35);
             const pcx = player.x + player.width / 2;
             const noseY = player.y;
+            const hw = sh.bandHalfWidth || (player.width * 1.65);
+            const lineH = sh.shieldLineThickness || 5;
+            const spacing = sh.shieldLineSpacing != null ? sh.shieldLineSpacing : 12;
+            const baseOff = sh.shieldLineBaseOffset != null ? sh.shieldLineBaseOffset : 10;
+            const cycle = sh.shieldFlyCycle != null ? sh.shieldFlyCycle : 40;
+            const t0 = Date.now() - (sh.spawnedAt || Date.now());
+            const fly = (t0 * (sh.shieldFlySpeed || 0.09)) % cycle;
             const rects = [];
-            for (let i = 0; i < n; i++) {
-                const t = (i + 0.5) / n;
-                const cy = noseY - t * (rng * 0.94);
-                rects.push({ x: pcx - hw, y: cy - th / 2, width: hw * 2, height: th });
+            for (let i = 0; i < 3; i++) {
+                const dy = baseOff + i * spacing + fly;
+                const cy = noseY - dy;
+                rects.push({ x: pcx - hw, y: cy - lineH / 2, width: hw * 2, height: lineH });
             }
             return rects;
         }
@@ -1376,15 +1623,15 @@
             }
             return false;
         }
-        function isPointInsidePlayerBarrier(px, py) {
-            if (!isPlayerBarrierActive()) return false;
+        function isPointInsidePlayerBarrierForBullets(px, py) {
+            if (!isPlayerBarrierBlockingProjectiles()) return false;
             const pcx = player.x + player.width / 2;
             const pcy = player.y + player.height / 2;
             return Math.hypot(px - pcx, py - pcy) <= getPlayerBarrierRadius();
         }
         /** 点が防御内（火炎のプレイヤ中心判定など） */
         function isBossBulletBlockedByPlayerDefense(px, py) {
-            if (isPointInsidePlayerBarrier(px, py)) return true;
+            if (isPointInsidePlayerBarrierForBullets(px, py)) return true;
             if (doesDirectionalShieldIntersectRect(px, py, 1, 1)) return true;
             return false;
         }
@@ -1393,13 +1640,20 @@
             if (!bullet || bullet.width === undefined) {
                 return isBossBulletBlockedByPlayerDefense(bullet.x, bullet.y);
             }
-            if (doesPlayerBarrierIntersectRect(bullet.x, bullet.y, bullet.width, bullet.height)) return true;
+            if (doesPlayerBarrierIntersectRectForBullets(bullet.x, bullet.y, bullet.width, bullet.height)) {
+                const dmg = (typeof bullet.damage === 'number' && bullet.damage > 0) ? bullet.damage : 1;
+                registerPlayerBarrierAbsorb(dmg);
+                return true;
+            }
             if (doesDirectionalShieldIntersectRect(bullet.x, bullet.y, bullet.width, bullet.height)) return true;
             return false;
         }
         /** 雑魚・部下が防御に触れたか（消す場合はスコアなし） */
         function isGruntNeutralizedByPlayerDefense(ex, ey, ew, eh) {
-            if (doesPlayerBarrierIntersectRect(ex, ey, ew, eh)) return true;
+            if (doesPlayerBarrierIntersectRectForGrunts(ex, ey, ew, eh)) {
+                registerPlayerBarrierAbsorb(1);
+                return true;
+            }
             if (doesDirectionalShieldIntersectRect(ex, ey, ew, eh)) return true;
             return false;
         }
@@ -1458,6 +1712,10 @@
         let weaponChangeMessage = ''; // 武器変更メッセージ
         let weaponChangeTimer = 0; // 武器変更メッセージの表示時間
         let highScore = parseInt(localStorage.getItem('shootingGameHighScore')) || 0; // 最高スコア
+        /** 1 ランで Firebase へスコアを送ったら true（gameOver 連打・コンソール連打の抑止） */
+        let firebaseScoreSubmittedThisRun = false;
+        /** スコア送信に必須（Firestore ルールでプレイ開始からの経過を検証） */
+        let activePlaySessionId = null;
         
         // 難易度設定（固定）
         let gameDifficulty = localStorage.getItem('gameDifficulty') || 'normal';
@@ -1612,26 +1870,29 @@
                 }
             },
 
-            // 前方扇シールド: 短射程の横帯で敵弾を遮断（雑魚接触時はスコアなしで消去可）
+            // 前方シールド: 機首前方へ流れる横線3本（命中判定は矩形）
             shield: {
                 id: 'shield', name: 'シールド',
                 unlockProgressKey: 'shieldUnlocked',
                 isDirectionalShield: true,
-                shieldRange: 88,
-                shieldBandCount: 5,
-                shieldBandThickness: 10,
-                shieldWidthMul: 1.42,
-                shieldDurationMs: 1800,
+                shieldVisualStyle: 'flyLines',
+                shieldWidthMul: 1.92,
+                shieldLineThickness: 5,
+                shieldLineSpacing: 14,
+                shieldLineBaseOffset: 8,
+                shieldFlyCycle: 42,
+                shieldFlySpeed: 0.11,
+                shieldDurationMs: 2000,
                 ammoCost: 1, maxAmmo: 6, bulletCount: 1, spread: 0, speed: 0,
                 damage: 0, range: 0, pierce: 0, width: 0, height: 0, color: '#88ddff',
-                runTrigger: { type: 'progressMeta', key: 'shieldUnlocked', label: '特定イベントボス撃破で装備解放' }
+                runTrigger: { type: 'progressMeta', key: 'shieldUnlocked', label: 'スコア3000超またはイベント撃破で装備解放' }
             },
-            // 円形バリア（1秒）: 展開中は移動不可。メタ解放はイベントの weaponRewardKey 等で付与。
+            // 円形バリア: 合計ダメージを吸収し切るまで維持。射撃の瞬間のみ弾を通す。
             barrier: {
                 id: 'barrier', name: 'バリア',
                 unlockProgressKey: 'barrierUnlocked',
                 isBarrierWeapon: true,
-                barrierDurationMs: 1000,
+                barrierMaxAbsorbDamage: 3,
                 barrierRadius: 72,
                 ammoCost: 1, maxAmmo: 5, bulletCount: 1, spread: 0, speed: 0,
                 damage: 0, range: 0, pierce: 0, width: 0, height: 0, color: '#66ccff',
@@ -1777,14 +2038,6 @@
 
         function loadWeaponLoadout() {
             loadoutMode = detectLoadoutMode();
-            // 旧仕様: 「シールド」解放＝円バリアのみ → 円は「バリア」キーへ移行
-            try {
-                const wp = JSON.parse(localStorage.getItem('weaponProgress') || '{}') || {};
-                if (wp.shieldUnlocked && !wp.barrierUnlocked) {
-                    wp.barrierUnlocked = true;
-                    localStorage.setItem('weaponProgress', JSON.stringify(wp));
-                }
-            } catch (e) { /* ignore */ }
 
             if (loadoutMode === 'login') {
                 try {
@@ -1806,6 +2059,7 @@
                 enemyKillCount: 0,
                 livesLost: 0
             };
+            barrierRearmSupplyPickupsNeeded = 0;
 
             equippedWeapons = {};
             weaponMaxAmmo = {};
@@ -1828,6 +2082,22 @@
             });
             currentWeapon = 1;
             recomputeUnlockedSlots();
+            applyCosmicDragonDifficultyBonuses();
+        }
+
+        /** 星獣襲来: 中級以上で通常弾の弾薬上限を増やす（上級はさらに多め） */
+        function applyCosmicDragonDifficultyBonuses() {
+            if (!isEventMode || EVENT_URL_SLUG !== 'cosmic-dragon') return;
+            const rank = COSMIC_DRAGON_STAR_RANK;
+            if (rank < 2) return;
+            const bonus = rank >= 3 ? 70 : 40;
+            Object.keys(equippedWeapons).forEach((slotKey) => {
+                const slot = parseInt(slotKey, 10);
+                const w = equippedWeapons[slot];
+                if (!w || w.id !== 'normal') return;
+                weaponMaxAmmo[slot] = (weaponMaxAmmo[slot] || 0) + bonus;
+                weaponAmmo[slot] = (weaponAmmo[slot] || 0) + bonus;
+            });
         }
 
         function buildTriggerContext() {
@@ -1980,9 +2250,22 @@
             explosionEffects.push({ x, y, radius, life: 24, maxLife: 24 });
         }
 
+        function explosionOptsFromPlayerBullet(bullet) {
+            if (bullet && bullet.launcherClearsAllCosmicShields) return { stripAllCosmicShields: true };
+            return undefined;
+        }
+
         // 範囲爆発: 中心(x,y)から radius 内の敵 / ボス に damage を与える（ランチャー / 機雷）。
-        // 視覚エフェクトと効果音もここで一括発火する。
-        function applyExplosion(x, y, radius, damage) {
+        // opts.stripAllCosmicShields: 星核防衛中、ランチャー起爆時に小型ドラゴンのバリアを全破壊。
+        function applyExplosion(x, y, radius, damage, opts) {
+            opts = opts || {};
+            if (opts.stripAllCosmicShields && cosmicDragonPhase === 'coa' && cosmicCoreShields.length > 0) {
+                for (let si = cosmicCoreShields.length - 1; si >= 0; si--) {
+                    const s = cosmicCoreShields[si];
+                    spawnExplosionEffect(s.x, s.y, 26);
+                }
+                cosmicCoreShields = [];
+            }
             spawnExplosionEffect(x, y, radius);
             playSound(explosionSound);
             const radiusSq = radius * radius;
@@ -2025,9 +2308,27 @@
                     }
                 }
             }
-            if (cosmicDragonPhase === 'coa' && cosmicGuardianBosses.length === 0 && cosmicCoaTarget) {
-                finishCosmicDragonEventClear();
+            for (let si = cosmicCoreShields.length - 1; si >= 0; si--) {
+                const s = cosmicCoreShields[si];
+                const dx = s.x - x;
+                const dy = s.y - y;
+                if (dx * dx + dy * dy <= radiusSq + s.radius * s.radius * 0.25) {
+                    cosmicCoreShields.splice(si, 1);
+                    spawnExplosionEffect(s.x, s.y, 22);
+                }
             }
+            if (cosmicDragonPhase === 'coa' && cosmicCoaTarget && cosmicCoaTarget.health != null) {
+                const c = cosmicCoaTarget;
+                const crx = c.x + c.width / 2;
+                const cry = c.y + c.height / 2;
+                const dcx = crx - x;
+                const dcy = cry - y;
+                if (dcx * dcx + dcy * dcy <= radiusSq) {
+                    c.health -= damage;
+                    if (c.health < 0) c.health = 0;
+                }
+            }
+            tryFinishCosmicCoaIfCoreDestroyed();
             recomputeUnlockedSlots();
         }
 
@@ -2047,7 +2348,7 @@
                 if (now < sw.chargeUntil) continue;     // 予兆中は拡張しない
                 sw.radius += sw.expandSpeed;
                 if (!sw.hit) {
-                    if (!isPlayerBarrierActive()) {
+                    if (!isPlayerBarrierDeployed()) {
                         const dist = Math.hypot(pcx - sw.cx, pcy - sw.cy);
                         if (Math.abs(dist - sw.radius) <= sw.thickness / 2 + playerRadius) {
                             sw.hit = true;
@@ -2082,7 +2383,7 @@
             const pcx = player.x + player.width / 2;
             const pcy = player.y + player.height / 2;
             const dist = Math.hypot(pcx - cx, pcy - cy);
-            if (dist <= BOSS_MINE_EXPLODE_RADIUS && !isPlayerBarrierActive()) {
+            if (dist <= BOSS_MINE_EXPLODE_RADIUS && !isPlayerBarrierDeployed()) {
                 runTookDamage = true;
                 lives -= BOSS_MINE_EXPLODE_DAMAGE_LIVES;
                 if (lives < 0) lives = 0;
@@ -2500,6 +2801,7 @@
         }
 
         function setWeapon(weaponNum) {
+            if (loadoutMode === 'guest') return;
             const num = parseInt(weaponNum, 10);
             if (!unlockedWeapons.includes(num) || !equippedWeapons[num]) return;
             if (currentWeapon === num) return;
@@ -2513,6 +2815,7 @@
         }
 
         function cycleWeapon(direction) {
+            if (loadoutMode === 'guest') return;
             if (unlockedWeapons.length <= 1) return;
             const idx = unlockedWeapons.indexOf(currentWeapon);
             const start = idx >= 0 ? idx : 0;
@@ -2534,6 +2837,11 @@
             height: Math.max(40, Math.min(50, canvas.height / 15)),
             speed: 5
         };
+        /** 火炎先読み用: 直前の update 終了時の自機座標（タッチのフレーム間移動を含む） */
+        let playerFlamePrevFrameX = null;
+        let playerFlamePrevFrameY = null;
+        let playerFlameLeadDx = 0;
+        let playerFlameLeadDy = 0;
 
         // 弾丸配列
         let bullets = [];
@@ -2688,7 +2996,7 @@
             touchStartY = touch.clientY;
             touchMoved = false;
             lastTouchTime = Date.now();
-
+            
             // ドラッグ開始
             isDragging = false;
             dragStartX = touch.clientX;
@@ -2701,38 +3009,37 @@
             e.preventDefault();
             const touch = e.touches[0];
             if (!touch) return;
-            if (playerBarrier && playerBarrier.until > Date.now()) return;
             touchEndX = touch.clientX;
             touchEndY = touch.clientY;
             touchMoved = true;
-
+            
             // ドラッグ移動
-            const deltaX = touch.clientX - dragStartX;
-            const deltaY = touch.clientY - dragStartY;
-            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-            if (distance > 10) { // 最小ドラッグ距離
-                isDragging = true;
-
-                // プレイヤーの位置をリアルタイムで更新
-                const newX = playerStartX + deltaX;
-                const newY = playerStartY + deltaY;
-
-                // 画面境界内に制限
-                player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
+                const deltaX = touch.clientX - dragStartX;
+                const deltaY = touch.clientY - dragStartY;
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                
+                if (distance > 10) { // 最小ドラッグ距離
+                    isDragging = true;
+                    
+                    // プレイヤーの位置をリアルタイムで更新
+                    const newX = playerStartX + deltaX;
+                    const newY = playerStartY + deltaY;
+                    
+                    // 画面境界内に制限
+                    player.x = Math.max(0, Math.min(canvas.width - player.width, newX));
                 player.y = Math.max(canvas.height * PLAYER_MAX_UP_RATIO, Math.min(canvas.height - player.height, newY));
-            }
+                }
         }, { passive: false });
 
         canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
             const touchDuration = Date.now() - lastTouchTime;
-
+            
             if (!isDragging && touchDuration < 200) {
                 // 短時間のタップで攻撃
                 shoot();
             }
-
+            
             // ドラッグ終了
             isDragging = false;
         }, { passive: false });
@@ -2778,7 +3085,7 @@
                 return;
             }
 
-            // シールド（前方横帯）: 展開中も移動可。帯と重なるボス弾を消去。
+            // シールド（前方へ流れる横線3本）
             if (weapon.isDirectionalShield) {
                 const now = Date.now();
                 if (playerDirectionalShield && playerDirectionalShield.until > now) {
@@ -2786,13 +3093,16 @@
                     weaponChangeTimer = 24;
                     return;
                 }
-                const dur = weapon.shieldDurationMs || 1800;
+                const dur = weapon.shieldDurationMs || 2000;
                 playerDirectionalShield = {
                     until: now + dur,
-                    range: weapon.shieldRange || 88,
-                    bandCount: weapon.shieldBandCount || 5,
-                    bandThickness: weapon.shieldBandThickness || 9,
-                    bandHalfWidth: player.width * (weapon.shieldWidthMul || 1.38)
+                    spawnedAt: now,
+                    bandHalfWidth: player.width * (weapon.shieldWidthMul || 1.92),
+                    shieldLineThickness: weapon.shieldLineThickness,
+                    shieldLineSpacing: weapon.shieldLineSpacing,
+                    shieldLineBaseOffset: weapon.shieldLineBaseOffset,
+                    shieldFlyCycle: weapon.shieldFlyCycle,
+                    shieldFlySpeed: weapon.shieldFlySpeed
                 };
                 playSound(shootSound);
                 weaponAmmo[cw] -= weapon.ammoCost;
@@ -2801,19 +3111,26 @@
                 return;
             }
 
-            // バリア: 円バリアを張り、期間中は移動不可（弾は出さない）
+            // バリア: 耐久を食い切るまで維持。自機は移動可。敵弾遮断は射撃の一瞬だけオフ。
             if (weapon.isBarrierWeapon) {
-                const now = Date.now();
-                if (playerBarrier && playerBarrier.until > now) {
-                    weaponChangeMessage = `${weapon.name}: 展開中`;
+                if (barrierRearmSupplyPickupsNeeded > 0) {
+                    weaponChangeMessage = `バリア再展開まで補給あと${barrierRearmSupplyPickupsNeeded}回`;
+                    weaponChangeTimer = 28;
+                    return;
+                }
+                if (isPlayerBarrierDeployed()) {
+                    const max = playerBarrier.maxAbsorbDamage != null ? playerBarrier.maxAbsorbDamage : 3;
+                    const left = Math.max(0, max - (playerBarrier.absorbedDamage || 0));
+                    weaponChangeMessage = `${weapon.name}: 展開中（耐久 ${left}）`;
                     weaponChangeTimer = 24;
                     return;
                 }
-                const dur = weapon.barrierDurationMs || 1000;
+                if ((weaponAmmo[cw] || 0) < weapon.ammoCost) return;
                 playerBarrier = {
-                    until: now + dur,
+                    absorbedDamage: 0,
+                    maxAbsorbDamage: weapon.barrierMaxAbsorbDamage != null ? weapon.barrierMaxAbsorbDamage : 3,
                     radius: weapon.barrierRadius || 72,
-                    durationMs: dur
+                    shootVulnerableUntil: 0
                 };
                 playSound(shootSound);
                 weaponAmmo[cw] -= weapon.ammoCost;
@@ -2821,8 +3138,9 @@
                 updateWeaponSelector();
                 return;
             }
-
+            
             // 武器に応じた弾丸を発射
+            markPlayerBarrierShootVulnerability();
             for (let i = 0; i < weapon.bulletCount; i++) {
                 const spread = (i - (weapon.bulletCount - 1) / 2) * weapon.spread;
                 const speedX = Math.sin(spread) * weapon.speed * 0.3;
@@ -2851,7 +3169,8 @@
                     blocksBossBullets: !!weapon.blocksBossBullets,
                     lifeFrames: (typeof weapon.lifeFrames === 'number') ? weapon.lifeFrames : null,
                     bulletStyle: weapon.bulletStyle || 'rect',
-                    spawnedAt: Date.now()
+                    spawnedAt: Date.now(),
+                    launcherClearsAllCosmicShields: weapon.id === 'launcher'
                 });
             }
 
@@ -3105,43 +3424,126 @@
             playSound(bladeSound || bossShootSound);
         }
 
-        /** 星骸ドラゴン専用: 火炎放射（画面下端まで届く縦長の帯。左右に避けられる） */
-        function fireBossDragonFlameBreath() {
+        const COSMIC_FLAME_TELEGRAPH_MS = 1000;
+
+        /** 星獣火炎: 初級1本・中級2本・上級3本（starRank と同時本数） */
+        function getCosmicDragonFlameSimultaneousColumnCount() {
+            const r = COSMIC_DRAGON_STAR_RANK;
+            if (Number.isFinite(r) && r >= 1 && r <= 3) return r;
+            return 1;
+        }
+
+        /** 星骸ドラゴン: 通常の扇状弾（他ボスと同系統） */
+        function fireBossDragonNormalFan() {
             if (!boss) return;
-            const flameDurationMs = 840;
-            markCosmicDragonBarrierDownForMs(flameDurationMs + 140);
-            const cx = boss.x + boss.width / 2;
+            const bulletCount = (isEventMode && boss.eventBulletCount && boss.eventBulletCount > 0)
+                ? boss.eventBulletCount
+                : Math.min(3 + Math.floor(bossLevel / 2), 6);
+            for (let i = 0; i < bulletCount; i++) {
+                const angle = (i - (bulletCount - 1) / 2) * 0.5;
+                const speedX = Math.sin(angle) * 3;
+                const speedY = Math.cos(angle) * 4;
+                bossBullets.push({
+                    x: boss.x + boss.width / 2 - 3,
+                    y: boss.y + boss.height,
+                    width: 6 + (bossLevel - 1) * 2,
+                    height: 15 + (bossLevel - 1) * 3,
+                    speedX,
+                    speedY,
+                    color: bossLevel > 2 ? '#ff00ff' : '#ff0000'
+                });
+            }
+            playSound(bossShootSound);
+        }
+
+        function cosmicDragonFlameSequenceActive() {
+            return bossBullets.some(b => b.isFlameTelegraph || b.isFlameBreath);
+        }
+
+        /** 実移動（フレーム間＋キー）→キー入力→ボスとの位置関係の順で「進行方向」単位ベクトル */
+        function getPlayerFlameLeadDirectionUnit() {
+            const mlen = Math.hypot(playerFlameLeadDx, playerFlameLeadDy);
+            if (mlen > 0.35) {
+                return { ux: playerFlameLeadDx / mlen, uy: playerFlameLeadDy / mlen };
+            }
+            let dx = 0, dy = 0;
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) dx -= 1;
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += 1;
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) dy -= 1;
+            if (keys['ArrowDown'] || keys['s'] || keys['S']) dy += 1;
+            const len = Math.hypot(dx, dy);
+            if (len > 1e-6) {
+                return { ux: dx / len, uy: dy / len };
+            }
+            if (!boss) return { ux: 0, uy: 1 };
+            const bcx = boss.x + boss.width / 2;
+            const pcx = player.x + player.width / 2;
+            const sig = Math.sign(pcx - bcx);
+            return { ux: sig === 0 ? 1 : sig, uy: 0 };
+        }
+
+        /** 火炎: まず点線で1秒予告 → その後ヒット帯（難易度で同時本数が増える） */
+        function fireBossDragonFlameTelegraphThenBreath() {
+            if (!boss) return;
             const cy = boss.y + boss.height;
             const pcx = player.x + player.width / 2;
             const halfW = 40;
-            const colX = Math.max(halfW + 4, Math.min(canvas.width - halfW - 4, pcx));
-            const frames = Math.ceil(flameDurationMs / (1000 / 60));
-            bossBullets.push({
-                isFlameBreath: true,
-                flameColumnCenterX: colX,
-                flameColumnHalfWidth: halfW,
-                flameCy: cy,
-                flameDurationMs,
-                flameStart: Date.now(),
-                x: colX - 1,
-                y: cy - 1,
-                width: 2,
-                height: 2,
-                speedX: 0,
-                speedY: 0,
-                color: '#ff5522',
-                lifeFrames: frames
-            });
+            const columnCount = getCosmicDragonFlameSimultaneousColumnCount();
+            const { ux, uy } = getPlayerFlameLeadDirectionUnit();
+            // 進行方向の先にリードし、複数本は「進行方向に沿った間隔」＋垂直成分は横オフセットで逃げ道を挟む
+            const lead = 56;
+            const strideAlong = 82;
+            const strideLat = 76;
+            const mid = (columnCount - 1) / 2;
+            const teleFrames = Math.ceil(COSMIC_FLAME_TELEGRAPH_MS / (1000 / 60)) + 2;
+            const telegraphEndAt = Date.now() + COSMIC_FLAME_TELEGRAPH_MS;
+            for (let i = 0; i < columnCount; i++) {
+                const t = i - mid;
+                const along = lead + t * strideAlong;
+                const lat = t * strideLat;
+                const colX = Math.max(halfW + 4, Math.min(canvas.width - halfW - 4,
+                    pcx + ux * along + (-uy) * lat));
+                bossBullets.push({
+                    isFlameTelegraph: true,
+                    flameColumnCenterX: colX,
+                    flameColumnHalfWidth: halfW,
+                    flameCy: cy,
+                    telegraphEndAt,
+                    x: -5000,
+                    y: -5000,
+                    width: 1,
+                    height: 1,
+                    speedX: 0,
+                    speedY: 0,
+                    color: '#ffaa66',
+                    lifeFrames: teleFrames
+                });
+            }
+        }
+
+        /** 予告終了後に呼ばれる本番火炎（バリア解除もここから） */
+        function activateBossDragonFlameBreathFromTelegraph(bullet) {
+            if (!bullet.isFlameTelegraph) return;
+            const flameDurationMs = 840;
+            markCosmicDragonBarrierDownForMs(flameDurationMs + 140);
+            bullet.isFlameTelegraph = false;
+            bullet.isFlameBreath = true;
+            bullet.flameStart = Date.now();
+            bullet.flameDurationMs = flameDurationMs;
+            bullet.lifeFrames = Math.ceil(flameDurationMs / (1000 / 60));
             playSound(bossShootSound);
         }
 
         function bossShootCosmicDragon() {
             if (!boss) return;
+            const p = (boss.cosmicAttackPhase || 0) % 3;
             boss.cosmicAttackPhase = (boss.cosmicAttackPhase || 0) + 1;
-            if (boss.cosmicAttackPhase % 2 === 1) {
+            if (p === 0) {
+                fireBossDragonNormalFan();
+            } else if (p === 1) {
                 fireBossDragonLongBlade();
             } else {
-                fireBossDragonFlameBreath();
+                fireBossDragonFlameTelegraphThenBreath();
             }
         }
 
@@ -3221,7 +3623,7 @@
                 const baseHealth = 20 + (bossLevel - 1) * 10;
                 const hpMultiplier = (isEventMode && eventBossProfile) ? (eventBossProfile.hpMultiplier || 1) : 1;
                 const eventHealth = Math.round(baseHealth * hpMultiplier);
-
+                
                 boss = {
                     x: canvas.width / 2 - 50,
                     y: -100,
@@ -3290,7 +3692,7 @@
                 if (hasBossFeature(boss, 'minions') && !boss.isCosmicDragonMain) {
                     spawnBossMinions(bossLevel);
                 }
-
+                
                 // ボス警告表示（レベルに応じてメッセージ変更）
                 const levelText = bossLevel > 1 ? `レベル${bossLevel} ` : '';
                 if (isEventMode && boss.eventBossIndex >= 0) {
@@ -3302,7 +3704,7 @@
                         playSound(eventBossSound);
                     }
                 } else {
-                    bossWarningElement.textContent = `⚠️ ${levelText}ボス出現！ ⚠️`;
+                bossWarningElement.textContent = `⚠️ ${levelText}ボス出現！ ⚠️`;
                 }
                 bossWarningElement.style.display = 'block';
                 setTimeout(() => {
@@ -3342,12 +3744,13 @@
 
         // 敵生成
         function spawnEnemy() {
-            // スコアが100の時と500の倍数のボス以外は通常の敵も生成
-            if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみ通常の敵を生成しない
+            // メインゲーム: ボス出現スコア帯（100 / 500n）では雑魚停止。星獣襲来イベント中は通常どおり出す。
+            if (!isCosmicDragonEventRun() && boss && (score === 100 || score % 500 === 0)) return;
             
             const enemyTypes = getEnemyTypes();
+            const coaGruntMul = (cosmicDragonPhase === 'coa') ? 2 : 1;
             enemyTypes.forEach(type => {
-                if (Math.random() < type.spawnRate) {
+                if (Math.random() < type.spawnRate * coaGruntMul) {
                     const e = {
                         x: Math.random() * (canvas.width - type.size),
                         y: -type.size,
@@ -3368,8 +3771,7 @@
 
         // 支援物資生成
         function spawnSupplyUnits() {
-            // スコアが100の時と500の倍数のボス以外は支援物資も生成
-            if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみ支援物資を生成しない
+            if (!isCosmicDragonEventRun() && boss && (score === 100 || score % 500 === 0)) return;
             
             // ランダムで支援物資を生成（難易度に応じて確率調整）
             const spawnRate = 0.003 * speedMultiplier; // 難易度に応じて生成確率を調整
@@ -3387,8 +3789,7 @@
         
         // ライフ回復アイテム生成
         function spawnHealthItems() {
-            // スコアが100の時と500の倍数のボス以外はライフ回復アイテムも生成
-            if (boss && (score === 100 || score % 500 === 0)) return; // 特定のボス出現中のみライフ回復アイテムを生成しない
+            if (!isCosmicDragonEventRun() && boss && (score === 100 || score % 500 === 0)) return;
             
             // 低確率でライフ回復アイテムを生成（弾薬補給より低い確率、難易度に応じて確率調整）。
             //   1 ランあたり期待 2 個前後になるよう調整（補給の 1/10 程度）。
@@ -3401,6 +3802,36 @@
                     height: 30,
                     color: '#ff69b4', // ピンク色
                     isCollected: false
+                });
+            }
+        }
+
+        /** メイン星獣: 中級以上で口から小型ドラゴンを放つ（敵配列に追加） */
+        function spawnCosmicMiniDragonSwarm() {
+            if (!boss || !boss.isCosmicDragonMain) return;
+            const existing = enemies.filter(e => e.isCosmicMiniSummon).length;
+            if (existing >= 14) return;
+            const rank = COSMIC_DRAGON_STAR_RANK;
+            const count = rank >= 3 ? 3 : 2;
+            const sz = 22 + Math.floor(Math.random() * 6);
+            const hp = rank >= 3 ? 4 : 3;
+            for (let i = 0; i < count; i++) {
+                const x = boss.x + boss.width * (0.12 + 0.76 * Math.random()) - sz / 2;
+                const y = boss.y + boss.height - 8 + Math.random() * 20;
+                enemies.push({
+                    x: Math.max(4, Math.min(canvas.width - sz - 4, x)),
+                    y,
+                    width: sz,
+                    height: sz,
+                    speed: 1.15 + Math.random() * 0.75,
+                    color: '#cc5533',
+                    points: 2,
+                    health: hp,
+                    maxHealth: hp,
+                    enemyType: 'cosmic_whelp',
+                    useMinidragonArt: true,
+                    isCosmicMiniSummon: true,
+                    slowedUntil: null
                 });
             }
         }
@@ -3427,7 +3858,7 @@
                 ctx.shadowColor = equippedWeapons[currentWeapon].color;
                 ctx.shadowBlur = 15;
             }
-
+            
             if (skin.type === 'image') {
                 // 画像スキン: 上下反転（ボス画像なので機首を上向きにする）して描画
                 const img = ensurePlayerSkinImage(skin);
@@ -3452,7 +3883,7 @@
         }
 
         function drawPlayerBarrier() {
-            if (!isPlayerBarrierActive()) return;
+            if (!isPlayerBarrierDeployed()) return;
             const pcx = player.x + player.width / 2;
             const pcy = player.y + player.height / 2;
             const r = getPlayerBarrierRadius();
@@ -3474,15 +3905,15 @@
         function drawPlayerDirectionalShield() {
             if (!isDirectionalShieldActive()) return;
             const bands = getDirectionalShieldBandRects();
-            const t = 0.55 + 0.45 * Math.sin(Date.now() * 0.02);
+            const t = 0.55 + 0.45 * Math.sin(Date.now() * 0.022);
             ctx.save();
             bands.forEach(b => {
-                ctx.fillStyle = `rgba(120, 220, 255, ${0.2 * t})`;
+                ctx.fillStyle = `rgba(140, 235, 255, ${0.55 * t})`;
                 ctx.fillRect(b.x, b.y, b.width, b.height);
-                ctx.strokeStyle = `rgba(200, 250, 255, ${0.75 * t})`;
-                ctx.lineWidth = 2;
-                ctx.shadowColor = '#66ccff';
-                ctx.shadowBlur = 10;
+                ctx.strokeStyle = `rgba(230, 255, 255, ${0.9 * t})`;
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = '#66ddff';
+                ctx.shadowBlur = 8;
                 ctx.strokeRect(b.x, b.y, b.width, b.height);
                 ctx.shadowBlur = 0;
             });
@@ -3544,7 +3975,7 @@
             ctx.arc(cx, arcCenterY, radius, startAngle + 0.04, endAngle - 0.04);
             ctx.stroke();
             // 両端の閃光
-            ctx.shadowBlur = 0;
+                ctx.shadowBlur = 0;
             ctx.fillStyle = '#ffffff';
             const sx = cx + Math.cos(startAngle) * radius;
             const sy = arcCenterY + Math.sin(startAngle) * radius;
@@ -3605,6 +4036,36 @@
         function drawBossBullets() {
             const now = Date.now();
             bossBullets.forEach(bullet => {
+                if (bullet.isFlameTelegraph) {
+                    const xL = bullet.flameColumnCenterX - bullet.flameColumnHalfWidth;
+                    const xR = bullet.flameColumnCenterX + bullet.flameColumnHalfWidth;
+                    const y0 = bullet.flameCy;
+                    const y1 = canvas.height;
+                    const cxm = bullet.flameColumnCenterX;
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255, 220, 140, 0.92)';
+                    ctx.shadowColor = 'rgba(255, 100, 40, 0.55)';
+                    ctx.shadowBlur = 10;
+                    ctx.lineWidth = 2.4;
+                    ctx.setLineDash([10, 12]);
+                    ctx.lineDashOffset = -(now * 0.12) % 22;
+                    ctx.beginPath();
+                    ctx.moveTo(xL, y0);
+                    ctx.lineTo(xL, y1);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(xR, y0);
+                    ctx.lineTo(xR, y1);
+                    ctx.stroke();
+                    ctx.globalAlpha = 0.55;
+                    ctx.lineWidth = 1.6;
+                    ctx.beginPath();
+                    ctx.moveTo(cxm, y0);
+                    ctx.lineTo(cxm, y1);
+                    ctx.stroke();
+                    ctx.restore();
+                    return;
+                }
                 if (bullet.isFlameBreath) {
                     const elapsed = now - bullet.flameStart;
                     const t = Math.min(1, elapsed / bullet.flameDurationMs);
@@ -3732,11 +4193,11 @@
                     ctx.fill();
                     ctx.restore();
                 } else {
-                    ctx.fillStyle = bullet.color;
-                    ctx.shadowColor = bullet.color;
-                    ctx.shadowBlur = 8;
-                    ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
-                    ctx.shadowBlur = 0;
+                ctx.fillStyle = bullet.color;
+                ctx.shadowColor = bullet.color;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                ctx.shadowBlur = 0;
                 }
             });
         }
@@ -3748,7 +4209,7 @@
                 const y = enemy.y;
                 const w = enemy.width;
                 const h = enemy.height;
-
+                
                 if (enemy.useMinidragonArt) {
                     const img = getMinidragonEnemyImage();
                     if (img && img.complete && img.naturalWidth > 0) {
@@ -3882,7 +4343,7 @@
                 ctx.lineTo(tcx, tcy);
                 ctx.stroke();
                 // ターゲットを囲む小さなマーカー
-                ctx.shadowBlur = 0;
+            ctx.shadowBlur = 0;
                 ctx.globalAlpha = 0.7;
                 ctx.strokeStyle = '#ff66ff';
                 ctx.lineWidth = 1.5;
@@ -3958,41 +4419,51 @@
             if (isEventMode) {
                 timeElement.textContent = `時間: ∞`;
             } else {
-                const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
-                const remainingTime = Math.max(0, gameTime - elapsed);
-                timeElement.textContent = `残り時間: ${remainingTime}秒`;
+            const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+            const remainingTime = Math.max(0, gameTime - elapsed);
+            timeElement.textContent = `残り時間: ${remainingTime}秒`;
 
-                // 時間切れ
-                if (remainingTime <= 0) {
-                    gameOver('timeout');
-                    return;
-                }
+            // 時間切れ
+            if (remainingTime <= 0) {
+                gameOver('timeout');
+                return;
+            }
 
-                // スコアによる時間ボーナス
-                if (score > lastTimeBonusScore + 100) {
-                    gameTime += 30; // 30秒追加
-                    lastTimeBonusScore = score;
-                    timeBonusMessage = '+30秒ボーナス！';
-                    timeBonusTimer = 120; // 2秒間表示
-                    timeElement.textContent = `残り時間: ${gameTime}秒`;
+            // スコアによる時間ボーナス
+            if (score > lastTimeBonusScore + 100) {
+                gameTime += 30; // 30秒追加
+                lastTimeBonusScore = score;
+                timeBonusMessage = '+30秒ボーナス！';
+                timeBonusTimer = 120; // 2秒間表示
+                timeElement.textContent = `残り時間: ${gameTime}秒`;
                 }
             }
 
-            // プレイヤー移動（矢印キー + WASD）。バリア展開中のみ移動不可。
-            if (!isPlayerBarrierActive()) {
-                if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
-                    player.x -= player.speed;
-                }
-                if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
-                    player.x += player.speed;
-                }
-                if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > canvas.height * PLAYER_MAX_UP_RATIO) {
-                    player.y -= player.speed;
-                }
-                if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < canvas.height - player.height) {
-                    player.y += player.speed;
-                }
+            // 未ログインの通常モードはスコア上限で終了（ログインで制限なし）
+            if (!isEventMode && loadoutMode === 'guest' && score >= GUEST_NORMAL_MAX_SCORE) {
+                gameOver('guest_score_cap');
+                return;
             }
+
+            maybeUnlockShieldFromScore();
+
+            // プレイヤー移動（矢印キー + WASD）
+            if ((keys['ArrowLeft'] || keys['a'] || keys['A']) && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if ((keys['ArrowRight'] || keys['d'] || keys['D']) && player.x < canvas.width - player.width) {
+                player.x += player.speed;
+            }
+            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && player.y > canvas.height * PLAYER_MAX_UP_RATIO) {
+                player.y -= player.speed;
+            }
+            if ((keys['ArrowDown'] || keys['s'] || keys['S']) && player.y < canvas.height - player.height) {
+                player.y += player.speed;
+            }
+            const pfx = playerFlamePrevFrameX;
+            const pfy = playerFlamePrevFrameY;
+            playerFlameLeadDx = player.x - (pfx != null ? pfx : player.x);
+            playerFlameLeadDy = player.y - (pfy != null ? pfy : player.y);
 
             // 随伴機の自動射撃
             updateDrones();
@@ -4010,9 +4481,9 @@
                         // 自爆 = 起点で爆発（爆発プロパティを持つもののみ）
                         if (bullet.explodeOnImpact) {
                             applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
-                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage,
+                                           explosionOptsFromPlayerBullet(bullet));
                         }
-                        return false;
                     }
                 }
 
@@ -4074,6 +4545,19 @@
 
             // ボス弾丸更新
             bossBullets = bossBullets.filter(bullet => {
+                if (bullet.isFlameTelegraph) {
+                    if (boss && boss.isCosmicDragonMain) {
+                        bullet.flameCy = boss.y + boss.height;
+                    }
+                    const done = Date.now() >= bullet.telegraphEndAt
+                        || (bullet.lifeFrames !== undefined && bullet.lifeFrames <= 0);
+                    if (done) {
+                        activateBossDragonFlameBreathFromTelegraph(bullet);
+                    } else if (bullet.lifeFrames !== undefined) {
+                        bullet.lifeFrames -= 1;
+                    }
+                    if (bullet.isFlameTelegraph) return true;
+                }
                 if (bullet.isFlameBreath) {
                     if (bullet.lifeFrames !== undefined) {
                         bullet.lifeFrames -= 1;
@@ -4091,7 +4575,13 @@
                     if (overlap) {
                         const pcx = (pl + pr) * 0.5;
                         const pcy = (pt + pb) * 0.5;
-                        if (!isBossBulletBlockedByPlayerDefense(pcx, pcy)) {
+                        if (isBossBulletBlockedByPlayerDefense(pcx, pcy)) {
+                            const wall = Date.now();
+                            if (wall - (bullet._lastFlameBarrierAbsorbWall || 0) > 280) {
+                                bullet._lastFlameBarrierAbsorbWall = wall;
+                                registerPlayerBarrierAbsorb(1);
+                            }
+                        } else {
                             const wall = Date.now();
                             if (wall - (bullet._lastFlameDmgWall || 0) > 280) {
                                 bullet._lastFlameDmgWall = wall;
@@ -4117,7 +4607,7 @@
                     steerBulletTowards(bullet, player, bullet.homingForce);
                 }
                 // 重力オーブ: 半径内のプレイヤーを引き寄せる（バリア中は引き寄せない）
-                if (!isPlayerBarrierActive()
+                if (!isPlayerBarrierDeployed()
                     && bullet.isGravity && bullet.pullRadius > 0 && bullet.pullForce > 0) {
                     const cx = bullet.x + bullet.width / 2;
                     const cy = bullet.y + bullet.height / 2;
@@ -4184,9 +4674,28 @@
                         boss.lastShot = now;
                     }
                 } else {
-                    if (now - boss.lastShot > boss.shotInterval) {
-                        bossShoot();
-                        boss.lastShot = now;
+                    const holdCosmicFlame = boss.isCosmicDragonMain && cosmicDragonFlameSequenceActive();
+                    if (!holdCosmicFlame && now - boss.lastShot > boss.shotInterval) {
+                    bossShoot();
+                    boss.lastShot = now;
+                    }
+                }
+
+                // メイン星獣: 中級から小型ドラゴンを定期召喚、上級はボスが定期的にHP回復
+                if (boss.isCosmicDragonMain && COSMIC_DRAGON_STAR_RANK >= 2) {
+                    if (boss.lastCosmicSummonAt == null) boss.lastCosmicSummonAt = now;
+                    const summonEvery = COSMIC_DRAGON_STAR_RANK >= 3 ? 3800 : 4800;
+                    if (now - boss.lastCosmicSummonAt >= summonEvery) {
+                        boss.lastCosmicSummonAt = now;
+                        spawnCosmicMiniDragonSwarm();
+                    }
+                }
+                if (boss.isCosmicDragonMain && COSMIC_DRAGON_STAR_RANK === 3) {
+                    if (boss.lastCosmicRegenAt == null) boss.lastCosmicRegenAt = now;
+                    if (now - boss.lastCosmicRegenAt >= 4500) {
+                        boss.lastCosmicRegenAt = now;
+                        const regen = Math.max(4, Math.round(boss.maxHealth * 0.018));
+                        boss.health = Math.min(boss.maxHealth, boss.health + regen);
                     }
                 }
 
@@ -4319,7 +4828,7 @@
                         });
                     }
                 }
-
+                
                 // プレイヤーとの衝突
                 if (checkCollision(boss, player)) {
                     runTookDamage = true;
@@ -4335,50 +4844,63 @@
                 }
             }
 
-            // 星獣襲来: 星核防衛フェーズの眷属ドラゴン（コアは無攻撃）
-            if (cosmicDragonPhase === 'coa' && cosmicGuardianBosses.length > 0) {
+            // 星獣襲来: 星核防衛フェーズ（眷属の攻防・シールド・30秒制限）
+            if (cosmicDragonPhase === 'coa') {
                 const nowG = Date.now();
                 const co = cosmicCoaTarget;
                 const coacx = co ? co.x + co.width / 2 : canvas.width / 2;
                 const coacy = co ? co.y + co.height / 2 : 90;
-                let gi = 0;
-                while (gi < cosmicGuardianBosses.length) {
-                    const g = cosmicGuardianBosses[gi];
-                    const slowG = (g.slowedUntil && Date.now() < g.slowedUntil) ? 0.45 : 1;
-                    const gcx = g.x + g.width / 2;
-                    const gcy = g.y + g.height / 2;
-                    const tang = Math.atan2(coacx - gcx, coacy - gcy);
-                    g.x += (Math.sin(tang) * 0.52 * speedMultiplier + g.vx) * slowG;
-                    g.y += (Math.cos(tang) * 0.36 * speedMultiplier + g.vy) * slowG;
-                    if (g.x < 8) { g.x = 8; g.vx = Math.abs(g.vx); }
-                    if (g.x + g.width > canvas.width - 8) { g.x = canvas.width - 8 - g.width; g.vx = -Math.abs(g.vx); }
-                    if (g.y < 72) { g.y = 72; g.vy = Math.abs(g.vy); }
-                    if (g.y > canvas.height * 0.44) { g.y = canvas.height * 0.44; g.vy = -Math.abs(g.vy); }
-                    if (nowG > g.lastShot + g.shotInterval) {
-                        g.lastShot = nowG;
-                        fireCosmicGuardianShot(g);
-                    }
-                    if (isGruntNeutralizedByPlayerDefense(g.x, g.y, g.width, g.height)) {
-                        spawnExplosionEffect(g.x + g.width / 2, g.y + g.height / 2, 28);
-                        playSound(explosionSound);
-                        cosmicGuardianBosses.splice(gi, 1);
-                        if (cosmicDragonPhase === 'coa' && cosmicGuardianBosses.length === 0 && cosmicCoaTarget) {
-                            finishCosmicDragonEventClear();
+                const pcx = player.x + player.width / 2;
+                const pcy = player.y + player.height / 2;
+                if (cosmicGuardianBosses.length > 0) {
+                    let gi = 0;
+                    while (gi < cosmicGuardianBosses.length) {
+                        const g = cosmicGuardianBosses[gi];
+                        const slowG = (g.slowedUntil && Date.now() < g.slowedUntil) ? 0.45 : 1;
+                        const gcx = g.x + g.width / 2;
+                        const gcy = g.y + g.height / 2;
+                        const tang = Math.atan2(coacx - gcx, coacy - gcy);
+                        g.x += (Math.sin(tang) * 0.52 * speedMultiplier + g.vx) * slowG;
+                        g.y += (Math.cos(tang) * 0.36 * speedMultiplier + g.vy) * slowG;
+                        const blockx = (coacx + pcx) * 0.5;
+                        const blocky = (coacy + pcy) * 0.5;
+                        const tbx = blockx - gcx;
+                        const tby = blocky - gcy;
+                        const tbl = Math.hypot(tbx, tby) || 1;
+                        g.x += (tbx / tbl) * 0.36 * slowG;
+                        g.y += (tby / tbl) * 0.24 * slowG;
+                        if (g.x < 8) { g.x = 8; g.vx = Math.abs(g.vx); }
+                        if (g.x + g.width > canvas.width - 8) { g.x = canvas.width - 8 - g.width; g.vx = -Math.abs(g.vx); }
+                        if (g.y < 72) { g.y = 72; g.vy = Math.abs(g.vy); }
+                        if (g.y > canvas.height * 0.44) { g.y = canvas.height * 0.44; g.vy = -Math.abs(g.vy); }
+                        if (nowG > g.lastShot + g.shotInterval) {
+                            g.lastShot = nowG;
+                            fireCosmicGuardianShot(g);
                         }
-                        continue;
+                        if (nowG > (g.nextShieldAt || 0)) {
+                            g.nextShieldAt = nowG + 2680 + Math.random() * 920;
+                            spawnCosmicGuardianShieldOrb(g);
+                        }
+                        if (isGruntNeutralizedByPlayerDefense(g.x, g.y, g.width, g.height)) {
+                            spawnExplosionEffect(g.x + g.width / 2, g.y + g.height / 2, 28);
+                            playSound(explosionSound);
+                            cosmicGuardianBosses.splice(gi, 1);
+                            continue;
+                        }
+                        if (checkCollision(g, player)) {
+                            runTookDamage = true;
+                            lives--;
+                            if (lives < 0) lives = 0;
+                            livesElement.textContent = `ライフ: ${lives}`;
+                            runState.livesLost++;
+                            recomputeUnlockedSlots();
+                            triggerPlayerHurtFeedback(1);
+                            if (lives <= 0) gameOver('gameover');
+                        }
+                        gi++;
                     }
-                    if (checkCollision(g, player)) {
-                        runTookDamage = true;
-                        lives--;
-                        if (lives < 0) lives = 0;
-                        livesElement.textContent = `ライフ: ${lives}`;
-                        runState.livesLost++;
-                        recomputeUnlockedSlots();
-                        triggerPlayerHurtFeedback(1);
-                        if (lives <= 0) gameOver('gameover');
-                    }
-                    gi++;
                 }
+                updateCosmicCoaShieldsAndDeadline();
             }
 
             // 敵更新
@@ -4391,7 +4913,7 @@
                     playSound(explosionSound);
                     return false;
                 }
-
+                
                 // プレイヤーとの衝突
                 if (checkCollision(enemy, player)) {
                     runTookDamage = true;
@@ -4414,6 +4936,46 @@
                 const bullet = bullets[bulletIndex];
                 let bulletRemoved = false;
 
+                // 星核防衛: シールドが弾を消費（コアへの攻撃を無効化）
+                if (cosmicDragonPhase === 'coa' && !bulletRemoved) {
+                    for (let si = cosmicCoreShields.length - 1; si >= 0; si--) {
+                        const s = cosmicCoreShields[si];
+                        if (!cosmicBulletHitsShieldOrb(bullet, s)) continue;
+                        spawnExplosionEffect(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 12);
+                        playSound(explosionSound);
+                        cosmicCoreShields.splice(si, 1);
+                        if (bullet.pierceRemaining > 0) {
+                            bullet.pierceRemaining--;
+                        } else {
+                        bullets.splice(bulletIndex, 1);
+                            bulletRemoved = true;
+                        }
+                        break;
+                    }
+                }
+                if (bulletRemoved) continue;
+
+                // 星核（コア）へのダメージ
+                if (cosmicDragonPhase === 'coa' && cosmicCoaTarget && cosmicCoaTarget.health != null && !bulletRemoved) {
+                    if (checkCollision(bullet, cosmicCoaTarget)) {
+                        cosmicCoaTarget.health -= bullet.damage;
+                        if (cosmicCoaTarget.health < 0) cosmicCoaTarget.health = 0;
+                        if (bullet.explodeOnImpact) {
+                            applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
+                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage,
+                                           explosionOptsFromPlayerBullet(bullet));
+                        }
+                        if (bullet.pierceRemaining > 0) {
+                            bullet.pierceRemaining--;
+                        } else {
+                            bullets.splice(bulletIndex, 1);
+                            bulletRemoved = true;
+                        }
+                        tryFinishCosmicCoaIfCoreDestroyed();
+                    }
+                }
+                if (bulletRemoved) continue;
+
                 for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex--) {
                     const enemy = enemies[enemyIndex];
                     if (!checkCollision(bullet, enemy)) continue;
@@ -4435,13 +4997,14 @@
                     // 範囲爆発（ランチャー / 機雷）
                     if (bullet.explodeOnImpact) {
                         applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
-                                       bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                                       bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage,
+                                       explosionOptsFromPlayerBullet(bullet));
                     }
 
                     if (bullet.pierceRemaining > 0) {
                         bullet.pierceRemaining--;
                     } else {
-                        bullets.splice(bulletIndex, 1);
+                    bullets.splice(bulletIndex, 1);
                         bulletRemoved = true;
                         break;
                     }
@@ -4486,7 +5049,8 @@
 
                         if (bullet.explodeOnImpact) {
                             applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
-                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage,
+                                           explosionOptsFromPlayerBullet(bullet));
                         }
 
                         if (bullet.pierceRemaining > 0) {
@@ -4495,16 +5059,19 @@
                             bullets.splice(bulletIndex, 1);
                             bulletRemoved = true;
                         }
-
-                        if (boss.health <= 0) {
+                    
+                    if (boss.health <= 0) {
                             const eventWeaponRewardKey = (boss.eventWeaponRewardKey && String(boss.eventWeaponRewardKey).trim()) || '';
                             const wasCosmicMain = !!boss.isCosmicDragonMain;
-                            score += boss.points;
-                            scoreElement.textContent = `スコア: ${score}`;
-
+                        score += boss.points;
+                        scoreElement.textContent = `スコア: ${score}`;
+                        
                             if (isEventMode && boss.eventBossIndex >= 0) {
-                                grantEventSkin(boss.eventBossIndex);
-                                updateEventBanner();
+                                const skipSkinForCosmicMain = boss.isCosmicDragonMain && EVENT_URL_SLUG === 'cosmic-dragon';
+                                if (!skipSkinForCosmicMain) {
+                                    grantEventSkin(boss.eventBossIndex);
+                                    updateEventBanner();
+                                }
                             }
 
                             try {
@@ -4517,20 +5084,20 @@
                             } catch (e) { /* ignore */ }
 
                             if (!wasCosmicMain) {
-                                treasureBox = {
+                        treasureBox = {
                                     x: boss.x + boss.width / 2 - 25,
                                     y: canvas.height / 2,
-                                    width: 50,
-                                    height: 50,
+                            width: 50,
+                            height: 50,
                                     speed: 0,
                                     color: '#ffd700',
-                                    isCollected: false
-                                };
+                            isCollected: false
+                        };
                             }
-
+                        
                             const defeatedLevel = bossLevel;
-                            boss = null;
-                            bossSpawned = false;
+                        boss = null;
+                        bossSpawned = false;
                             bossMinions.forEach(m => spawnExplosionEffect(m.x + m.width / 2, m.y + m.height / 2, 35));
                             bossMinions = [];
                             playSound(bossExplosionSound);
@@ -4577,7 +5144,8 @@
                         g.health -= bullet.damage;
                         if (bullet.explodeOnImpact) {
                             applyExplosion(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2,
-                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage);
+                                           bullet.explodeOnImpact.radius, bullet.explodeOnImpact.damage,
+                                           explosionOptsFromPlayerBullet(bullet));
                         }
                         if (bullet.pierceRemaining > 0) {
                             bullet.pierceRemaining--;
@@ -4589,9 +5157,6 @@
                             spawnExplosionEffect(g.x + g.width / 2, g.y + g.height / 2, 38);
                             playSound(explosionSound);
                             cosmicGuardianBosses.splice(gi, 1);
-                            if (cosmicDragonPhase === 'coa' && cosmicGuardianBosses.length === 0 && cosmicCoaTarget) {
-                                finishCosmicDragonEventClear();
-                            }
                         }
                         break;
                     }
@@ -4600,7 +5165,7 @@
 
             // ボス弾丸とプレイヤーの衝突
             bossBullets.forEach((bullet, bulletIndex) => {
-                if (bullet.isFlameBreath) return;
+                if (bullet.isFlameBreath || bullet.isFlameTelegraph) return;
                 const bcx = bullet.x + bullet.width / 2;
                 const bcy = bullet.y + bullet.height / 2;
                 if (isEnemyProjectileBlockedByPlayerDefense(bullet)) {
@@ -4617,7 +5182,7 @@
                             lives -= dmg;
                             if (lives < 0) lives = 0;
                             runState.livesLost += dmg;
-                            livesElement.textContent = `ライフ: ${lives}`;
+                    livesElement.textContent = `ライフ: ${lives}`;
                             playSound(explosionSound);
                             spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
                             recomputeUnlockedSlots();
@@ -4633,7 +5198,7 @@
                             playSound(explosionSound);
                             triggerPlayerHurtFeedback(Math.max(1, lethal));
                             spawnExplosionEffect(player.x + player.width / 2, player.y + player.height / 2, 60);
-                            gameOver('gameover');
+                        gameOver('gameover');
                         }
                     } else {
                         runTookDamage = true;
@@ -4674,6 +5239,7 @@
                 if (checkCollision(unit, player)) {
                     unit.isCollected = true;
                     addSupplyAmmoToAll(20); // 全武器に+20（各最大値で頭打ち）
+                    if (barrierRearmSupplyPickupsNeeded > 0) barrierRearmSupplyPickupsNeeded--;
                     runState.suppliesCollected = (runState.suppliesCollected || 0) + 1;
                     recomputeUnlockedSlots();
                     updateAmmoHud();
@@ -4714,6 +5280,14 @@
             
             // ライフ回復アイテム生成
             spawnHealthItems();
+
+            if (cosmicDragonPhase === 'coa' && cosmicCoaDeadlineAt && Date.now() >= cosmicCoaDeadlineAt
+                && cosmicCoaTarget && cosmicCoaTarget.health != null && cosmicCoaTarget.health > 0) {
+                performCosmicCoreAbsorbAndReviveBoss();
+            }
+
+            playerFlamePrevFrameX = player.x;
+            playerFlamePrevFrameY = player.y;
         }
 
         // ゲーム描画
@@ -4736,8 +5310,44 @@
                 ctx.fillText('CORE', c.x + c.width / 2, c.y + c.height / 2 + 5);
             }
             ctx.restore();
+            cosmicCoreShields.forEach(s => {
+                ctx.save();
+                ctx.fillStyle = 'rgba(100, 210, 255, 0.28)';
+                ctx.strokeStyle = 'rgba(200, 255, 255, 0.82)';
+                ctx.lineWidth = 2.2;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            });
+            if (c.maxHealth != null && c.health != null) {
+                const hr = Math.max(0, c.health / c.maxHealth);
+                ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                ctx.fillRect(c.x, c.y + c.height + 5, c.width, 7);
+                ctx.fillStyle = hr > 0.35 ? '#44ff99' : '#ff6644';
+                ctx.fillRect(c.x, c.y + c.height + 5, c.width * hr, 7);
+            }
+            if (cosmicCoaDeadlineAt) {
+                const rem = Math.max(0, Math.ceil((cosmicCoaDeadlineAt - Date.now()) / 1000));
+                ctx.fillStyle = rem <= 8 ? '#ff8888' : '#e8f4ff';
+                ctx.font = 'bold 17px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText(`星核撃破まで ${rem} 秒`, canvas.width - 10, 26);
+                ctx.textAlign = 'left';
+            }
             cosmicGuardianBosses.forEach(g => {
-                drawBossArtwork(g.x, g.y, g.width, g.height, g.level || 6, { eventBossIndex: 0 });
+                const img = getMinidragonEnemyImage();
+                if (img && img.complete && img.naturalWidth > 0) {
+                    ctx.save();
+                    ctx.shadowColor = '#ff8866';
+                    ctx.shadowBlur = 8;
+                    ctx.drawImage(img, g.x, g.y, g.width, g.height);
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                } else {
+                    drawBossArtwork(g.x, g.y, g.width, g.height, g.level || 6, { eventBossIndex: 0 });
+                }
                 const hpRatio = Math.max(0, g.health / g.maxHealth);
                 ctx.fillStyle = 'rgba(0,0,0,0.55)';
                 ctx.fillRect(g.x, g.y - 8, g.width, 5);
@@ -4912,14 +5522,14 @@
             // 通常モードのみ: ローカルの最高スコア・累計を更新（イベントはランキング対象外）
             const rankStatsRun = !isEventMode;
             if (rankStatsRun) {
-                if (score > highScore) {
-                    highScore = score;
-                    localStorage.setItem('shootingGameHighScore', highScore.toString());
-                }
-                const totalGames = parseInt(localStorage.getItem('totalGames')) || 0;
-                const totalScore = parseInt(localStorage.getItem('totalScore')) || 0;
-                localStorage.setItem('totalGames', (totalGames + 1).toString());
-                localStorage.setItem('totalScore', (totalScore + score).toString());
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('shootingGameHighScore', highScore.toString());
+            }
+            const totalGames = parseInt(localStorage.getItem('totalGames')) || 0;
+            const totalScore = parseInt(localStorage.getItem('totalScore')) || 0;
+            localStorage.setItem('totalGames', (totalGames + 1).toString());
+            localStorage.setItem('totalScore', (totalScore + score).toString());
             }
             
             // Firebase 認証を「真実」とする。localStorage の名残りでは保存処理を走らせない。
@@ -4951,12 +5561,18 @@
             }
 
             // Firebase にスコアを保存（ログイン時・通常モードのみ。イベントはランキング・累計に含めない）
-            if (isAuthenticated && rankStatsRun) {
+            if (isAuthenticated && rankStatsRun && !firebaseScoreSubmittedThisRun) {
+                firebaseScoreSubmittedThisRun = true;
                 try {
-                    await firebaseDataManager.saveScore(score);
+                    await firebaseDataManager.saveScore(score, activePlaySessionId);
                     console.log('スコアがFirebaseに保存されました');
                 } catch (error) {
+                    firebaseScoreSubmittedThisRun = false;
+                    if (error && error.message === 'SCORE_SUBMIT_RATE_LIMITED') {
+                        console.warn('スコア送信はクールダウン中です');
+                    } else {
                     console.error('スコア保存エラー:', error);
+                    }
                 }
             }
             
@@ -4967,6 +5583,8 @@
                     gameOverTitle.textContent = '時間切れ';
                 } else if (reason === 'event_clear') {
                     gameOverTitle.textContent = 'クリア！';
+                } else if (reason === 'guest_score_cap') {
+                    gameOverTitle.textContent = 'お試しプレイ終了';
                 } else {
                     gameOverTitle.textContent = 'ゲームオーバー';
                 }
@@ -5003,7 +5621,10 @@
             cosmicDragonPhase = 'main';
             cosmicCoaTarget = null;
             cosmicGuardianBosses = [];
+            cosmicCoreShields = [];
+            cosmicCoaDeadlineAt = null;
             playerBarrier = null;
+            barrierRearmSupplyPickupsNeeded = 0;
             playerDirectionalShield = null;
             drones = [];
             explosionEffects = [];
@@ -5022,6 +5643,8 @@
             weaponMessageTimer = 0;
             weaponChangeMessage = ''; // リスタート時に武器変更メッセージもリセット
             weaponChangeTimer = 0;
+            firebaseScoreSubmittedThisRun = false;
+            void beginPlaySessionIfLoggedIn();
             gameRunning = true;
             gameTime = 120;
             gameStartTime = Date.now();
@@ -5034,6 +5657,10 @@
             player.y = canvas.height - 80; // プレイヤーの初期位置をリセット
             player.width = Math.max(30, Math.min(40, canvas.width / 20));
             player.height = Math.max(40, Math.min(50, canvas.height / 15));
+            playerFlamePrevFrameX = player.x;
+            playerFlamePrevFrameY = player.y;
+            playerFlameLeadDx = 0;
+            playerFlameLeadDy = 0;
             scoreElement.textContent = `スコア: ${score}`;
             livesElement.textContent = `ライフ: ${lives}`;
             updateAmmoHud();
@@ -5093,6 +5720,20 @@
             requestAnimationFrame(gameLoop);
         }
 
+        async function beginPlaySessionIfLoggedIn() {
+            activePlaySessionId = null;
+            if (isEventMode) return;
+            try {
+                if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser
+                    && typeof firebaseDataManager !== 'undefined'
+                    && typeof firebaseDataManager.startPlaySession === 'function') {
+                    activePlaySessionId = await firebaseDataManager.startPlaySession();
+                }
+            } catch (e) {
+                console.warn('プレイセッション開始:', e);
+            }
+        }
+
         // ゲーム開始時の初期化
         function initGame() {
             resizeCanvas();
@@ -5107,6 +5748,10 @@
             player.y = canvas.height - 80;
             player.width = Math.max(30, Math.min(40, canvas.width / 20));
             player.height = Math.max(40, Math.min(50, canvas.height / 15));
+            playerFlamePrevFrameX = player.x;
+            playerFlamePrevFrameY = player.y;
+            playerFlameLeadDx = 0;
+            playerFlameLeadDy = 0;
             
             // 武器選択UIを初期化
             initWeaponSelector();
@@ -5125,35 +5770,93 @@
             // イベントモードバナーの初期表示
             updateEventBanner();
 
+            void beginPlaySessionIfLoggedIn();
+            
             gameLoop();
+        }
+
+        function escapeHtmlBuiltinMsg(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+        function showBuiltinEventBlockedScreen(message) {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(5,8,20,0.94);color:#eef;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;font-family:system-ui,-apple-system,sans-serif;';
+            wrap.innerHTML = '<p style="max-width:460px;line-height:1.65;font-size:1.05rem;">' + escapeHtmlBuiltinMsg(message) + '</p>'
+                + '<p style="margin-top:22px;"><a href="index.html" style="color:#8cf;">ホームへ戻る</a></p>';
+            document.body.appendChild(wrap);
         }
 
         // ゲーム開始: イベントモード時は Firestore のアクティブイベントを取得してから initGame
         (async function bootstrap() {
+            let builtinAccess = typeof window.normalizeBuiltinEventAccess === 'function'
+                ? window.normalizeBuiltinEventAccess(null)
+                : null;
+            try {
+                if (typeof firebaseDataManager !== 'undefined' && firebaseDataManager.getBuiltinEventAccess) {
+                    builtinAccess = await firebaseDataManager.getBuiltinEventAccess();
+                    if (typeof window.syncShootingEventBypassFromUrl === 'function') {
+                        window.syncShootingEventBypassFromUrl(builtinAccess);
+                    }
+                }
+            } catch (e) {
+                console.warn('builtin event access:', e);
+            }
+
             if (isEventMode && EVENT_URL_SLUG === 'cosmic-dragon') {
+                if (typeof window.canPlayBuiltinCosmicDragon !== 'function'
+                    || !window.canPlayBuiltinCosmicDragon(builtinAccess)) {
+                    window.location.replace('index.html');
+                    return;
+                }
+            } else if (isEventMode) {
+                if (typeof window.canPlayBuiltinShadowFleet !== 'function'
+                    || !window.canPlayBuiltinShadowFleet(builtinAccess)) {
+                    const msg = (builtinAccess && builtinAccess.shadowFleet === 'test')
+                        ? (builtinAccess.testMessageJa || '')
+                        : (builtinAccess && builtinAccess.maintenanceMessageJa) || '';
+                    showBuiltinEventBlockedScreen(msg);
+                    return;
+                }
+            }
+
+            if (isEventMode) {
+                if (EVENT_URL_SLUG !== 'cosmic-dragon') {
+                    await maybeOverrideEventFromFirestore();
+                }
+                EVENT_BOSS_SELECTION = resolveEventBossSelection();
+            }
+
+            if (isEventMode) {
                 try {
                     if (typeof firebase !== 'undefined' && firebase.auth) {
                         await new Promise((resolve) => {
                             const unsub = firebase.auth().onAuthStateChanged(() => {
-                                try { unsub(); } catch (e) { /* ignore */ }
+                                try { unsub(); } catch (e2) { /* ignore */ }
                                 resolve();
                             });
                         });
                     }
                 } catch (e) { /* ignore */ }
-                if (typeof window.isShootingAdminSession !== 'function' || !window.isShootingAdminSession()) {
+                if (typeof firebase === 'undefined' || !firebase.auth || !firebase.auth().currentUser) {
+                    alert('イベントモードをプレイするにはログインが必要です。');
                     window.location.replace('index.html');
                     return;
                 }
             }
-            if (isEventMode) {
-                if (EVENT_URL_SLUG !== 'cosmic-dragon') {
-                    await maybeOverrideEventFromFirestore();
+
+            try {
+                if (typeof firebaseDataManager !== 'undefined'
+                    && typeof firebaseDataManager.ensureShieldUnlockedForLegacyHighScore === 'function'
+                    && typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
+                    await firebaseDataManager.ensureShieldUnlockedForLegacyHighScore();
                 }
-                // Firestore またはビルトイン適用後に boss パラメータを再解決
-                EVENT_BOSS_SELECTION = resolveEventBossSelection();
+            } catch (e) {
+                console.warn('legacy shield unlock:', e);
             }
-            initGame();
+
+        initGame();
         })();
     </script>
 </body>

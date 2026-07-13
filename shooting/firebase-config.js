@@ -54,6 +54,50 @@ try {
   console.warn('Storage init skipped:', e.message);
 }
 
+/** 1 プレイでサーバーに送れるスコア上限（firestore.rules の maxRunScore と揃える） */
+const MAX_SCORE_SUBMIT_PER_RUN = 20000;
+/** 連続 saveScore の最短間隔 ms（firestore.rules の 60 秒クールダウンと揃える） */
+const SCORE_SUBMIT_COOLDOWN_MS = 60000;
+/** ランキング用: 改竄疑いユーザーを飛ばしたうえで上位を埋めるための取得余裕 */
+const RANKING_QUERY_FETCH_PAD = 50;
+
+/**
+ * ランキング集計用のスコア統計（Firestore users ドキュメントから）
+ * @returns {{ highScore: number, totalGames: number, totalScore: number }}
+ */
+function buildRankingStatsFromUserData(data) {
+  const d = data && typeof data === 'object' ? data : {};
+  return {
+    highScore: Number(d.highScore) || 0,
+    totalGames: Number(d.totalGames) || 0,
+    totalScore: Number(d.totalScore) || 0
+  };
+}
+
+/**
+ * 明らかな改竄・不整合の理由コード（空ならランキング対象）
+ * @param {object} data Firestore users ドキュメント
+ * @returns {string[]}
+ */
+function getSuspiciousScoreReasons(data) {
+  const s = buildRankingStatsFromUserData(data);
+  const reasons = [];
+  const cap = MAX_SCORE_SUBMIT_PER_RUN;
+
+  if (s.highScore > cap) reasons.push('highScore_over_run_cap');
+  if (s.totalGames <= 0 && s.highScore > 0) reasons.push('highScore_without_games');
+  if (s.totalGames > 0 && s.totalScore > s.totalGames * cap) reasons.push('totalScore_exceeds_cap');
+  if (s.totalGames > 0 && s.highScore > s.totalScore) reasons.push('highScore_exceeds_total');
+  if (s.totalGames >= 2 && s.totalScore / s.totalGames > cap) reasons.push('avg_score_over_run_cap');
+
+  return reasons;
+}
+
+/** ランキング・順位称号から除外するか */
+function isSuspiciousRankingUser(data) {
+  return getSuspiciousScoreReasons(data).length > 0;
+}
+
 // 固定称号の定義
 const FIXED_TITLES = {
   rookie: 'ルーキー',
@@ -85,6 +129,75 @@ function isShootingAdminSession() {
   } catch (e) {
     return false;
   }
+}
+
+/** Firestore `config/builtinEventAccess` のドキュメント ID */
+const BUILTIN_EVENT_ACCESS_DOC_ID = 'builtinEventAccess';
+
+/** 艦隊・星獣の公開モードを正規化（未設定時は従来挙動に近い既定） */
+function normalizeBuiltinEventAccess(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  const sf = String(d.shadowFleet || 'open').toLowerCase();
+  const cd = String(d.cosmicDragon || 'open').toLowerCase();
+  const shadowFleet = ['open', 'maintenance', 'test'].includes(sf) ? sf : 'open';
+  const cosmicDragon = ['open', 'admin_only', 'maintenance', 'test'].includes(cd) ? cd : 'open';
+  const mk = String(d.maintenanceMessageJa || '').trim();
+  const tk = String(d.testMessageJa || '').trim();
+  return {
+    shadowFleet,
+    cosmicDragon,
+    testBypassKey: String(d.testBypassKey || '').trim(),
+    maintenanceMessageJa: mk || 'ただいまイベントを調整中です。しばらくお待ちください。',
+    testMessageJa: tk || 'テスト公開中です。参加用キーが必要です。'
+  };
+}
+
+/** URL の `?eventKey=` が設定キーと一致したら sessionStorage に保持（以降の遷移でも有効） */
+function syncShootingEventBypassFromUrl(access) {
+  try {
+    const n = normalizeBuiltinEventAccess(access);
+    const key = n.testBypassKey;
+    if (!key) return;
+    const u = new URLSearchParams(window.location.search).get('eventKey');
+    if (u === key) sessionStorage.setItem('shootingEventBypassKey', key);
+  } catch (e) { /* ignore */ }
+}
+
+function hasShootingEventBypass(access) {
+  const n = normalizeBuiltinEventAccess(access);
+  const key = n.testBypassKey;
+  if (!key) return false;
+  try {
+    if (sessionStorage.getItem('shootingEventBypassKey') === key) return true;
+    return new URLSearchParams(window.location.search).get('eventKey') === key;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 艦隊襲来（ビルトイン影艦隊）をプレイ可能か */
+function canPlayBuiltinShadowFleet(access) {
+  const n = normalizeBuiltinEventAccess(access);
+  if (n.shadowFleet === 'open') return true;
+  try {
+    if (isShootingAdminSession()) return true;
+  } catch (e) { /* ignore */ }
+  return hasShootingEventBypass(n);
+}
+
+/** 星獣襲来をプレイ可能か（open / admin_only / メンテ・テスト） */
+function canPlayBuiltinCosmicDragon(access) {
+  const n = normalizeBuiltinEventAccess(access);
+  if (n.cosmicDragon === 'open') return true;
+  let admin = false;
+  try {
+    admin = isShootingAdminSession();
+  } catch (e) { /* ignore */ }
+  if (admin) return true;
+  if (n.cosmicDragon === 'admin_only') {
+    return hasShootingEventBypass(n);
+  }
+  return hasShootingEventBypass(n);
 }
 
 // データ管理クラス
@@ -170,79 +283,109 @@ class FirebaseDataManager {
     }
   }
 
-  // スコア保存
-  async saveScore(score) {
+  /** 通常プレイ開始時に呼ぶ。スコア送信はこのセッション ID とセットでのみルールが通る。 */
+  async startPlaySession() {
+    const user = this.auth.currentUser;
+    if (!user) return null;
+    const ref = this.db.collection('users').doc(user.uid).collection('playSessions').doc();
+    await ref.set({
+      startedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      consumed: false
+    });
+    return ref.id;
+  }
+
+  // スコア保存（プレイセッション検証 + Firestore Rules。コンソールからの直書きは拒否）
+  async saveScore(score, playSessionId) {
     try {
       const user = this.auth.currentUser;
       if (!user) throw new Error('ユーザーがログインしていません');
-      
-      const userRef = this.db.collection('users').doc(user.uid);
-      const userDoc = await userRef.get();
-      
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        const oldHighScore = userData.highScore || 0;
-        const newHighScore = Math.max(oldHighScore, score);
-        const newTotalGames = (userData.totalGames || 0) + 1;
-        const newTotalScore = (userData.totalScore || 0) + score;
-        const currentTitles = Array.isArray(userData.titles) ? [...userData.titles] : [];
-        const progress = { ...(userData.progress || {}) };
-        const unlockedTitleSet = new Set(currentTitles);
 
-        if (newTotalGames >= 1) {
-          unlockedTitleSet.add(FIXED_TITLES.rookie);
-        }
-        if (newHighScore >= 100) {
-          unlockedTitleSet.add(FIXED_TITLES.score100);
-        }
-        if (progress.rapidUnlocked && progress.shotgunUnlocked && progress.laserUnlocked) {
-          progress.allWeaponsUnlocked = true;
-        }
-        if (progress.allWeaponsUnlocked) {
-          unlockedTitleSet.add(FIXED_TITLES.weaponMaster);
-        }
+      const sessionId = (playSessionId && String(playSessionId).trim()) || '';
+      if (!sessionId) throw new Error('PLAY_SESSION_REQUIRED');
 
-        // ランキング判定: トップ RANKING_TITLE_LIMIT 名のみをスキャンし
-        //   現在順位を progress.currentRank に保存。圏外なら削除して称号も剥奪。
-        //   ハイスコアを更新した時のみ自分の順位は上がりうるので、その時だけ計算する。
-        if (newHighScore > oldHighScore) {
-          try {
-            const newRank = await this.computeRank(user.uid, newHighScore);
-            if (newRank && newRank >= 1 && newRank <= RANKING_TITLE_LIMIT) {
-              progress.currentRank = newRank;
-            } else {
-              delete progress.currentRank;
-            }
-          } catch (e) {
-            console.warn('rank compute failed:', e);
-          }
-        }
-
-        const nextTitles = Array.from(unlockedTitleSet);
-        const activeTitle = userData.activeTitle || nextTitles[0] || '';
-        
-        await userRef.update({
-          highScore: newHighScore,
-          totalGames: newTotalGames,
-          totalScore: newTotalScore,
-          titles: nextTitles,
-          activeTitle: activeTitle,
-          progress: progress,
-          lastPlayed: firebase.firestore.FieldValue.serverTimestamp()
-        });
-
-        // 動的称号も評価して追加
-        const dynamicAdded = await this.evaluateDynamicTitles(userRef, {
-          ...userData,
-          highScore: newHighScore,
-          totalGames: newTotalGames,
-          totalScore: newTotalScore,
-          titles: nextTitles,
-          progress
-        });
-        const finalTitles = dynamicAdded || nextTitles;
-        return { highScore: newHighScore, totalGames: newTotalGames, totalScore: newTotalScore, titles: finalTitles, activeTitle, progress };
+      const now = Date.now();
+      if (this._lastScoreSubmitAt && (now - this._lastScoreSubmitAt) < SCORE_SUBMIT_COOLDOWN_MS) {
+        throw new Error('SCORE_SUBMIT_RATE_LIMITED');
       }
+
+      const runScore = Math.max(0, Math.min(
+        Math.floor(Number(score) || 0),
+        MAX_SCORE_SUBMIT_PER_RUN
+      ));
+
+      const userRef = this.db.collection('users').doc(user.uid);
+      const sessionRef = userRef.collection('playSessions').doc(sessionId);
+      const userDoc = await userRef.get();
+
+      if (!userDoc.exists) throw new Error('ユーザーデータが見つかりません');
+
+      const userData = userDoc.data();
+      const oldHighScore = userData.highScore || 0;
+      const newHighScore = Math.max(oldHighScore, runScore);
+      const newTotalGames = (userData.totalGames || 0) + 1;
+      const newTotalScore = (userData.totalScore || 0) + runScore;
+      const currentTitles = Array.isArray(userData.titles) ? [...userData.titles] : [];
+      const progress = { ...(userData.progress || {}) };
+      const unlockedTitleSet = new Set(currentTitles);
+
+      if (newTotalGames >= 1) unlockedTitleSet.add(FIXED_TITLES.rookie);
+      if (newHighScore >= 100) unlockedTitleSet.add(FIXED_TITLES.score100);
+      if (progress.rapidUnlocked && progress.shotgunUnlocked && progress.laserUnlocked) {
+        progress.allWeaponsUnlocked = true;
+      }
+      if (progress.allWeaponsUnlocked) {
+        unlockedTitleSet.add(FIXED_TITLES.weaponMaster);
+      }
+
+      if (newHighScore > oldHighScore) {
+        try {
+          const newRank = await this.computeRank(user.uid, newHighScore);
+          if (newRank && newRank >= 1 && newRank <= RANKING_TITLE_LIMIT) {
+            progress.currentRank = newRank;
+          } else {
+            delete progress.currentRank;
+          }
+        } catch (e) {
+          console.warn('rank compute failed:', e);
+        }
+      }
+
+      const nextTitles = Array.from(unlockedTitleSet);
+      const activeTitle = userData.activeTitle || nextTitles[0] || '';
+
+      const batch = this.db.batch();
+      batch.update(sessionRef, { consumed: true, runScore });
+      batch.update(userRef, {
+        highScore: newHighScore,
+        totalGames: newTotalGames,
+        totalScore: newTotalScore,
+        titles: nextTitles,
+        activeTitle,
+        progress,
+        lastPlayed: firebase.firestore.FieldValue.serverTimestamp(),
+        lastScoreSessionId: sessionId
+      });
+      await batch.commit();
+      this._lastScoreSubmitAt = now;
+
+      const merged = {
+        highScore: newHighScore,
+        totalGames: newTotalGames,
+        totalScore: newTotalScore,
+        titles: nextTitles,
+        activeTitle,
+        progress
+      };
+
+      try {
+        const dynamicAdded = await this.evaluateDynamicTitles(userRef, merged);
+        if (dynamicAdded) merged.titles = dynamicAdded;
+      } catch (e) {
+        console.warn('evaluateDynamicTitles after saveScore:', e);
+      }
+
+      return merged;
     } catch (error) {
       throw error;
     }
@@ -319,23 +462,68 @@ class FirebaseDataManager {
     }
   }
 
+  /**
+   * 最高スコアが 3000 を超えているが shieldUnlocked が無い既存ユーザーへ、
+   * progress.shieldUnlocked をレトロフィット付与する（ゲーム内スコア解放と同条件: highScore > 3000）。
+   * 成功時は localStorage の weaponProgress にも反映する。
+   * @returns {Promise<boolean>} Firestore を更新したら true
+   */
+  async ensureShieldUnlockedForLegacyHighScore() {
+    try {
+      const user = this.auth.currentUser;
+      if (!user) return false;
+
+      const userRef = this.db.collection('users').doc(user.uid);
+      const snap = await userRef.get();
+      if (!snap.exists) return false;
+
+      const userData = snap.data();
+      const highScore = Number(userData.highScore) || 0;
+      if (highScore <= 3000) return false;
+
+      const progress = { ...(userData.progress || {}) };
+      if (progress.shieldUnlocked) return false;
+
+      progress.shieldUnlocked = true;
+      await userRef.update({
+        progress,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      try {
+        const local = JSON.parse(localStorage.getItem('weaponProgress') || '{}') || {};
+        if (!local.shieldUnlocked) {
+          local.shieldUnlocked = true;
+          localStorage.setItem('weaponProgress', JSON.stringify(local));
+        }
+      } catch (e) { /* ignore */ }
+
+      return true;
+    } catch (e) {
+      console.warn('ensureShieldUnlockedForLegacyHighScore:', e);
+      return false;
+    }
+  }
+
   // 指定ユーザーの現在のランキング順位を返す。トップ scanLimit 名の中に
   // 自分が見つかれば 1 始まりの順位を、見つからなければ null を返す。
   // ランキング称号はトップ RANKING_TITLE_LIMIT 位までを順位ごとに付与する。
   async computeRank(uid, highScore, scanLimit = RANKING_TITLE_LIMIT) {
     try {
+      if (highScore <= 0) return null;
+
       const snapshot = await this.db.collection('users')
         .orderBy('highScore', 'desc')
-        .limit(scanLimit)
+        .limit(RANKING_QUERY_FETCH_PAD)
         .get();
       let position = 0;
       let found = null;
       snapshot.forEach(doc => {
+        if (isSuspiciousRankingUser(doc.data())) return;
         position += 1;
+        if (position > scanLimit) return;
         if (doc.id === uid) found = position;
       });
-      // スコアが 0 の人にランキング称号を付けたくないので保険
-      if (highScore <= 0) return null;
       return found;
     } catch (e) {
       console.warn('computeRank error:', e);
@@ -365,6 +553,20 @@ class FirebaseDataManager {
 
       const progress = { ...(userData.progress || {}) };
       const oldRank = Number(progress.currentRank) || 0;
+
+      if (isSuspiciousRankingUser(userData)) {
+        if (oldRank > 0) {
+          delete progress.currentRank;
+          await userRef.update({
+            progress,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          try {
+            await this.evaluateDynamicTitles(userRef, { ...userData, progress });
+          } catch (e) { /* ignore */ }
+        }
+        return null;
+      }
 
       const newRankRaw = await this.computeRank(user.uid, highScore);
       const inBand = !!(newRankRaw && newRankRaw >= 1 && newRankRaw <= RANKING_TITLE_LIMIT);
@@ -442,6 +644,120 @@ class FirebaseDataManager {
     }
   }
 
+  _assertAdminSession() {
+    if (!isShootingAdminSession()) {
+      throw new Error('管理者のみ実行できます');
+    }
+  }
+
+  /** 改竄疑いユーザーの一覧（管理者用） */
+  async listSuspiciousUsers() {
+    this._assertAdminSession();
+    const snapshot = await this.db.collection('users').get();
+    const rows = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      if (!isSuspiciousRankingUser(data)) return;
+      rows.push({
+        id: doc.id,
+        username: data.username || '(名前なし)',
+        email: data.email || '',
+        highScore: Number(data.highScore) || 0,
+        totalGames: Number(data.totalGames) || 0,
+        totalScore: Number(data.totalScore) || 0,
+        reasons: getSuspiciousScoreReasons(data)
+      });
+    });
+    rows.sort((a, b) => b.highScore - a.highScore);
+    return rows;
+  }
+
+  /**
+   * 1ユーザーのスコア系を0に戻す（武器解放・設定は維持）
+   * @returns {Promise<object>} 更新後の主要フィールド
+   */
+  async adminResetUserScoresToZero(uid) {
+    this._assertAdminSession();
+    if (!uid) throw new Error('UID が必要です');
+
+    const userRef = this.db.collection('users').doc(uid);
+    const snap = await userRef.get();
+    if (!snap.exists) throw new Error('ユーザーが見つかりません');
+    const data = snap.data();
+
+    let rankingLabels = new Set();
+    try {
+      const dynamicTitles = await this.listTitles();
+      dynamicTitles.forEach((t) => {
+        if (t && t.condition && t.condition.type === 'ranking' && t.label) {
+          rankingLabels.add(t.label);
+        }
+      });
+    } catch (e) { /* ignore */ }
+
+    const progress = { ...(data.progress || {}) };
+    delete progress.currentRank;
+
+    const titles = (Array.isArray(data.titles) ? data.titles : []).filter((label) => {
+      if (label === FIXED_TITLES.score100 || label === FIXED_TITLES.rookie) return false;
+      if (rankingLabels.has(label)) return false;
+      return true;
+    });
+
+    const patch = {
+      highScore: 0,
+      totalGames: 0,
+      totalScore: 0,
+      titles,
+      activeTitle: titles[0] || data.activeTitle || '',
+      progress,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await userRef.update(patch);
+
+    try {
+      await this.evaluateDynamicTitles(userRef, {
+        ...data,
+        highScore: 0,
+        totalGames: 0,
+        totalScore: 0,
+        titles,
+        progress
+      });
+    } catch (e) {
+      console.warn('evaluateDynamicTitles after admin reset:', e);
+    }
+
+    return {
+      uid,
+      username: data.username,
+      email: data.email,
+      ...patch
+    };
+  }
+
+  /** 改竄疑いユーザーを一括でスコア0にリセット */
+  async adminResetAllSuspiciousUsers() {
+    this._assertAdminSession();
+    const targets = await this.listSuspiciousUsers();
+    const results = [];
+    for (const u of targets) {
+      try {
+        await this.adminResetUserScoresToZero(u.id);
+        results.push({ id: u.id, username: u.username, ok: true });
+      } catch (e) {
+        results.push({ id: u.id, username: u.username, ok: false, error: e.message });
+      }
+    }
+    return {
+      total: targets.length,
+      resetCount: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok),
+      targets
+    };
+  }
+
   /**
    * ランキング取得
    * @param {'highScore'|'averageScore'} kind  highScore: 最高スコア上位10（クエリ効率あり）
@@ -453,12 +769,14 @@ class FirebaseDataManager {
       if (mode === 'highScore') {
         const snapshot = await this.db.collection('users')
           .orderBy('highScore', 'desc')
-          .limit(10)
+          .limit(RANKING_QUERY_FETCH_PAD)
           .get();
 
         const ranking = [];
         snapshot.forEach(doc => {
+          if (ranking.length >= 10) return;
           const data = doc.data();
+          if (isSuspiciousRankingUser(data)) return;
           const tg = Number(data.totalGames) || 0;
           const ts = Number(data.totalScore) || 0;
           const averageScore = tg > 0 ? Math.round(ts / tg) : 0;
@@ -478,10 +796,12 @@ class FirebaseDataManager {
       const rows = [];
       snapshot.forEach(doc => {
         const data = doc.data();
+        if (isSuspiciousRankingUser(data)) return;
         const tg = Number(data.totalGames) || 0;
         const ts = Number(data.totalScore) || 0;
         if (tg < 1) return;
         const averageScore = Math.round(ts / tg);
+        if (averageScore > MAX_SCORE_SUBMIT_PER_RUN) return;
         rows.push({
           id: doc.id,
           username: data.username,
@@ -694,8 +1014,35 @@ class FirebaseDataManager {
   // ─────────────────────────────────────────────
   // 管理者用 API（イベント / 動的称号）
   //   events/{eventId}: { title, startsAt(ISO), endsAt(ISO), bosses[], active }
+  //   active=true のドキュメントがゲームに反映（日時は参考用。複数ある場合は updatedAt が新しい方）
+  //   config/builtinEventAccess: 艦隊・星獣ビルトインの公開モード・参加キー
   //   titles/{titleId}: { label, condition: { type, value } }
   // ─────────────────────────────────────────────
+  async getBuiltinEventAccess() {
+    try {
+      const doc = await this.db.collection('config').doc(BUILTIN_EVENT_ACCESS_DOC_ID).get();
+      if (!doc.exists) return normalizeBuiltinEventAccess(null);
+      return normalizeBuiltinEventAccess(doc.data());
+    } catch (e) {
+      console.warn('getBuiltinEventAccess failed:', e);
+      return normalizeBuiltinEventAccess(null);
+    }
+  }
+
+  async saveBuiltinEventAccess(data) {
+    const user = this.auth.currentUser;
+    if (!user || !isAdminEmail(user.email)) throw new Error('管理者権限がありません');
+    const n = normalizeBuiltinEventAccess(data);
+    await this.db.collection('config').doc(BUILTIN_EVENT_ACCESS_DOC_ID).set({
+      shadowFleet: n.shadowFleet,
+      cosmicDragon: n.cosmicDragon,
+      testBypassKey: n.testBypassKey,
+      maintenanceMessageJa: n.maintenanceMessageJa,
+      testMessageJa: n.testMessageJa,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+
   async listEvents() {
     const snap = await this.db.collection('events').orderBy('endsAt', 'desc').get();
     const list = [];
@@ -703,21 +1050,26 @@ class FirebaseDataManager {
     return list;
   }
 
-  // 現在アクティブなイベント (active=true かつ now in [startsAt, endsAt]) を1件取得
+  /** Firestore の updatedAt 等をミリ秒に（並び替え用） */
+  _eventDocUpdatedMillis(d) {
+    const u = d && d.updatedAt;
+    if (u != null && typeof u.toMillis === 'function') return u.toMillis();
+    if (typeof u === 'number' && Number.isFinite(u)) return u;
+    if (u != null && typeof u.seconds === 'number') {
+      return u.seconds * 1000 + (typeof u.nanoseconds === 'number' ? u.nanoseconds / 1e6 : 0);
+    }
+    return 0;
+  }
+
+  // 現在ゲームに載せるイベント: active=true のみ（開始/終了日時は管理用・表示用。公開 ON なら日時外でも反映）
   async getActiveEvent() {
     try {
       const snap = await this.db.collection('events').where('active', '==', true).get();
-      const now = Date.now();
-      let chosen = null;
-      snap.forEach(doc => {
-        const d = doc.data();
-        const start = Date.parse(d.startsAt);
-        const end   = Date.parse(d.endsAt);
-        if (!isNaN(start) && !isNaN(end) && now >= start && now <= end) {
-          if (!chosen) chosen = { id: doc.id, ...d };
-        }
-      });
-      return chosen;
+      const rows = [];
+      snap.forEach(doc => rows.push({ id: doc.id, ...doc.data() }));
+      if (!rows.length) return null;
+      rows.sort((a, b) => this._eventDocUpdatedMillis(b) - this._eventDocUpdatedMillis(a));
+      return rows[0];
     } catch (e) {
       console.warn('getActiveEvent failed:', e);
       return null;
@@ -1057,6 +1409,13 @@ const firebaseDataManager = new FirebaseDataManager();
 if (typeof window !== 'undefined') {
   window.firebaseDataManager = firebaseDataManager;
   window.isShootingAdminSession = isShootingAdminSession;
+  window.normalizeBuiltinEventAccess = normalizeBuiltinEventAccess;
+  window.syncShootingEventBypassFromUrl = syncShootingEventBypassFromUrl;
+  window.hasShootingEventBypass = hasShootingEventBypass;
+  window.canPlayBuiltinShadowFleet = canPlayBuiltinShadowFleet;
+  window.canPlayBuiltinCosmicDragon = canPlayBuiltinCosmicDragon;
+  window.isSuspiciousRankingUser = isSuspiciousRankingUser;
+  window.getSuspiciousScoreReasons = getSuspiciousScoreReasons;
 }
 
 // 認証状態の監視

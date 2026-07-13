@@ -951,6 +951,17 @@
     <script src="announcements-ui.js?v=20260515a"></script>
     
     <script>
+        function requireFirebaseUserForHome(featureLabel) {
+            if (typeof firebase === 'undefined' || !firebase.auth) {
+                alert('認証の初期化に失敗しました。ページを再読み込みしてください。');
+                return false;
+            }
+            if (firebase.auth().currentUser) return true;
+            alert((featureLabel || 'この機能') + 'を利用するにはログインが必要です。\n右上の「ログイン」からサインインしてください。');
+            if (typeof showLoginModal === 'function') showLoginModal();
+            return false;
+        }
+
         function startGame() {
             try {
                 console.log('ゲーム開始ボタンがクリックされました');
@@ -964,6 +975,7 @@
         
         function startPvP() {
             try {
+                if (!requireFirebaseUserForHome('PvP対戦')) return;
                 console.log('PvP対戦ボタンがクリックされました');
                 // マイページと同じ遷移に統一（pvp_game.html側でモード選択）
                 window.location.href = 'pvp_game.html';
@@ -1000,6 +1012,19 @@
             ]
         };
 
+        /** Firestore のビルトインイベント公開設定（艦隊・星獣）。未読込時は null */
+        let builtinEventAccess = null;
+
+        function getBuiltinAccessOrDefaults() {
+            if (builtinEventAccess != null && typeof window.normalizeBuiltinEventAccess === 'function') {
+                return window.normalizeBuiltinEventAccess(builtinEventAccess);
+            }
+            if (typeof window.normalizeBuiltinEventAccess === 'function') {
+                return window.normalizeBuiltinEventAccess(null);
+            }
+            return { shadowFleet: 'open', cosmicDragon: 'open', testBypassKey: '', maintenanceMessageJa: '', testMessageJa: '' };
+        }
+
         // Firestore に active イベントがあれば EVENT_META を上書きする。
         // 管理画面（admin.html）でイベントを更新したらここに反映される。
         async function maybeOverrideEventMeta() {
@@ -1012,6 +1037,7 @@
                     title: active.title || EVENT_META.title,
                     endsAt: active.endsAt || EVENT_META.endsAt,
                     bossCount: active.bosses.length,
+                    _fromFirestore: true,
                     bosses: active.bosses.map((b, i) => ({
                         id: b.id || `boss-${i + 1}`,
                         skinKey: b.skinKey || '',
@@ -1035,29 +1061,80 @@
         }
 
         function startEvent() {
+            if (!requireFirebaseUserForHome('期間限定イベント')) return;
             showEventCategoryModal();
         }
 
         /** 艦隊襲来 / 星獣襲来 の分岐（縦一列・画像付き） */
         function showEventCategoryModal() {
             closeEventFlowModals();
-            const modal = document.createElement('div');
-            modal.id = 'eventCategoryModal';
-            modal.style.cssText = `
-                position: fixed; inset: 0;
-                background: rgba(0, 0, 0, 0.84);
-                display: flex; align-items: center; justify-content: center;
-                z-index: 9999; padding: 20px;
-                backdrop-filter: blur(6px);
-            `;
             const fleetTitle = (EVENT_META && EVENT_META.title) ? String(EVENT_META.title) : '影艦隊襲来';
             const fleetTitleEsc = fleetTitle
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
-            const starBeastPlayable = typeof window.isShootingAdminSession === 'function' && window.isShootingAdminSession();
-            const starBeastRowHtml = starBeastPlayable
+            const acc = getBuiltinAccessOrDefaults();
+            const fleetOk = typeof window.canPlayBuiltinShadowFleet === 'function' && window.canPlayBuiltinShadowFleet(acc);
+            const cosmicOk = typeof window.canPlayBuiltinCosmicDragon === 'function' && window.canPlayBuiltinCosmicDragon(acc);
+            const isAdm = typeof window.isShootingAdminSession === 'function' && window.isShootingAdminSession();
+            const fleetLockedMsg = acc.shadowFleet === 'test' ? acc.testMessageJa : acc.maintenanceMessageJa;
+            let cosmicLockedMsg = 'イベント開始までお待ちください';
+            if (acc.cosmicDragon === 'admin_only') {
+                cosmicLockedMsg = 'イベント開始までお待ちください';
+            } else if (acc.cosmicDragon === 'test') {
+                cosmicLockedMsg = acc.testMessageJa;
+            } else if (acc.cosmicDragon === 'maintenance') {
+                cosmicLockedMsg = acc.maintenanceMessageJa;
+            }
+            const fleetRowHtml = fleetOk
+                ? `
+                        <button type="button" class="event-cat-row" data-choice="fleet" style="
+                            display: flex; flex-direction: row; align-items: center; gap: 14px;
+                            width: 100%; text-align: left; cursor: pointer;
+                            background: linear-gradient(90deg, rgba(30,50,80,0.95), rgba(20,30,55,0.92));
+                            border: 1px solid rgba(120, 200, 255, 0.35); border-radius: 14px;
+                            padding: 12px 14px; color: #fff;
+                            transition: transform 0.15s ease, box-shadow 0.15s ease;
+                        ">
+                            <img src="assets/event/event-boss-1.png" alt="" width="96" height="96" style="
+                                width: 96px; height: 96px; object-fit: contain; flex-shrink: 0;
+                                border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: pixelated;
+                            ">
+                            <div style="min-width:0;">
+                                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">艦隊襲来</div>
+                                <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(200,230,255,0.88);">${fleetTitleEsc}</div>
+                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(150,200,255,0.75);">複数ボスから選択・交互出現モードあり${isAdm && acc.shadowFleet !== 'open' ? ' <span style="color:#9f9">（関係者モード）</span>' : ''}</div>
+                            </div>
+                        </button>`
+                : `
+                        <div class="event-cat-row event-cat-locked" aria-disabled="true" style="
+                            display: flex; flex-direction: row; align-items: center; gap: 14px;
+                            width: 100%; text-align: left; cursor: default;
+                            background: linear-gradient(90deg, rgba(40,40,48,0.75), rgba(28,28,36,0.85));
+                            border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px;
+                            padding: 12px 14px; color: #fff; opacity: 0.78;
+                        ">
+                            <img src="assets/event/event-boss-1.png" alt="" width="96" height="96" style="
+                                width: 96px; height: 96px; object-fit: contain; flex-shrink: 0;
+                                border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: pixelated;
+                                filter: grayscale(0.35);
+                            ">
+                            <div style="min-width:0;">
+                                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">艦隊襲来</div>
+                                <div style="font-size: 0.95rem; line-height: 1.45; color: rgba(255,200,160,0.95);">${String(fleetLockedMsg || '').replace(/</g, '&lt;')}</div>
+                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(200,200,210,0.75);">管理者・テストキーでプレイ可能</div>
+                            </div>
+                        </div>`;
+            let cosmicSub = '初級・中級・上級から選択';
+            if (acc.cosmicDragon === 'open') cosmicSub = '初級・中級・上級から選択（全体公開）';
+            else if (isAdm) cosmicSub = '初級・中級・上級から選択（管理者）';
+            else if (typeof window.hasShootingEventBypass === 'function' && window.hasShootingEventBypass(acc)) {
+                cosmicSub = '初級・中級・上級から選択（テスト参加）';
+            } else if (acc.cosmicDragon === 'maintenance' || acc.cosmicDragon === 'test') {
+                cosmicSub = '初級・中級・上級から選択（関係者）';
+            }
+            const starBeastRowHtml = cosmicOk
                 ? `
                         <button type="button" class="event-cat-row" data-choice="beast" style="
                             display: flex; flex-direction: row; align-items: center; gap: 14px;
@@ -1073,8 +1150,8 @@
                             ">
                             <div style="min-width:0;">
                                 <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">星獣襲来</div>
-                                <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,210,240,0.9);">初級・中級・上級から選択</div>
-                                <div style="font-size: 0.72rem; margin-top: 6px; color: rgba(255,160,200,0.75);">管理者プレビュー</div>
+                                <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(255,210,240,0.9);">${cosmicSub}</div>
+                                <div style="font-size: 0.72rem; margin-top: 6px; color: rgba(255,160,200,0.75);">${acc.cosmicDragon === 'open' ? 'プレイヤー全員対象' : (isAdm ? '管理者プレビュー' : 'テストキー認証済み')}</div>
                             </div>
                         </button>`
                 : `
@@ -1092,10 +1169,19 @@
                             ">
                             <div style="min-width:0;">
                                 <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">星獣襲来</div>
-                                <div style="font-size: 0.95rem; line-height: 1.45; color: rgba(255,220,160,0.95);">近日公開</div>
-                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(200,200,210,0.75);">イベント開始までお待ちください</div>
+                                <div style="font-size: 0.95rem; line-height: 1.45; color: rgba(255,220,160,0.95);">${String(cosmicLockedMsg || '').replace(/</g, '&lt;')}</div>
+                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(200,200,210,0.75);">${acc.cosmicDragon === 'admin_only' ? '近日公開' : '管理者・テストキーでプレイ可能'}</div>
                             </div>
                         </div>`;
+            const modal = document.createElement('div');
+            modal.id = 'eventCategoryModal';
+            modal.style.cssText = `
+                position: fixed; inset: 0;
+                background: rgba(0, 0, 0, 0.84);
+                display: flex; align-items: center; justify-content: center;
+                z-index: 9999; padding: 20px;
+                backdrop-filter: blur(6px);
+            `;
             modal.innerHTML = `
                 <div style="
                     background: linear-gradient(165deg, #0a1628, #12081e);
@@ -1113,24 +1199,7 @@
                         プレイするイベントを選んでください
                     </p>
                     <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <button type="button" class="event-cat-row" data-choice="fleet" style="
-                            display: flex; flex-direction: row; align-items: center; gap: 14px;
-                            width: 100%; text-align: left; cursor: pointer;
-                            background: linear-gradient(90deg, rgba(30,50,80,0.95), rgba(20,30,55,0.92));
-                            border: 1px solid rgba(120, 200, 255, 0.35); border-radius: 14px;
-                            padding: 12px 14px; color: #fff;
-                            transition: transform 0.15s ease, box-shadow 0.15s ease;
-                        ">
-                            <img src="assets/event/event-boss-1.png" alt="" width="96" height="96" style="
-                                width: 96px; height: 96px; object-fit: contain; flex-shrink: 0;
-                                border-radius: 12px; background: rgba(0,0,0,0.35); image-rendering: pixelated;
-                            ">
-                            <div style="min-width:0;">
-                                <div style="font-weight: bold; font-size: 1.1rem; margin-bottom: 4px;">艦隊襲来</div>
-                                <div style="font-size: 0.82rem; line-height: 1.45; color: rgba(200,230,255,0.88);">${fleetTitleEsc}</div>
-                                <div style="font-size: 0.78rem; margin-top: 6px; color: rgba(150,200,255,0.75);">複数ボスから選択・交互出現モードあり</div>
-                            </div>
-                        </button>
+                        ${fleetRowHtml}
                         ${starBeastRowHtml}
                     </div>
                 </div>
@@ -1148,12 +1217,15 @@
                     btn.style.boxShadow = '';
                 });
             });
-            modal.querySelector('[data-choice="fleet"]').addEventListener('click', () => {
-                modal.remove();
-                showEventBossSelectModal();
-            });
+            const fleetBtn = modal.querySelector('[data-choice="fleet"]');
+            if (fleetBtn) {
+                fleetBtn.addEventListener('click', () => {
+                    modal.remove();
+                    showEventBossSelectModal();
+                });
+            }
             const beastBtn = modal.querySelector('[data-choice="beast"]');
-            if (beastBtn && starBeastPlayable) {
+            if (beastBtn && cosmicOk) {
                 beastBtn.addEventListener('click', () => {
                     modal.remove();
                     showStarBeastDifficultyModal();
@@ -1163,9 +1235,10 @@
             modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
         }
 
-        /** 星獣襲来：初級 / 中級 / 上級（管理者のみ） */
+        /** 星獣襲来：初級 / 中級 / 上級 */
         function showStarBeastDifficultyModal() {
-            if (typeof window.isShootingAdminSession !== 'function' || !window.isShootingAdminSession()) {
+            const acc = getBuiltinAccessOrDefaults();
+            if (typeof window.canPlayBuiltinCosmicDragon !== 'function' || !window.canPlayBuiltinCosmicDragon(acc)) {
                 return;
             }
             closeEventFlowModals();
@@ -1253,6 +1326,10 @@
 
         // ボス選択モーダルを表示（艦隊襲来）
         function showEventBossSelectModal() {
+            const acc = getBuiltinAccessOrDefaults();
+            if (typeof window.canPlayBuiltinShadowFleet !== 'function' || !window.canPlayBuiltinShadowFleet(acc)) {
+                return;
+            }
             closeEventFlowModals();
 
             let skins = {};
@@ -1380,15 +1457,19 @@
             const badge = document.getElementById('eventBadge');
             if (titleEl) titleEl.textContent = EVENT_META.title;
 
-            // 期間
+            // 期間表示（Firestore 管理イベントは掲載予定日のみ。公開/非公開は管理画面の active）
             try {
                 const end = new Date(EVENT_META.endsAt);
                 const y = end.getFullYear();
                 const m = String(end.getMonth() + 1).padStart(2, '0');
                 const d = String(end.getDate()).padStart(2, '0');
-                if (deadlineEl) deadlineEl.textContent = `${y}/${m}/${d} まで`;
-                if (Date.now() > end.getTime() && deadlineEl) {
-                    deadlineEl.textContent = '(期間終了)';
+                if (EVENT_META._fromFirestore) {
+                    if (deadlineEl) deadlineEl.textContent = `掲載予定 ${y}/${m}/${d} まで（公開は管理画面）`;
+                } else {
+                    if (deadlineEl) deadlineEl.textContent = `${y}/${m}/${d} まで`;
+                    if (Date.now() > end.getTime() && deadlineEl) {
+                        deadlineEl.textContent = '(期間終了)';
+                    }
                 }
             } catch (e) {}
 
@@ -1413,14 +1494,29 @@
         }
 
         // ページロード後に呼ぶ（DOMContentLoaded で十分早い）
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             renderEventInfo();
+            try {
+                if (typeof firebaseDataManager !== 'undefined' && firebaseDataManager.getBuiltinEventAccess) {
+                    builtinEventAccess = await firebaseDataManager.getBuiltinEventAccess();
+                    if (typeof window.syncShootingEventBypassFromUrl === 'function') {
+                        window.syncShootingEventBypassFromUrl(builtinEventAccess);
+                    }
+                }
+            } catch (e) {
+                console.warn('builtin event access:', e);
+            }
             // 認証完了を待たずに公開イベントとして取得（events コレクションが公開読み取り可能な前提）
-            maybeOverrideEventMeta();
+            await maybeOverrideEventMeta();
             if (typeof ShootingAnnouncements !== 'undefined') {
                 ShootingAnnouncements.bootstrapIndex({
                     panelEl: document.getElementById('homeAnnouncementMount'),
-                    popupDelayMs: 900
+                    popupDelayMs: 900,
+                    requireFirebaseAuth: true,
+                    onAuthRequired: () => {
+                        alert('お知らせを表示するにはログインが必要です。\n右上の「ログイン」からサインインしてください。');
+                        if (typeof showLoginModal === 'function') showLoginModal();
+                    }
                 });
             }
         });
@@ -1932,6 +2028,13 @@
                 //   降格 or 圏外を検出したらポップアップで通知。同じ変動は DB 反映後の比較で
                 //   自動的に再表示されない。
                 if (currentUser) {
+                    try {
+                        if (typeof firebaseDataManager.ensureShieldUnlockedForLegacyHighScore === 'function') {
+                            await firebaseDataManager.ensureShieldUnlockedForLegacyHighScore();
+                        }
+                    } catch (e) {
+                        console.warn('legacy shield unlock:', e);
+                    }
                     try {
                         const change = await firebaseDataManager.refreshRankingTitleOnStartup();
                         if (change) showRankChangePopup(change);

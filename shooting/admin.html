@@ -292,19 +292,72 @@
                     <div class="stat-box">
                         <div class="stat-label">総ユーザー数</div>
                         <div class="stat-value" id="statTotalUsers">…</div>
-                    </div>
+        </div>
                 </div>
                 <p class="note" style="margin-top:8px;">Firestore の users コレクションから取得しています。読み取りコスト節約のため、画面ロード時に 1 回だけ取得します。</p>
+            </section>
+
+            <!-- 改竄疑いアカウントのスコアリセット -->
+            <section class="card" id="antiCheatCard">
+                <h2>🛡 改竄疑いアカウント</h2>
+                <p class="note">スコアの不整合（2万点超・累計矛盾など）を検出したユーザーの一覧です。<strong>最高スコア・累計・プレイ回数を0</strong>に戻します。武器解放や設定はそのまま残します。</p>
+                <div class="submit-row" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;">
+                    <button type="button" class="btn btn-ghost" id="refreshSuspiciousBtn">一覧を更新</button>
+                    <button type="button" class="btn btn-danger" id="resetSuspiciousBtn">疑わしいアカウントをすべて0にリセット</button>
+                </div>
+                <p id="suspiciousSummary" class="note" style="margin:0;">読み込み中…</p>
+                <div id="suspiciousList" class="row-list" style="margin-top:12px;max-height:280px;overflow-y:auto;"></div>
             </section>
 
             <!-- イベント管理 -->
             <section class="card">
                 <h2>🎉 イベント管理</h2>
-                <p class="note">期間限定イベントの追加・期間設定・ボス構成 (HP倍率 / 攻撃ギミック / 弾数) を編集できます。`active` チェックが ON でかつ現在時刻が期間内のイベントが、ゲーム側に反映されます。</p>
+                <p class="note">期間限定イベントの追加・期間設定・ボス構成 (HP倍率 / 攻撃ギミック / 弾数) を編集できます。<strong>「このイベントを公開する (active)」が ON のイベントがゲームに反映されます</strong>（開始/終了日時に関係なく、管理者がいつでも公開・非公開を切り替え可能）。複数 ON のときは更新が新しい方が優先されます。</p>
                 <div id="eventList" class="row-list"></div>
                 <div style="margin-top: 14px;">
                     <button type="button" class="btn btn-success" id="newEventBtn">＋ 新規イベント</button>
+            </div>
+            </section>
+
+            <!-- ビルトインイベント（艦隊・星獣）の公開モード -->
+            <section class="card" id="builtinAccessSection">
+                <h2>🛸 ビルトインイベント（艦隊襲来・星獣襲来）</h2>
+                <p class="note">コード同梱の「影艦隊」「星獣」の公開状態です。Firestore に設定が無い場合の<strong>既定はどちらも全体公開</strong>です。<strong>メンテナンス / テスト公開 / 非公開</strong>にすると一般プレイヤーをブロックし、<strong>管理者ログイン</strong>または URL の <code>?eventKey=…</code>（参加キーと一致）でプレイできます。</p>
+                <form id="builtinAccessForm" class="admin-form">
+                    <div class="field">
+                        <label>艦隊襲来（影艦隊）</label>
+                        <select name="shadowFleet" id="builtinShadowFleet">
+                            <option value="open">通常公開（誰でもプレイ可）</option>
+                            <option value="test">テスト公開（管理者 or 参加キー）</option>
+                            <option value="maintenance">メンテナンス（管理者 or 参加キー）</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>星獣襲来</label>
+                        <select name="cosmicDragon" id="builtinCosmicDragon">
+                            <option value="open">全体公開（誰でもホームから難易度選択可）</option>
+                            <option value="admin_only">非公開（管理者 or 参加キーのみ）</option>
+                            <option value="test">テスト公開（管理者 or 参加キー）</option>
+                            <option value="maintenance">メンテナンス（管理者 or 参加キー）</option>
+                        </select>
+                    </div>
+                    <div class="field full">
+                        <label>参加用キー（空ならキー経由のバイパス無効）</label>
+                        <input type="text" name="testBypassKey" id="builtinTestBypassKey" autocomplete="off" placeholder="例: alpha2026">
                 </div>
+                    <div class="field full">
+                        <label>メンテナンス時メッセージ（艦隊・星獣ロック時にホーム等で表示）</label>
+                        <textarea name="maintenanceMessageJa" id="builtinMaintMsg" rows="2" placeholder="プレイヤー向けの案内文"></textarea>
+            </div>
+                    <div class="field full">
+                        <label>テスト公開時メッセージ</label>
+                        <textarea name="testMessageJa" id="builtinTestMsg" rows="2" placeholder="テスト参加者向けの案内文"></textarea>
+                    </div>
+                    <div class="submit-row">
+                        <button type="submit" class="btn btn-success">ビルトイン設定を保存</button>
+                    </div>
+                </form>
+                <p class="note" style="margin-top:10px;">テスト担当者には <code>index.html?eventKey=（参加キー）</code> の URL を共有すると、そのブラウザでは艦隊・星獣のロックが解除されます（セッション保持）。</p>
             </section>
 
             <!-- 称号管理 -->
@@ -314,7 +367,7 @@
                 <div id="titleList" class="row-list"></div>
                 <div style="margin-top: 14px;">
                     <button type="button" class="btn btn-success" id="newTitleBtn">＋ 新規称号</button>
-                </div>
+                    </div>
             </section>
 
             <!-- お知らせ -->
@@ -324,10 +377,10 @@
                 <div id="announcementList" class="row-list"></div>
                 <div style="margin-top: 14px;">
                     <button type="button" class="btn btn-success" id="newAnnouncementBtn">＋ 新規お知らせ</button>
-                </div>
+                    </div>
             </section>
-        </div>
-    </div>
+                </div>
+                </div>
 
     <!-- イベント編集モーダル -->
     <div class="modal" id="eventModal" role="dialog" aria-modal="true" aria-hidden="true">
@@ -337,11 +390,11 @@
                 <div class="field">
                     <label>タイトル</label>
                     <input type="text" name="title" required>
-                </div>
+            </div>
                 <div class="field">
                     <label>イベントID（任意・URL/データ識別用）</label>
                     <input type="text" name="slug" placeholder="例: shadow-fleet-2026">
-                </div>
+                    </div>
                 <div class="field">
                     <label>開始日時</label>
                     <input type="datetime-local" name="startsAt" required>
@@ -353,8 +406,8 @@
                 <div class="field full">
                     <div class="checkbox-row">
                         <input type="checkbox" name="active" id="activeCheckbox">
-                        <label for="activeCheckbox" style="text-transform:none;">このイベントを公開する (active)</label>
-                    </div>
+                        <label for="activeCheckbox" style="text-transform:none;">このイベントを公開する（ゲーム・ホームに反映。開始/終了日時は任意）</label>
+            </div>
                 </div>
                 <div class="field full">
                     <label>ボス構成</label>
@@ -539,7 +592,97 @@
             statusEl.className = 'ok';
             statusEl.textContent = `管理者としてログイン中: ${user.email}`;
             mainEl.style.display = 'block';
-            await Promise.all([refreshEvents(), refreshTitles(), refreshAnnouncements(), refreshStats()]);
+            await Promise.all([refreshEvents(), refreshTitles(), refreshAnnouncements(), refreshStats(), refreshBuiltinEventAccess(), refreshSuspiciousUsers()]);
+        });
+
+        const SUSPICIOUS_REASON_LABELS = {
+            highScore_over_run_cap: '最高スコアが1プレイ上限(2万)超',
+            highScore_without_games: 'プレイ0なのに最高スコアあり',
+            totalScore_exceeds_cap: '累計スコアが上限を超過',
+            highScore_exceeds_total: '最高スコアが累計より大きい',
+            avg_score_over_run_cap: '平均スコアが1プレイ上限超'
+        };
+
+        const suspiciousSummary = document.getElementById('suspiciousSummary');
+        const suspiciousList = document.getElementById('suspiciousList');
+
+        function formatSuspiciousReasons(reasons) {
+            return (reasons || []).map((r) => SUSPICIOUS_REASON_LABELS[r] || r).join(' / ');
+        }
+
+        async function refreshSuspiciousUsers() {
+            if (!suspiciousSummary || !suspiciousList) return;
+            suspiciousSummary.textContent = '読み込み中…';
+            suspiciousList.innerHTML = '';
+            try {
+                const rows = await firebaseDataManager.listSuspiciousUsers();
+                if (!rows.length) {
+                    suspiciousSummary.textContent = '改竄疑いのアカウントはありません。';
+                    suspiciousList.innerHTML = '<div class="empty">該当なし</div>';
+                    return;
+                }
+                suspiciousSummary.textContent = `${rows.length} 件を検出しました。個別リセットまたは一括リセットできます。`;
+                suspiciousList.innerHTML = '';
+                rows.forEach((u) => {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    row.style.gridTemplateColumns = '1fr auto';
+                    row.innerHTML = `
+                        <div class="row-main">
+                            <div class="row-title">${esc(u.username)} <span style="color:#ffaa88;font-weight:normal;font-size:0.85rem">最高 ${Number(u.highScore).toLocaleString()}</span></div>
+                            <div class="row-sub">${esc(u.email || u.id)} ・ 累計 ${Number(u.totalScore).toLocaleString()} / ${Number(u.totalGames)} 回</div>
+                            <div class="row-sub" style="color:#ffcc88">${esc(formatSuspiciousReasons(u.reasons))}</div>
+                        </div>
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-sm btn-danger" data-action="reset-one">0に戻す</button>
+                        </div>`;
+                    row.querySelector('[data-action="reset-one"]').addEventListener('click', async () => {
+                        if (!confirm(`「${u.username}」のスコアを0に戻しますか？`)) return;
+                        try {
+                            await firebaseDataManager.adminResetUserScoresToZero(u.id);
+                            await refreshSuspiciousUsers();
+                            alert('リセットしました');
+                        } catch (err) {
+                            alert('リセット失敗: ' + err.message);
+                        }
+                    });
+                    suspiciousList.appendChild(row);
+                });
+            } catch (err) {
+                console.error(err);
+                suspiciousSummary.textContent = '読み込みエラー';
+                suspiciousList.innerHTML = `<div class="empty" style="color:#ffaaaa">${esc(err.message)}</div>`;
+            }
+        }
+
+        document.getElementById('refreshSuspiciousBtn')?.addEventListener('click', () => refreshSuspiciousUsers());
+        document.getElementById('resetSuspiciousBtn')?.addEventListener('click', async () => {
+            let rows;
+            try {
+                rows = await firebaseDataManager.listSuspiciousUsers();
+            } catch (err) {
+                alert('一覧取得失敗: ' + err.message);
+                return;
+            }
+            if (!rows.length) {
+                alert('リセット対象がありません');
+                return;
+            }
+            if (!confirm(`${rows.length} 件のアカウントのスコアをすべて0に戻します。よろしいですか？`)) return;
+            const btn = document.getElementById('resetSuspiciousBtn');
+            if (btn) btn.disabled = true;
+            try {
+                const result = await firebaseDataManager.adminResetAllSuspiciousUsers();
+                await refreshSuspiciousUsers();
+                const failed = result.failed && result.failed.length;
+                alert(failed
+                    ? `${result.resetCount} 件をリセットしました。${failed} 件は失敗しました。`
+                    : `${result.resetCount} 件のアカウントを0からに戻しました。`);
+            } catch (err) {
+                alert('一括リセット失敗: ' + err.message);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
         });
 
         // ─────── 全体統計 ───────
@@ -555,11 +698,48 @@
             }
         }
 
+        async function refreshBuiltinEventAccess() {
+            const form = document.getElementById('builtinAccessForm');
+            if (!form) return;
+            try {
+                const a = await firebaseDataManager.getBuiltinEventAccess();
+                form.shadowFleet.value = a.shadowFleet || 'open';
+                form.cosmicDragon.value = a.cosmicDragon || 'open';
+                form.testBypassKey.value = a.testBypassKey || '';
+                form.maintenanceMessageJa.value = a.maintenanceMessageJa || '';
+                form.testMessageJa.value = a.testMessageJa || '';
+            } catch (e) {
+                console.warn('refreshBuiltinEventAccess failed:', e);
+            }
+        }
+
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             try { await firebase.auth().signOut(); }
             catch (e) { console.error(e); }
             window.location.href = 'index.html';
         });
+
+        const builtinAccessForm = document.getElementById('builtinAccessForm');
+        if (builtinAccessForm) {
+            builtinAccessForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fd = new FormData(builtinAccessForm);
+                const data = {
+                    shadowFleet: fd.get('shadowFleet'),
+                    cosmicDragon: fd.get('cosmicDragon'),
+                    testBypassKey: fd.get('testBypassKey'),
+                    maintenanceMessageJa: fd.get('maintenanceMessageJa'),
+                    testMessageJa: fd.get('testMessageJa')
+                };
+                try {
+                    await firebaseDataManager.saveBuiltinEventAccess(data);
+                    alert('保存しました');
+                    await refreshBuiltinEventAccess();
+                } catch (err) {
+                    alert('保存失敗: ' + err.message);
+                }
+            });
+        }
 
         // ─────────────────────────────────────────────
         // イベント管理
@@ -608,36 +788,36 @@
             wrap.innerHTML = `
                 <h4>ボス #${idx + 1}
                     <button type="button" class="btn btn-sm btn-danger" data-action="remove-boss">削除</button>
-                </h4>
+            </h4>
                 <div class="boss-grid">
-                    <div>
+                <div>
                         <label>ボスID</label>
                         <input type="text" name="b_id" value="${esc((b && b.id) || '')}" placeholder="cruiser">
-                    </div>
-                    <div>
-                        <label>表示名</label>
+                </div>
+                <div>
+                    <label>表示名</label>
                         <input type="text" name="b_name" value="${esc((b && b.name) || '')}" placeholder="シャドウ・クルーザー">
-                    </div>
+                </div>
                     <div>
                         <label>スキンキー (progress 反映用)</label>
                         <input type="text" name="b_skinKey" value="${esc((b && b.skinKey) || '')}" placeholder="eventBossSkinShadowCruiser">
-                    </div>
+            </div>
                     <div>
                         <label>武器解放キー（任意・例: shieldUnlocked）</label>
                         <input type="text" name="b_weaponRewardKey" value="${esc((b && b.weaponRewardKey) || '')}" placeholder="shieldUnlocked">
-                    </div>
-                    <div>
+            </div>
+                <div>
                         <label>HP倍率</label>
                         <input type="number" name="b_hpMultiplier" step="0.5" min="1" value="${(b && Number(b.hpMultiplier)) || 4}">
-                    </div>
-                    <div>
+                </div>
+                <div>
                         <label>featureLevel (5–10)</label>
                         <input type="number" name="b_featureLevel" min="1" max="10" value="${(b && Number(b.featureLevel)) || 8}">
-                    </div>
-                    <div>
+                </div>
+                <div>
                         <label>弾数</label>
                         <input type="number" name="b_bulletCount" min="1" max="12" value="${(b && Number(b.bulletCount)) || 3}">
-                    </div>
+                </div>
 
                     <div style="grid-column: 1 / -1;">
                         <label>画像（プリセット / アップロード）</label>
@@ -651,8 +831,8 @@
                                 <input type="hidden" name="b_image" value="${esc(currentImage)}">
                                 <input type="file" accept="image/*" data-role="file" style="font-size: 0.8rem;">
                                 <div class="upload-status" data-role="status">画像を選択するとアップロードされます (最大 5MB)</div>
-                            </div>
-                        </div>
+            </div>
+            </div>
                     </div>
 
                     <div style="grid-column: 1 / -1;">
@@ -678,16 +858,16 @@
                                         </select>
                                     </div>
                                 `;
-                            }).join('')}
+                    }).join('')}
                         </div>
                     </div>
 
                     <div style="grid-column: 1 / -1;">
                         <label>説明</label>
                         <input type="text" name="b_description" value="${esc((b && b.description) || '')}" placeholder="軍事兵器の精密射撃 / 機雷・狙撃・追尾ミサイル">
-                    </div>
                 </div>
-            `;
+            </div>
+        `;
 
             // プリセット選択 / アップロードの結線
             const presetSel = wrap.querySelector('[data-role="preset"]');
@@ -800,27 +980,27 @@
                 const events = await firebaseDataManager.listEvents();
                 if (!events.length) {
                     eventList.innerHTML = '<div class="empty">イベントはまだ登録されていません。</div>';
-                    return;
-                }
+            return;
+        }
                 eventList.innerHTML = '';
                 events.forEach(ev => {
                     const row = document.createElement('div');
                     row.className = 'row';
                     const periodText = `${fmtDate(ev.startsAt)} 〜 ${fmtDate(ev.endsAt)}`;
-                    const status = ev.active ? '<span style="color:#7fffaa">✓ 公開中</span>' : '<span style="color:#ffaa77">下書き</span>';
+                    const status = ev.active ? '<span style="color:#7fffaa">✓ 公開中（ゲーム反映）</span>' : '<span style="color:#ffaa77">非公開</span>';
                     const bossText = `${(ev.bosses || []).length} 体のボス`;
                     row.innerHTML = `
                         <div class="row-main">
                             <div class="row-title">${esc(ev.title || ev.id)} ${status}</div>
                             <div class="row-sub">${periodText} ・ ${bossText} ・ ID: ${esc(ev.id)}</div>
-                        </div>
+                    </div>
                         <div class="row-actions">
                             <button type="button" class="btn btn-sm" data-action="edit">編集</button>
                             <button type="button" class="btn btn-sm btn-success" data-action="test-bench" title="挙動テスト場(boss-test.html)で開く">🧪 挙動テスト</button>
                             <button type="button" class="btn btn-sm btn-success" data-action="play" title="ゲーム本体でプレビュー">🚀 ゲームで試す</button>
                             <button type="button" class="btn btn-sm btn-danger" data-action="delete">削除</button>
-                        </div>
-                    `;
+                </div>
+            `;
                     row.querySelector('[data-action="edit"]').addEventListener('click', () => openEventModal(ev));
                     row.querySelector('[data-action="test-bench"]').addEventListener('click', () => {
                         window.open(`boss-test.html?adminEventId=${encodeURIComponent(ev.id)}`, '_blank');
@@ -1197,7 +1377,7 @@
                             return;
                         }
                         resolve(new File([blob], `${baseName}_opt.jpg`, { type: outMime, lastModified: Date.now() }));
-                    } catch (e) {
+        } catch (e) {
                         reject(e);
                     }
                 };

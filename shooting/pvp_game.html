@@ -1940,18 +1940,22 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // 初期化
-        function init() {
-            // ログイン状態をチェック（ローカルストレージのみ）
-            const playerName = localStorage.getItem('playerName');
-            const isLoggedIn = localStorage.getItem('isLoggedIn');
-            
-            // ログイン状態の判定（ローカルストレージのみ）
-            const isAuthenticated = (playerName && isLoggedIn === 'true');
-            
-            if (!isAuthenticated) {
-                alert('ログインが必要です');
-                window.location.href = 'index.html';
+        // 初期化（Firebase 認証を真実とする。復元完了まで一度待つ）
+        async function init() {
+            try {
+                if (typeof firebase !== 'undefined' && firebase.auth) {
+                    await new Promise((resolve) => {
+                        const unsub = firebase.auth().onAuthStateChanged(() => {
+                            try { unsub(); } catch (e2) { /* ignore */ }
+                            resolve();
+                        });
+                    });
+                }
+            } catch (e) { /* ignore */ }
+
+            if (typeof firebase === 'undefined' || !firebase.auth || !firebase.auth().currentUser) {
+                alert('PvPをプレイするにはログインが必要です。');
+                window.location.replace('index.html');
                 return;
             }
 

@@ -462,9 +462,13 @@
     }
   }
 
-  function tryAutoPopup(announcements, onAfter) {
+  function tryAutoPopup(announcements, onAfter, authPredicate) {
     const ann = firstUnreadAnnouncement(announcements);
     if (!ann) {
+      if (typeof onAfter === 'function') onAfter();
+      return;
+    }
+    if (typeof authPredicate === 'function' && !authPredicate()) {
       if (typeof onAfter === 'function') onAfter();
       return;
     }
@@ -522,7 +526,21 @@
   function bootstrapIndex(options) {
     const panelEl = options && options.panelEl;
     const stripEl = options && options.stripEl;
+    const requireFirebaseAuth = !!(options && options.requireFirebaseAuth);
     let cache = [];
+
+    function checkFirebaseAuthForAnnouncements() {
+      if (!requireFirebaseAuth) return true;
+      const auth = global.firebase && global.firebase.auth;
+      const user = auth && auth().currentUser;
+      if (user) return true;
+      if (options && typeof options.onAuthRequired === 'function') {
+        options.onAuthRequired();
+      } else if (typeof global.alert === 'function') {
+        global.alert('お知らせを表示するにはログインが必要です。');
+      }
+      return false;
+    }
 
     async function refreshHomeUi() {
       try {
@@ -534,6 +552,7 @@
 
     const homeCtx = {
       onOpenList: async () => {
+        if (!checkFirebaseAuthForAnnouncements()) return;
         try {
           cache = await fetchPublicList();
         } catch (e) {
@@ -560,7 +579,9 @@
       setTimeout(() => {
         tryAutoPopup(list, () => {
           refreshHomeUi();
-        });
+        }, requireFirebaseAuth
+          ? () => !!(global.firebase && global.firebase.auth && global.firebase.auth().currentUser)
+          : null);
       }, options && options.popupDelayMs != null ? options.popupDelayMs : 700);
     }).catch((e) => {
       if (typeof console !== 'undefined' && console.error) {

@@ -847,7 +847,7 @@
             gravity:  { id: 'gravity',  name: '重力弾',     unlockProgressKey: 'gravityUnlocked',   unlockRequirement: '2000点ボス撃破で解放',                                             description: '範囲内の敵を吸引 / ダメージ無し' },
             mine:     { id: 'mine',     name: '機雷',       unlockProgressKey: 'mineUnlocked',      unlockRequirement: '2000点ボス撃破歴で装備可（ラン中: ノーダメも必要）',                description: '低速重弾 / 着弾範囲爆発（後方設置は段階実装）' },
             blade:    { id: 'blade',    name: 'ブレード',   unlockProgressKey: 'bladeUnlocked',     unlockRequirement: '2000点ボス撃破歴で装備可（ラン中: 補給2個取得も必要）',            description: '近接斬撃 / 短射程・幅広 / スタミナ式（弾切れなしだが連発でクールダウン）' },
-            shield:   { id: 'shield',   name: 'シールド',   unlockProgressKey: 'shieldUnlocked',    unlockRequirement: '星獣襲来などのイベントボス撃破で解放',                              description: '前方扇形でボス弾を遮断（展開中も移動可）' },
+            shield:   { id: 'shield',   name: 'シールド',   unlockProgressKey: 'shieldUnlocked',    unlockRequirement: '通常プレイでスコア3000超、または星獣襲来などのイベントボス撃破で解放', description: '前方扇形でボス弾を遮断（展開中も移動可）' },
             barrier:  { id: 'barrier',  name: 'バリア',     unlockProgressKey: 'barrierUnlocked',   unlockRequirement: '星獣襲来などのイベントボス撃破で解放',                              description: '自機周りの円バリア（展開中は移動不可・ボス弾を遮断）' }
         };
 
@@ -855,10 +855,6 @@
             try {
                 const raw = JSON.parse(localStorage.getItem('weaponProgress') || '{}');
                 const out = (raw && typeof raw === 'object') ? raw : {};
-                if (out.shieldUnlocked && !out.barrierUnlocked) {
-                    out.barrierUnlocked = true;
-                    localStorage.setItem('weaponProgress', JSON.stringify(out));
-                }
                 return out;
             } catch (e) {
                 return {};
@@ -996,7 +992,7 @@
         const EVENT_SKIN_CATALOG = [
             { skinKey: 'eventBossSkinShadowCruiser',  name: 'シャドウ・クルーザー',   image: 'assets/event/event-boss-1.png', description: '影艦隊襲来 / Boss 1' },
             { skinKey: 'eventBossSkinShadowOverlord', name: 'シャドウ・オーバーロード', image: 'assets/event/event-boss-2.png', description: '影艦隊襲来 / Boss 2' },
-            { skinKey: 'eventBossSkinCosmicDragon',   name: '星骸ドラゴン',             image: 'assets/event/doragonsukin.png', description: '星獣襲来 / 撃破でシールド＋バリア解放' }
+            { skinKey: 'eventBossSkinCosmicDragon',   name: 'インペリアル・バハムート', image: 'assets/event/doragonsukin.png', description: '星獣襲来 / 撃破でシールド＋バリア解放' }
         ];
 
         // ─────── 自機スキンカタログ（shooting_game.html と同期） ───────
@@ -1007,7 +1003,7 @@
             crimson:  { id: 'crimson',  name: 'クリムゾン', type: 'procedural', body: '#cc1133', wing: '#cc1133', nose: '#ffd700', engine: '#ffaa00', cockpit: '#ffd700', unlock: null },
             'shadow-cruiser':  { id: 'shadow-cruiser',  name: 'シャドウ・クルーザー',     type: 'image', src: 'assets/event/event-boss-1.png', unlock: 'eventBossSkinShadowCruiser' },
             'shadow-overlord': { id: 'shadow-overlord', name: 'シャドウ・オーバーロード', type: 'image', src: 'assets/event/event-boss-2.png', unlock: 'eventBossSkinShadowOverlord' },
-            'cosmic-dragon':   { id: 'cosmic-dragon',   name: '星骸ドラゴン',             type: 'image', src: 'assets/event/doragonsukin.png', unlock: 'eventBossSkinCosmicDragon' }
+            'cosmic-dragon':   { id: 'cosmic-dragon',   name: 'インペリアル・バハムート', type: 'image', src: 'assets/event/doragonsukin.png', unlock: 'eventBossSkinCosmicDragon' }
         };
         const DEFAULT_PLAYER_SKIN = 'classic';
         const PLAYER_SKIN_ORDER = ['classic', 'stealth', 'neon', 'crimson', 'shadow-cruiser', 'shadow-overlord', 'cosmic-dragon'];
@@ -1257,6 +1253,13 @@
         // ユーザーデータの読み込み
         async function loadUserData() {
             try {
+                if (typeof firebaseDataManager.ensureShieldUnlockedForLegacyHighScore === 'function') {
+                    try {
+                        await firebaseDataManager.ensureShieldUnlockedForLegacyHighScore();
+                    } catch (e) {
+                        console.warn('legacy shield unlock:', e);
+                    }
+                }
                 // Firebaseからユーザーデータを取得
                 const userData = await firebaseDataManager.getUserData();
                 

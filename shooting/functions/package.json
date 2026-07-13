@@ -1,0 +1,13 @@
+{
+  "name": "shooting-game-functions",
+  "description": "スコア送信などサーバー側のみ実行する処理",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "private": true
+}
